@@ -329,12 +329,32 @@ Cần **Exchange Online PowerShell** (app-only, certificate, quyền `Exchange.M
 
 ## 8. Design direction
 
-> **Ghi chú công cụ:** skill `ui-ux-pro-max` đã được cài nhưng **thiếu thư mục `scripts/` và dữ liệu** (chỉ có `SKILL.md`),
-> nên không chạy được lệnh tìm kiếm `--design-system`. Hướng thiết kế dưới đây dựa trên skill `frontend-design`
-> và bảng ưu tiên trong `SKILL.md` của `ui-ux-pro-max` (giá trị mặc định chung, **không** phải kết quả tra cứu từ cơ sở dữ liệu của skill).
-> Nếu anh/chị cài lại bản đầy đủ, em sẽ chạy lại và đối chiếu trước Phase 1.
-> Các skill còn lại đều có: `frontend-design`, `modern-web-guidance`, `dataviz`, `design:accessibility-review`,
+> **Nguồn:** `ui-ux-pro-max` (bản đầy đủ từ `nextlevelbuilder/ui-ux-pro-max-skill`, commit `e59ff37`) kết hợp
+> `frontend-design`. Kết quả tra cứu và quyết định chấp nhận/loại bỏ ở §8.0.
+> Các skill khác dùng ở các phase sau: `modern-web-guidance`, `dataviz`, `design:accessibility-review`,
 > `design-skills:accessibility-audit`, `design:ux-copy`, `design-skills:ux-writing`, `design:design-critique`.
+
+### 8.0 Kết quả `ui-ux-pro-max` và quyết định
+
+Lệnh: `--design-system "internal IT operations admin console data-dense" --density 8 --motion 2 --variance 3`,
+bổ sung tra cứu theo domain `style`, `typography`, `color`, `chart`, `ux` và `--stack shadcn`.
+
+| Hạng mục | Skill đề xuất | Quyết định | Lý do |
+|---|---|---|---|
+| Style | **Data-Dense Dashboard** + Minimalism & Swiss Style | ✅ Áp dụng | Đúng loại sản phẩm: bảng dày đặc, sticky header, padding 8–12px, KPI tile, rủi ro accessibility thấp |
+| Biến mật độ | Hàng bảng 36px, sidebar 240px, header 56px, gap 8px | ✅ Áp dụng hàng 36px làm mặc định, sidebar 240px; topbar giữ 48px | 36px vẫn dày đặc mà dễ đọc dấu tiếng Việt hơn 32px |
+| Typography | **"Vietnamese Friendly": Be Vietnam Pro + Noto Sans** | ✅ Áp dụng; Noto Sans làm font dự phòng | Trùng với lựa chọn ban đầu, nay có xác nhận từ dữ liệu của skill |
+| Typography (phương án 2) | Fira Code + Fira Sans ("Dashboard Data") | ❌ Không dùng | Dùng mono cho tiêu đề không hợp UI tiếng Việt; mono chỉ dùng cho giá trị định danh |
+| Màu | Navy `#1E40AF` + accent amber `#D97706` | ⚠️ Không dùng nguyên bản, giữ **petrol** (§8.2) | Amber trùng màu trạng thái "Waiting", xanh dương trùng "In Progress": nút bấm sẽ bị nhầm với trạng thái. Em giữ petrol; anh/chị chốt ở Q18 |
+| Màu trạng thái | Bảng "Status Page": xanh lá vận hành / đỏ sự cố / amber bảo trì | ✅ Khớp với bảng trạng thái §8.2 | |
+| Pattern | "Enterprise Gateway" (landing page: hero, logo khách hàng, Contact Sales) | ❌ Bỏ qua | Pattern cho trang marketing, không áp dụng cho app nội bộ |
+| Motion | GSAP scroll reveal | ❌ Bỏ qua | App vận hành không cần hiệu ứng khi cuộn; chỉ dùng transition 150–200ms cho phản hồi thao tác, tôn trọng `prefers-reduced-motion` |
+| Chart | **Bullet chart** cho KPI so với ngưỡng | ✅ Dùng cho widget "License còn trống theo SKU" (đã dùng / tổng); luôn kèm số và bảng dự phòng | |
+| UX | Xác nhận hành động huỷ/không hoàn tác; toast khi thành công; bulk action (cột checkbox + action bar) | ✅ Áp dụng; bulk action cho Đối soát ("Đánh dấu đã biết" nhiều dòng) | |
+| shadcn | `Table` ngữ nghĩa (thead/tbody); DataTable = shadcn Table + TanStack Table | ✅ Áp dụng | |
+
+Checklist trước khi bàn giao (từ skill): không dùng emoji làm icon (dùng Lucide), có `cursor-pointer`, transition hover 150–300ms,
+contrast ≥ 4.5:1, focus nhìn thấy rõ, tôn trọng `prefers-reduced-motion`, không vỡ layout ở các mốc 1024/1440px.
 
 ### 8.1 Ý tưởng: "Bàn điều phối" — mỗi nhân viên là một **đường ray hệ thống**
 Câu hỏi cốt lõi của team mỗi ngày: *"Người này đã khớp ở mọi hệ thống chưa?"*. Vì vậy chi tiết đáng nhớ duy nhất
@@ -386,7 +406,7 @@ kiểm tra contrast ≥ 4.5:1 (chữ) / 3:1 (icon, viền) ở cả hai chế đ
 
 ### 8.4 Layout & mật độ
 - Sidebar 240px (thu gọn còn 56px), nhóm theo module; topbar 48px (tìm kiếm Mã NV toàn cục `Ctrl+K`, theme, user).
-- Spacing gốc 4px; bảng có 2 mật độ: **Gọn** (dòng 32px, mặc định) / **Thoáng** (40px).
+- Spacing gốc 4px; bảng có 2 mật độ: **Gọn** (dòng 36px, mặc định – theo `ui-ux-pro-max`) / **Thoáng** (44px).
 - Căn trái toàn bộ; số căn phải; cột định danh cố định bên trái khi cuộn ngang.
 - Radius phân cấp: 4px (ô, badge), 6px (input, nút), 8px (dialog, panel) — không dùng một radius cho mọi thứ.
 
