@@ -1,0 +1,67 @@
+"""Permissions and navigation owned by the platform core."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.modules.manifest import DashboardWidget, ModuleManifest, NavItem, Permission
+
+DASHBOARD_VIEW = "core.dashboard.view"
+CONNECTIONS_VIEW = "core.connections.view"
+CONNECTIONS_MANAGE = "core.connections.manage"
+CONNECTIONS_TEST = "core.connections.test"
+AUDIT_VIEW = "core.audit.view"
+RBAC_MANAGE = "core.rbac.manage"
+
+
+async def _connections_widget(session: AsyncSession) -> dict[str, Any]:
+    from app.core.dashboard.widgets import connections_status
+
+    return await connections_status(session)
+
+
+async def _expiring_widget(session: AsyncSession) -> dict[str, Any]:
+    from app.core.dashboard.widgets import expiring_secrets
+
+    return await expiring_secrets(session)
+
+
+CORE_MANIFEST = ModuleManifest(
+    id="core",
+    name="Hệ thống",
+    description="Nền tảng dùng chung: kết nối, phân quyền, nhật ký.",
+    permissions=[
+        Permission(DASHBOARD_VIEW, "Xem trang tổng quan", ("helpdesk", "viewer")),
+        Permission(CONNECTIONS_VIEW, "Xem danh sách kết nối hệ thống", ("helpdesk",)),
+        Permission(CONNECTIONS_MANAGE, "Thêm, sửa, xoá kết nối và nhập secret"),
+        Permission(CONNECTIONS_TEST, "Kiểm tra kết nối", ("helpdesk",)),
+        Permission(AUDIT_VIEW, "Xem nhật ký kiểm tra"),
+        Permission(RBAC_MANAGE, "Quản lý người dùng và phân quyền"),
+    ],
+    dashboard_widgets=[
+        DashboardWidget(
+            "core.connections",
+            "Trạng thái kết nối",
+            "connections",
+            CONNECTIONS_VIEW,
+            _connections_widget,
+            order=10,
+        ),
+        DashboardWidget(
+            "core.expiring_secrets",
+            "Secret / chứng chỉ sắp hết hạn",
+            "expiring_secrets",
+            CONNECTIONS_VIEW,
+            _expiring_widget,
+            order=20,
+        ),
+    ],
+    nav=[
+        NavItem("Tổng quan", "/", "layout-dashboard", DASHBOARD_VIEW),
+        NavItem("Kết nối hệ thống", "/settings/connections", "plug", CONNECTIONS_VIEW),
+        NavItem("Nhật ký kiểm tra", "/settings/audit", "scroll-text", AUDIT_VIEW),
+        NavItem("Người dùng & quyền", "/settings/access", "shield-check", RBAC_MANAGE),
+    ],
+)
