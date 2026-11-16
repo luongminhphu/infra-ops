@@ -22,6 +22,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with: { python-version: "3.13" }
+      - name: LibreOffice for PDF rendering tests
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-writer-nogui fonts-dejavu
       - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --check .

@@ -27,6 +27,9 @@ services:
     env_file: .env
     environment:
       INFRAOPS_DATABASE_URL: postgresql+asyncpg://infraops:${POSTGRES_PASSWORD:-infraops}@db:5432/infraops
+    volumes:
+      - files:/data/files          # templates, generated PDFs, signed scans
+      # - ./fonts:/usr/share/fonts/custom:ro   # optional: company fonts (e.g. Aptos)
     depends_on:
       migrate: { condition: service_completed_successfully }
 
@@ -46,3 +49,4 @@ services:
 
 volumes:
   db-data:
+  files:

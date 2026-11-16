@@ -730,3 +730,18 @@ Cần chỉnh nhẹ trong file mẫu khi làm Phase 3: bảng thiết bị hiệ
 - Lưu snapshot mỗi lần đồng bộ (thủ công + định kỳ) để so sánh và xem lịch sử.
 - Màn hình **Đối soát theo Mã NV** (SDP request · Tài sản · BioStar) với quy tắc phát hiện lệch, bộ lọc, chi tiết, export Excel/CSV.
 - Màn hình **Request RTR** (đã parse, lỗi parse), **Đồng bộ dữ liệu**, **Cấu hình module**.
+
+---
+
+## 14. Phase 3 – ghi chú triển khai (17/11/2026)
+
+- Mẫu Bàn giao / Thu hồi được chuyển từ file Word của công ty (giữ nguyên bố cục) bằng
+  `backend/scripts/build_form_templates.py`: số biên bản dưới tiêu đề header, bảng thiết bị 1 dòng lặp
+  (không giới hạn số dòng), cột **Tình trạng** trên Biên bản Thu hồi (Tốt / Hỏng / Thiếu phụ kiện / Chưa thu hồi),
+  checklist Nội dung B và phần mềm in sẵn ☑ / ☐, bảng cố định độ rộng, dòng không bị tách giữa 2 trang.
+- Số biên bản cấp khi **chốt** (không cấp cho bản nháp) → không có số bị bỏ trống do nháp bị huỷ.
+- Mẫu dùng font **Aptos** (Microsoft). Trên container, PDF dùng font thay thế; để giống hệt bản Word cần cung cấp
+  file font Aptos (Helm `fontsSecret` / thư mục `fonts` trong compose).
+- **Cần kiểm tra với SDP 16020 thật**: API đính kèm file vào request. Mặc định dùng
+  `POST /api/v3/requests/{request_id}/_uploads` với field `filename`; đổi được trong Cấu hình module
+  nếu bản SDP dùng đường dẫn/field khác.

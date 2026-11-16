@@ -36,6 +36,20 @@ manifest = ModuleManifest(
 )
 ```
 
+Printable records are declared as `DocumentKind`s (see `app/modules/lifecycle/documents.py`):
+
+```python
+RENEWAL = DocumentKind(
+    key="assets.renewal", title="Phiếu gia hạn", prefix="GH",
+    default_template=Path(__file__).parent / "templates/renewal.docx",
+    data_model=RenewalData, build_context=lambda data, number: {...}, subject=lambda d: (d.id, d.name, None),
+    placeholders=[PlaceholderDoc("number", "Số phiếu")], sample_data={...},
+    view_permission="assets.renewal.view", create_permission="assets.renewal.manage",
+    manage_permission="assets.renewal.manage",
+)
+# manifest: document_kinds=[RENEWAL] – core provides templates, numbering, PDF, signed upload, APIs.
+```
+
 Module settings (mappings, thresholds) are a pydantic model with defaults, persisted by core:
 
 ```python
