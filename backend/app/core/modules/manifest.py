@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 SystemRole = Literal["admin", "helpdesk", "viewer"]
@@ -65,6 +67,35 @@ class ScheduledTask:
 
 
 @dataclass(frozen=True)
+class PlaceholderDoc:
+    name: str
+    description: str
+    example: str = ""
+
+
+@dataclass(frozen=True)
+class DocumentKind:
+    """A printable record type rendered from a DOCX template (docxtpl / Jinja2).
+
+    ``data_model`` validates what users enter; ``build_context`` turns it into template variables;
+    ``subject`` returns (subject key, label, external reference) for listing and search.
+    """
+
+    key: str
+    title: str
+    prefix: str
+    default_template: Path
+    data_model: type[BaseModel]
+    build_context: Callable[[Any, str], dict[str, Any]]
+    subject: Callable[[Any], tuple[str | None, str, str | None]]
+    placeholders: Sequence[PlaceholderDoc]
+    sample_data: dict[str, Any]
+    view_permission: str
+    create_permission: str
+    manage_permission: str
+
+
+@dataclass(frozen=True)
 class ModuleManifest:
     id: str
     name: str
@@ -78,12 +109,16 @@ class ModuleManifest:
     migrations_branch: str | None = None
     dashboard_widgets: Sequence[DashboardWidget] = ()
     scheduled_tasks: Sequence[ScheduledTask] = ()
+    document_kinds: Sequence[DocumentKind] = ()
     tags: Sequence[str] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         for perm in self.permissions:
             if not perm.code.startswith(f"{self.id}."):
                 raise ValueError(f"Permission {perm.code!r} must be prefixed with module id {self.id!r}")
+        for kind in self.document_kinds:
+            if not kind.key.startswith(f"{self.id}."):
+                raise ValueError(f"Document kind {kind.key!r} must be prefixed with module id {self.id!r}")
         for task in self.scheduled_tasks:
             if not task.key.startswith(f"{self.id}."):
                 raise ValueError(f"Scheduled task {task.key!r} must be prefixed with module id {self.id!r}")

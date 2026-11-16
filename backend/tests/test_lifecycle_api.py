@@ -180,6 +180,20 @@ async def test_end_to_end_sync_and_reconciliation(admin, configured, respx_mock)
     assert full["fields"]["manager_employee_id"] == "001200"
     assert "Mã nhân viên: 003551" in full["description_text"]
 
+    # Document prefill from the RTR request + latest asset snapshot
+    pre = (
+        await admin.get(
+            "/api/lifecycle/documents/prefill", params={"kind": "return", "employee_id": "002100"}
+        )
+    ).json()
+    assert pre["employee"]["full_name"] == "Phạm Thị Bình" and pre["request_id"] == "1002"
+    assert pre["employee"]["department"].startswith("Kế Toán")
+    assert [a["tag"] for a in pre["assets"]] == ["LT0123"] and pre["assets"][0]["condition"] == "good"
+    missing = await admin.get(
+        "/api/lifecycle/documents/prefill", params={"kind": "handover", "employee_id": "777777"}
+    )
+    assert missing.status_code == 404
+
     # Second sync: unchanged requests are not fetched again
     calls = routes["detail"].call_count
     summary = await _sync()

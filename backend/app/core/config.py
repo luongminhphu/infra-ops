@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     local_lockout_minutes: int = 15
     local_min_password_length: int = 12
 
+    # Files (documents, templates, signed scans)
+    storage_dir: str = "./var/files"
+    max_upload_mb: int = 20
+    soffice_path: str = "soffice"
+    pdf_timeout_seconds: int = 90
+
     # Operations
     secret_expiry_warn_days: int = 30
     connector_timeout_seconds: float = 20.0

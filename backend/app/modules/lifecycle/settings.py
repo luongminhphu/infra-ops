@@ -75,6 +75,9 @@ class LifecycleSettings(BaseModel):
 
     # Documents (Phase 3)
     reviewer_name: str = Field("", max_length=200)
+    # SDP attachment upload (verify against your SDP build; editable without code change)
+    sdp_attach_path: str = Field("/api/v3/requests/{request_id}/_uploads", max_length=200)
+    sdp_attach_field: str = Field("filename", max_length=50)
 
     def label(self, field: str) -> str:
         return self.field_labels.get(field) or DEFAULT_LABELS[field]

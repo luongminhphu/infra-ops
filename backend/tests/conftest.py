@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -27,6 +28,7 @@ os.environ.update(
         "INFRAOPS_SIGNING_SECRET": "x" * 40,
         "INFRAOPS_LOG_JSON": "false",
         "INFRAOPS_LOG_LEVEL": "WARNING",
+        "INFRAOPS_STORAGE_DIR": tempfile.mkdtemp(prefix="infraops-test-files-"),
     }
 )
 

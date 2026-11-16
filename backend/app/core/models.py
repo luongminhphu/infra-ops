@@ -3,19 +3,25 @@
 from app.core.audit.models import AuditLog
 from app.core.auth.models import User, UserSession
 from app.core.connections.models import ConnectionProfile, Credential
+from app.core.documents.models import Document, DocumentSequence, TemplateVersion
 from app.core.rbac.models import KnownPermission, Role, RolePermission, UserRole
 from app.core.scheduler.models import ScheduledTaskRow
 from app.core.settings.models import ModuleSetting
+from app.core.storage.models import StoredFile
 
 __all__ = [
     "AuditLog",
     "ConnectionProfile",
     "Credential",
+    "Document",
+    "DocumentSequence",
     "KnownPermission",
     "ModuleSetting",
     "Role",
     "RolePermission",
     "ScheduledTaskRow",
+    "StoredFile",
+    "TemplateVersion",
     "User",
     "UserRole",
     "UserSession",
