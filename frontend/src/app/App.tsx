@@ -1,0 +1,67 @@
+import { createBrowserRouter, RouterProvider, type RouteObject } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "sonner";
+import { ApiError } from "@/core/api/client";
+import { AuthProvider } from "@/core/auth/AuthProvider";
+import { LoginPage } from "@/core/auth/LoginPage";
+import { RequireAuth, RequirePermission } from "@/core/auth/guards";
+import { AppShell } from "@/core/layout/AppShell";
+import { LiveRegion } from "@/core/ui/live-region";
+import { DashboardPage } from "@/core/pages/DashboardPage";
+import { ConnectionsPage } from "@/core/pages/connections/ConnectionsPage";
+import { ConnectionDetailPage } from "@/core/pages/connections/ConnectionDetailPage";
+import { AuditPage } from "@/core/pages/AuditPage";
+import { AccessPage } from "@/core/pages/access/AccessPage";
+import { NotFoundPage } from "@/core/pages/NotFoundPage";
+import { modules } from "@/modules";
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (count, error) => !(error instanceof ApiError && error.status >= 400 && error.status < 500) && count < 2,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+const coreRoutes: RouteObject[] = [
+  { index: true, element: <RequirePermission permission="core.dashboard.view"><DashboardPage /></RequirePermission> },
+  { path: "settings/connections", element: <RequirePermission permission="core.connections.view"><ConnectionsPage /></RequirePermission> },
+  { path: "settings/connections/:id", element: <RequirePermission permission="core.connections.view"><ConnectionDetailPage /></RequirePermission> },
+  { path: "settings/audit", element: <RequirePermission permission="core.audit.view"><AuditPage /></RequirePermission> },
+  { path: "settings/access", element: <RequirePermission permission="core.rbac.manage"><AccessPage /></RequirePermission> },
+];
+
+const router = createBrowserRouter([
+  { path: "/login", element: <LoginPage /> },
+  {
+    path: "/",
+    element: (
+      <RequireAuth>
+        <AppShell />
+      </RequireAuth>
+    ),
+    children: [...coreRoutes, ...modules.flatMap((m) => m.routes), { path: "*", element: <NotFoundPage /> }],
+  },
+]);
+
+export function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <RouterProvider router={router} />
+        <LiveRegion />
+        <Toaster
+          position="bottom-right"
+          closeButton
+          toastOptions={{
+            classNames: {
+              toast: "!bg-surface !text-ink !border-line !font-sans",
+              description: "!text-muted",
+            },
+          }}
+        />
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+}
