@@ -94,6 +94,21 @@ class BioStarClient:
             )
         return data
 
+    async def list_users(self, page_size: int = 500, max_rows: int = 50000) -> list[dict[str, Any]]:
+        """All BioStar users, paging with limit/offset until ``UserCollection.total`` is reached."""
+        rows: list[dict[str, Any]] = []
+        offset = 0
+        while len(rows) < max_rows:
+            data = await self.get("/api/users", {"limit": page_size, "offset": offset})
+            coll = data.get("UserCollection") or {}
+            page = coll.get("rows") or []
+            rows.extend(page)
+            total = int(coll.get("total") or 0)
+            offset += len(page)
+            if not page or offset >= total:
+                break
+        return rows
+
     @staticmethod
     def _json(resp: httpx.Response) -> dict[str, Any]:
         try:

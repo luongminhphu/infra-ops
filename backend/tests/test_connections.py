@@ -199,5 +199,5 @@ async def test_audit_filters_and_pagination(admin) -> None:  # type: ignore[no-u
 async def test_dashboard_widgets(admin) -> None:  # type: ignore[no-untyped-def]
     widgets = (await admin.get("/api/core/dashboard")).json()
     keys = [w["key"] for w in widgets]
-    assert keys[:2] == ["core.connections", "core.expiring_secrets"]
+    assert {"core.connections", "core.expiring_secrets", "lifecycle.reconciliation"} <= set(keys)
     assert all(w["error"] is None for w in widgets)
