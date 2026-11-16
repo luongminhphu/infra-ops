@@ -7,6 +7,12 @@ import { useAuth } from "@/core/auth/AuthProvider";
 import { EmptyState, ErrorState, PageHeader, Panel, Skeleton } from "@/core/ui/feedback";
 import { StatusBadge, type Status } from "@/core/ui/status";
 import { formatDate, formatRelative, pluralDays } from "@/core/lib/format";
+import { modules } from "@/modules";
+
+const moduleWidgets = Object.assign({}, ...modules.map((m) => m.widgets ?? {})) as Record<
+  string,
+  React.ComponentType<{ data: unknown }>
+>;
 
 interface ConnItem {
   id: string;
@@ -128,13 +134,18 @@ export function DashboardPage() {
       </div>
       <div className="grid gap-4 xl:grid-cols-2">
         {q.data?.map((w) => (
-          <Panel key={w.key} title={w.title} bodyClassName="py-1">
+          <Panel key={w.key} title={w.title} bodyClassName="py-1" className={w.kind === "lifecycle_reconciliation" ? "xl:col-span-2" : undefined}>
             {w.error ? (
               <ErrorState error={new Error(w.error)} />
             ) : w.kind === "connections" ? (
               <ConnectionsWidget data={w.data as { items: ConnItem[] }} />
             ) : w.kind === "expiring_secrets" ? (
               <ExpiringWidget data={w.data as { warn_days: number; items: ExpItem[] }} />
+            ) : moduleWidgets[w.kind] ? (
+              (() => {
+                const Widget = moduleWidgets[w.kind]!;
+                return <Widget data={w.data} />;
+              })()
             ) : (
               <p className="py-4 text-sm text-muted">Widget “{w.kind}” chưa có giao diện.</p>
             )}

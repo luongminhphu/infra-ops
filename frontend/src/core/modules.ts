@@ -1,3 +1,4 @@
+import type { ComponentType } from "react";
 import type { RouteObject } from "react-router-dom";
 
 /**
@@ -8,4 +9,6 @@ import type { RouteObject } from "react-router-dom";
 export interface FrontendModule {
   id: string;
   routes: RouteObject[];
+  /** Renderers for dashboard widgets this module declares in its backend manifest, keyed by `kind`. */
+  widgets?: Record<string, ComponentType<{ data: unknown }>>;
 }

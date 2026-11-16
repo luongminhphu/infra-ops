@@ -211,17 +211,20 @@ def reconcile(
         )
 
         # --- cells -------------------------------------------------------
-        kind_label = {
-            "onboard": "Onboard",
-            "offboard": "Offboard",
-            "transfer": "Thuyên chuyển",
-            "probation_to_official": "Thử việc → chính thức",
-        }.get(row.kind or "", "")
+        # The kind/date is its own column in the UI; this cell says what SDP holds for the person.
+        if reqs and latest is None:
+            sdp_label = "RTR chưa phân loại"
+        elif reqs and users:
+            sdp_label = "RTR + user"
+        elif reqs:
+            sdp_label = "RTR"
+        elif users:
+            sdp_label = "User SDP"
+        else:
+            sdp_label = "Không có"
         row.cells["sdp"] = {
             "status": "match" if (reqs or users) else "pending",
-            "label": f"{kind_label} {_fmt(row.effective_date)}".strip()
-            if latest
-            else ("Có user" if users else "Không có"),
+            "label": sdp_label,
             "detail": f"{len(reqs)} request RTR · {len(users)} user SDP",
         }
         if not sources.get("assets"):

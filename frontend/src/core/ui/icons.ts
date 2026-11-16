@@ -10,6 +10,8 @@ import {
   Users,
   FileText,
   GitCompareArrows,
+  RefreshCw,
+  Settings,
   Workflow,
 } from "lucide-react";
 
@@ -25,6 +27,8 @@ const ICONS: Record<string, LucideIcon> = {
   "file-text": FileText,
   "git-compare-arrows": GitCompareArrows,
   workflow: Workflow,
+  "refresh-cw": RefreshCw,
+  settings: Settings,
 };
 
 export function iconFor(name: string): LucideIcon {

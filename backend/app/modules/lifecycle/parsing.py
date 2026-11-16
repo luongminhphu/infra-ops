@@ -120,6 +120,6 @@ def parse_rtr_description(description_html: str, settings: LifecycleSettings) ->
             out.errors.append(f"Thiếu “{settings.label(key)}” trong nội dung request.")
     if out.change_type_raw and out.kind is None:
         out.errors.append(
-            f"Chưa xác định được loại biến động “{out.change_type_raw}”. Gán trong Cấu hình module."
+            f"Chưa phân loại được loại biến động “{out.change_type_raw}”. Gán ở Cấu hình module → Loại biến động."
         )
     return out

@@ -10,6 +10,7 @@ import { Button } from "@/core/ui/button";
 import { DataTable } from "@/core/ui/data-table";
 import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input, Select } from "@/core/ui/field";
+import { DateInput } from "@/core/ui/date-input";
 import { StatusBadge, type Status } from "@/core/ui/status";
 import { formatDateTime } from "@/core/lib/format";
 
@@ -204,10 +205,10 @@ export function AuditPage() {
           </Select>
         </Field>
         <Field label="Từ ngày">
-          <Input type="date" value={filters.from} onChange={(e) => setFilter("from", e.target.value)} />
+          <DateInput value={filters.from} onChange={(v) => setFilter("from", v)} className="w-full tabular" />
         </Field>
         <Field label="Đến ngày">
-          <Input type="date" value={filters.to} onChange={(e) => setFilter("to", e.target.value)} />
+          <DateInput value={filters.to} onChange={(v) => setFilter("to", v)} className="w-full tabular" />
         </Field>
       </form>
       {activeFilters && (
