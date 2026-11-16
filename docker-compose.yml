@@ -30,6 +30,15 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
 
+  worker:
+    build: ./backend
+    command: ["python", "-m", "app.worker"]
+    env_file: .env
+    environment:
+      INFRAOPS_DATABASE_URL: postgresql+asyncpg://infraops:${POSTGRES_PASSWORD:-infraops}@db:5432/infraops
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
   web:
     build: ./frontend
     ports: ["8080:8080"]

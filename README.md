@@ -18,9 +18,9 @@ Tài liệu: [kiến trúc](docs/architecture.md) · [thêm module](docs/adding-
 | Phase | Nội dung | Trạng thái |
 |---|---|---|
 | 0 | Hiện trạng, kiến trúc, câu hỏi mở | Xong |
-| 1 | Platform Core: module, đăng nhập, RBAC, kết nối hệ thống (SDP, BioStar), audit, design system | **Xong** |
-| 2 | SDP + BioStar: đọc dữ liệu, tra cứu theo Mã NV, đối soát | Tiếp theo |
-| 3 | Biên bản Bàn giao / Thu hồi theo mẫu thật | |
+| 1 | Platform Core: module, đăng nhập, RBAC, kết nối hệ thống (SDP, BioStar), audit, design system | Xong |
+| 2 | SDP + BioStar: đọc request RTR, user, tài sản, user BioStar; đối soát theo Mã NV; export; bộ lập lịch nền | **Xong** |
+| 3 | Biên bản Bàn giao / Thu hồi theo mẫu thật | Tiếp theo |
 | 4–5 | Workflow Onboard / Offboard (SDP + BioStar) | |
 | sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
 
@@ -43,7 +43,10 @@ export INFRAOPS_AUTH_MODE=dev INFRAOPS_BOOTSTRAP_ADMIN_UPNS=admin@congty.local I
 uv run alembic upgrade heads
 uv run uvicorn app.asgi:app --reload --port 8000
 
-# 3. Frontend (terminal khác)
+# 3. Worker – chạy tác vụ nền như đồng bộ SDP/BioStar (terminal khác, cùng biến môi trường)
+uv run python -m app.worker
+
+# 4. Frontend (terminal khác)
 cd frontend
 npm install
 npm run dev            # http://localhost:5173, /api được proxy tới :8000
@@ -77,7 +80,8 @@ docker compose up -d --build
 docker compose run --rm api python -m app.cli create-admin --username admin --name "Quản trị"
 ```
 
-Mở http://<máy-chủ>:8080 và đăng nhập bằng tài khoản vừa tạo.
+Mở http://<máy-chủ>:8080 và đăng nhập bằng tài khoản vừa tạo. Compose chạy 4 dịch vụ: `db`, `api`,
+`worker` (tác vụ nền: đồng bộ SDP/BioStar) và `web`.
 
 ### Kubernetes (Rancher)
 
@@ -85,7 +89,7 @@ Mở http://<máy-chủ>:8080 và đăng nhập bằng tài khoản vừa tạo.
 2. Tạo Secret `infra-ops-secrets` gồm `INFRAOPS_DATABASE_URL`, `INFRAOPS_MASTER_KEYS`,
    `INFRAOPS_SIGNING_SECRET` (và `INFRAOPS_OIDC_CLIENT_SECRET` khi bật SSO).
 3. `helm upgrade --install infra-ops deploy/helm/infra-ops -f my-values.yaml`
-   (migration chạy tự động bằng Job trước mỗi lần cài/nâng cấp).
+   (migration chạy tự động bằng Job trước mỗi lần cài/nâng cấp; chart tạo 3 Deployment: api, worker, web).
 4. Tạo quản trị viên đầu tiên:
    `kubectl exec -it deploy/infra-ops-api -- python -m app.cli create-admin --username admin`.
 5. Nếu SDP/BioStar dùng chứng chỉ CA nội bộ: tạo ConfigMap có key `ca.crt` (bundle CA đầy đủ)
@@ -113,6 +117,14 @@ Vai trò được gán hoàn toàn trong app (Người dùng & quyền).
 2. Đăng nhập SDP bằng technician đó → avatar → **Generate API Key** (đặt ngày hết hạn).
 3. Trong infra-ops: Base URL `https://sdp.congty.local:8080`, phương thức **API key / Auth token**,
    nhập ngày hết hạn để Dashboard cảnh báo trước.
+
+### Module Vòng đời nhân sự – đối soát
+1. Tạo 2 kết nối trên (ít nhất credential **Read**).
+2. **Vòng đời nhân sự → Cấu hình module**: chọn kết nối, kiểm tra tên requester RTR, nhãn trong nội dung
+   request, trường Mã NV của user SDP (mặc định `employee_id`; đổi nếu LDAP import vào trường khác), loại tài sản.
+3. **Đồng bộ dữ liệu → Đồng bộ ngay** (worker phải đang chạy), sau đó gán các giá trị "Loại biến động" chưa
+   phân loại ở Cấu hình module.
+4. Xem **Đối soát theo Mã NV**. Worker tự đồng bộ mỗi 30 phút.
 
 ### Suprema BioStar 2
 1. Tạo tài khoản BioStar riêng: Read = quyền xem User/Access Group; Write = Operator/Administrator có quyền quản lý User.

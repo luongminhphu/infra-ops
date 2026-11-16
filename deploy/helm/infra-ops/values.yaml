@@ -24,6 +24,13 @@ api:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { memory: 512Mi }
 
+worker:
+  # Runs scheduled tasks (e.g. SDP/BioStar sync). Several replicas are safe (tasks are leased).
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 192Mi }
+    limits: { memory: 512Mi }
+
 web:
   replicas: 1
   resources:

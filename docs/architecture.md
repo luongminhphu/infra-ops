@@ -31,12 +31,30 @@ infra-ops is an internal platform for IT Infrastructure operations. It is built 
 | Secrets | `core/secrets` | AES-256-GCM, versioned keyring (`INFRAOPS_MASTER_KEYS`), AAD binds ciphertext to `credential:<profile>:<purpose>`. |
 | Connections | `core/connections` | Connection Profiles (non-secret config, validated by the connector schema) + Credentials per purpose (`read` / `write`). `open_connection()` is the only way modules get credentials. |
 | Connectors | `core/connectors` | Plugin registry. Each connector declares config schema, auth types and `test_connection()` (DNS → TLS → auth → real permission probes). Shared HTTP client: timeouts, retry with backoff + jitter, `Retry-After`. |
-| Dashboard | `core/dashboard` | Widgets declared by manifests, filtered by permission; a failing widget does not break the page. |
+| Dashboard | `core/dashboard` | Widgets declared by manifests, filtered by permission; a failing widget does not break the page. Modules provide the renderer for their widget `kind` in the frontend. |
+| Module settings | `core/settings` | Typed (pydantic) per-module configuration in `core_module_setting`; invalid stored values fall back to defaults; changes audited as diffs. |
+| Scheduler | `core/scheduler` + `app/worker.py` | `ScheduledTask`s declared in manifests; rows in `core_scheduled_task`; the worker leases due tasks with `FOR UPDATE SKIP LOCKED` + `lease_until` (safe with several replicas, crash-tolerant). "Run now" = set `next_run_at`. No Redis. |
 | Logging | `core/logging.py` | structlog JSON, correlation ID (`X-Request-ID`), secret redaction. |
 
-Planned core services (later phases): workflow engine (Job/Step, Postgres-backed queue with
-`FOR UPDATE SKIP LOCKED`), scheduler, document templates (docxtpl + LibreOffice), file storage,
-notifications.
+Planned core services (later phases): workflow engine (Job/Step, reusing the scheduler's leasing
+pattern), document templates (docxtpl + LibreOffice), file storage, notifications.
+
+## Module 1 – IT Lifecycle (Phase 2)
+
+```
+worker ──every 30 min / "Sync now"──► lifecycle.sync
+   SDP (Read): RTR requests (requester filter, look-back) → detail only when changed → parser
+               users (employee-ID field configurable) · assets (product types configurable)
+   BioStar (Read): users (paged)
+   → lifecycle_snapshot (per run)  → reconcile() pure rules → lifecycle_recon_row (per run)
+API/UI: latest successful run · filters · detail · acknowledge (lifecycle_issue_ack) · CSV/XLSX
+```
+
+- A source that cannot be read marks the run *partial*; rules depending on it are skipped.
+- Request descriptions are parsed with configurable labels; change types map to
+  `onboard | probation_to_official | transfer | offboard` (explicit mapping first, keyword fallback).
+- Assets are owned by SDP users; the owner is linked to an employee via the SDP user's employee-ID
+  field, falling back to a unique name match (flagged in the UI).
 
 ## Module boundaries
 
@@ -62,13 +80,13 @@ See [adding-a-module.md](adding-a-module.md).
 ## Deployment
 
 - `docker-compose.yml` for a single host; `deploy/helm/infra-ops` for Kubernetes (Rancher):
-  API + web Deployments, a pre-install/upgrade migration Job, Ingress, optional internal CA bundle.
+  API, worker and web Deployments, a pre-install/upgrade migration Job, Ingress, optional internal CA bundle.
 - Health: `/health/live` (process) and `/health/ready` (database).
 
 ## Integration status
 
 | System | Status |
 |---|---|
-| ServiceDesk Plus (on-prem authtoken / cloud Zoho OAuth) | Connector + test (Phase 1). Data adapters Phase 2. |
-| Suprema BioStar 2 | Connector + test with session handling (Phase 1). Data adapters Phase 2. |
+| ServiceDesk Plus (on-prem authtoken / cloud Zoho OAuth) | Connector + test (Phase 1); read requests/users/assets (Phase 2). |
+| Suprema BioStar 2 | Connector + test with session handling (Phase 1); read users (Phase 2). |
 | Microsoft Entra ID, Active Directory, Exchange hybrid | Deferred by decision (see phase-0-proposal §11–12). Registry ready. |

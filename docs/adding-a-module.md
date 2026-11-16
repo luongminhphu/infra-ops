@@ -29,12 +29,29 @@ manifest = ModuleManifest(
     nav=[NavItem("Gia hạn dịch vụ", "/assets/renewals", "calendar-clock", "assets.renewal.view")],
     connectors_used=["sdp"],               # shown as "Dùng bởi" on connection profiles
     dashboard_widgets=[],                  # DashboardWidget(key, title, kind, permission, load)
+    scheduled_tasks=[                      # run by the worker: python -m app.worker
+        ScheduledTask("assets.sync", "Đọc lịch gia hạn", handler=sync_renewals, interval_seconds=3600),
+    ],
     migrations_branch="assets",
 )
 ```
 
+Module settings (mappings, thresholds) are a pydantic model with defaults, persisted by core:
+
+```python
+from app.core.settings.service import load_settings, save_settings
+
+class AssetsSettings(BaseModel):
+    warn_days: int = Field(30, ge=1, le=365)
+
+settings = await load_settings(session, "assets", "main", AssetsSettings)
+await save_settings(session, user.actor, "assets", "main", AssetsSettings, body)  # validated + audited
+```
+
 Rules:
-- Permission codes must start with the module id.
+- Permission codes and scheduled task keys must start with the module id.
+- Never call external systems inside an API request for bulk reads: schedule a task and let the
+  UI request a run (`core.scheduler.service.request_run`).
 - Import only from `app.core.*`. Get external-system access with
   `app.core.connections.service.open_connection(session, "sdp", Purpose.READ)`.
 - Protect endpoints with `Depends(require("assets.renewal.view"))`.
@@ -74,7 +91,8 @@ frontend/src/modules/assets/
 └── pages/…
 ```
 
-Register it in `frontend/src/modules/index.ts`. Navigation entries come from the backend manifest,
+Register it in `frontend/src/modules/index.ts`. To render a dashboard widget declared in the
+manifest, add `widgets: { "<kind>": Component }` to the module object. Navigation entries come from the backend manifest,
 so the sidebar updates automatically. Use core components (`@/core/ui/*`) and tokens only – see
 `docs/design-system.md`. Wrap pages in `<RequirePermission permission="assets.renewal.view">`.
 If the backend icon name is new, map it in `frontend/src/core/ui/icons.ts`.
