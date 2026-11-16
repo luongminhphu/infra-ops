@@ -67,3 +67,13 @@ def test_load_lifecycle_manifest() -> None:
 def test_load_manifest_rejects_bad_ids(bad: str) -> None:
     with pytest.raises((ValueError, ModuleNotFoundError)):
         load_manifest(bad)
+
+
+def test_scheduled_task_must_be_prefixed() -> None:
+    from app.core.modules.manifest import ScheduledTask
+
+    async def noop(_):  # type: ignore[no-untyped-def]
+        return {}
+
+    with pytest.raises(ValueError):
+        ModuleManifest(id="a", name="A", scheduled_tasks=[ScheduledTask("b.sync", "x", noop)])

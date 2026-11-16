@@ -7,6 +7,7 @@ import type { ConnectionProfile, ConnectorType, Purpose } from "@/core/api/types
 import { Button } from "@/core/ui/button";
 import { Dialog } from "@/core/ui/dialog";
 import { Field, Input, Select, Textarea } from "@/core/ui/field";
+import { DateInput } from "@/core/ui/date-input";
 import { announce } from "@/core/ui/live-region";
 import { connectionsKey } from "./api";
 
@@ -134,7 +135,7 @@ export function CredentialDialog({
           label="Ngày hết hạn"
           hint={authType === "certificate" ? "Để trống để tự đọc từ chứng chỉ." : "Dashboard sẽ cảnh báo trước khi secret hết hạn."}
         >
-          <Input type="date" value={expires} onChange={(e) => setExpires(e.target.value)} className="w-48" />
+          <DateInput value={expires} onChange={setExpires} />
         </Field>
         <p className="flex items-start gap-2 rounded-sm bg-surface-2 px-2.5 py-2 text-sm text-muted">
           <LockKeyhole className="mt-0.5 size-4 shrink-0" aria-hidden="true" />

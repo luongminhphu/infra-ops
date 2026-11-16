@@ -101,6 +101,37 @@ class SdpClient:
         )
         return self._parse(resp)
 
+    async def list_all(
+        self,
+        path: str,
+        collection: str,
+        *,
+        search_criteria: list[dict[str, Any]] | dict[str, Any] | None = None,
+        sort_field: str | None = None,
+        fields_required: list[str] | None = None,
+        page_size: int = 100,
+        max_rows: int = 20000,
+    ) -> list[dict[str, Any]]:
+        """Read every page of a v3 list endpoint (``list_info.has_more_rows``)."""
+        rows: list[dict[str, Any]] = []
+        start = 1
+        while len(rows) < max_rows:
+            info: dict[str, Any] = {"row_count": page_size, "start_index": start}
+            if search_criteria:
+                info["search_criteria"] = search_criteria
+            if sort_field:
+                info["sort_field"] = sort_field
+                info["sort_order"] = "desc"
+            if fields_required:
+                info["fields_required"] = fields_required
+            data = await self.get(path, info)
+            page = data.get(collection) or []
+            rows.extend(page)
+            if not (data.get("list_info") or {}).get("has_more_rows") or not page:
+                break
+            start += len(page)
+        return rows[:max_rows]
+
     @staticmethod
     def _parse(resp: httpx.Response) -> dict[str, Any]:
         try:

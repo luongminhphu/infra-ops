@@ -85,6 +85,15 @@ See [Verifying contrast](#verifying-contrast).
 | Menu | `ui/menu.tsx` | Esc / outside click / arrow keys |
 | Panel, PageHeader, EmptyState, ErrorState, Skeleton, LoadingRows, Mono, Kbd | `ui/feedback.tsx` | |
 | LiveRegion / announce() | `ui/live-region.tsx` | One polite live region per app |
+| DateInput | `ui/date-input.tsx` | dd/MM/yyyy text entry independent of browser locale; emits ISO dates |
+
+### Reconciliation grid (lifecycle)
+
+- One row per employee; system columns in rail order (SDP · Tài sản · BioStar; Entra/AD/M365 later).
+- A system cell with an open issue renders as **Lệch** (`mismatch`: triangle icon, raspberry ring) – never
+  colour alone. Unread systems render as *Chưa đọc được* (`skipped`) rather than as discrepancies.
+- Severity: Cao (`failed`), Trung bình (`mismatch`), Thấp (`warning`); count + word in the badge.
+- Rows sorted by severity; detail opens in a side panel (non-modal) so the list stays usable.
 
 ## States
 

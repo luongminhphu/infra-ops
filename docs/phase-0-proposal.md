@@ -706,3 +706,27 @@ Cần chỉnh nhẹ trong file mẫu khi làm Phase 3: bảng thiết bị hiệ
 - **Q27.** "Tên tài sản" lấy theo **Product** (vd. "Dell Latitude 5440") hay **tên tài sản** trong SDP (vd. "HSC-LT-0123")?
   "Mã tài sản" là **Asset Tag** hay **Serial**?
 - **Q28.** Ai là "Người kiểm tra / Reviewer" ở Nội dung B: trưởng nhóm IT cố định, hay chọn theo từng biên bản?
+
+---
+
+## 13. Quyết định vòng 3 (16/11/2026) & phạm vi Phase 2
+
+### 13.1 Câu trả lời
+
+| # | Quyết định | Ảnh hưởng thiết kế |
+|---|---|---|
+| Q20 | RTR có các loại biến động: **nhân viên mới**, **chuyển từ thử việc sang chính thức**, **thuyên chuyển** | Mapping "Loại biến động" → loại sự kiện (`onboard`, `probation_to_official`, `transfer`, `offboard`) cấu hình được; giá trị lạ hiển thị để Admin gán |
+| Q21 | BioStar `user_id` = Mã NV dạng chuỗi, giữ số 0 đầu (`003551`) | So khớp trực tiếp, không chuẩn hoá số |
+| Q22 | SDP on-prem build **16020**; tài sản gán cho user trong màn hình Asset, user SDP đồng bộ từ AD qua LDAP | Chủ sở hữu tài sản = user SDP; nối với Mã NV qua trường `employee_id` của user SDP (cấu hình được), dự phòng theo họ tên khi duy nhất |
+| Q24 | Checklist Nội dung B được **tick trong app** rồi in sẵn | Phase 3: lưu checklist theo từng biên bản |
+| Q25 | **Thêm số biên bản tự sinh** | `BG-YYYYMM-####` / `TH-YYYYMM-####` |
+| Q26 | Biên bản Thu hồi **thêm cột mới** (Tình trạng) | Phase 3 chỉnh mẫu: cột Tình trạng + dòng tài sản chưa thu hồi |
+| Q27 | Tên tài sản = **tên tài sản trong SDP**; Mã tài sản = **Asset Tag** | |
+| Q28 | Người kiểm tra (Nội dung B) là **người cố định** | Cấu hình trong Settings của module |
+
+### 13.2 Phạm vi Phase 2
+- Core: lưu cấu hình theo module (`core_module_setting`) và bộ lập lịch nền chạy trên PostgreSQL (`core_scheduled_task` + tiến trình `worker`).
+- Đọc dữ liệu bằng credential **Read**: request RTR (kèm parser nội dung mô tả), user và tài sản SDP; user BioStar (nhóm, nhóm quyền ra vào, thời hạn, số thẻ/vân tay/khuôn mặt).
+- Lưu snapshot mỗi lần đồng bộ (thủ công + định kỳ) để so sánh và xem lịch sử.
+- Màn hình **Đối soát theo Mã NV** (SDP request · Tài sản · BioStar) với quy tắc phát hiện lệch, bộ lọc, chi tiết, export Excel/CSV.
+- Màn hình **Request RTR** (đã parse, lỗi parse), **Đồng bộ dữ liệu**, **Cấu hình module**.

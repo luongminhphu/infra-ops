@@ -20,6 +20,11 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 - External systems only via `open_connection(session, system_type, Purpose.READ|WRITE)`; credentials
   never come from env. Connectors must not write data in `test_connection()`.
 - Errors: raise `AppError` subclasses with a Vietnamese message + stable English `code`.
+- Module configuration: a pydantic model persisted with `core.settings.service` (load/save, audited);
+  periodic work: `ScheduledTask` in the manifest, run by the worker (never inside API requests).
+- Reconciliation rules are pure functions (`modules/lifecycle/reconcile.py`) – add a rule there with a
+  unit test; never judge a system whose read failed.
+- Employee IDs are strings (keep leading zeros, e.g. `003551`).
 - Tests never contact real systems (mock with `respx`). Backend tests need PostgreSQL
   (`INFRAOPS_TEST_DATABASE_URL`).
 - UI: only design tokens (no raw hex), core components, icon + label for every status, native
@@ -36,6 +41,7 @@ uv run pytest -q            # needs INFRAOPS_TEST_DATABASE_URL (default: socket 
 uv run ruff check . && uv run ruff format --check . && uv run lint-imports
 uv run alembic upgrade heads
 uv run uvicorn app.asgi:app --reload --port 8000
+uv run python -m app.worker # scheduled tasks (sync); required for "Sync now"
 
 # frontend
 cd frontend && npm install

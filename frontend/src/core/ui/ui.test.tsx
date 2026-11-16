@@ -92,3 +92,18 @@ describe("fold (diacritic-insensitive search)", () => {
     expect(fold("Đối soát")).toBe("doi soat");
   });
 });
+
+describe("DateInput helpers", () => {
+  it("parses only real dd/MM/yyyy dates", async () => {
+    const { parseVnDate, formatTyped, toVnDate } = await import("./date-input");
+    expect(parseVnDate("01/11/2026")).toBe("2026-11-01");
+    expect(parseVnDate("1/2/2026")).toBe("2026-02-01");
+    expect(parseVnDate("31/02/2026")).toBeNull();
+    expect(parseVnDate("2026-11-01")).toBeNull();
+    expect(formatTyped("01112026", true)).toBe("01/11/2026");
+    expect(formatTyped("01", true)).toBe("01/");
+    expect(formatTyped("0111", true)).toBe("01/11/");
+    expect(formatTyped("01/1", false)).toBe("01/1");
+    expect(toVnDate("2026-11-01")).toBe("01/11/2026");
+  });
+});
