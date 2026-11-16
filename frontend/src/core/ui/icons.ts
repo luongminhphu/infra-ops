@@ -9,6 +9,7 @@ import {
   Ticket,
   Users,
   FileText,
+  FileCog,
   GitCompareArrows,
   RefreshCw,
   Settings,
@@ -29,6 +30,7 @@ const ICONS: Record<string, LucideIcon> = {
   workflow: Workflow,
   "refresh-cw": RefreshCw,
   settings: Settings,
+  "file-cog": FileCog,
 };
 
 export function iconFor(name: string): LucideIcon {
