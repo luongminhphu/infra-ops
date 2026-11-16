@@ -1,0 +1,59 @@
+/*
+ * infra-ops design tokens – single source of truth (see docs/design-system.md).
+ * Colours use light-dark() so they follow `color-scheme`, which the theme toggle
+ * controls through <meta name="color-scheme">. Never hard-code hex in components.
+ */
+:root {
+  color-scheme: light dark;
+
+  /* Neutrals */
+  --ink: light-dark(#1c2430, #e6eaf0);
+  --muted: light-dark(#566171, #9aa5b4);
+  --paper: light-dark(#f6f7f9, #161b22);
+  --surface: light-dark(#ffffff, #1e242d);
+  --surface-2: light-dark(#eef1f4, #252c36);
+  --line: light-dark(#dde2e8, #2e3642);
+  --line-strong: light-dark(#c3cad3, #3e4757);
+  /* Form control borders must reach 3:1 against the surface (WCAG 1.4.11). */
+  --control-border: light-dark(#7c8593, #707b8c);
+
+  /* Brand – petrol */
+  --primary: light-dark(#0f5f6b, #4fb3bf);
+  --primary-hover: light-dark(#0b4d57, #72c6d0);
+  --on-primary: light-dark(#ffffff, #0b1a1d);
+  --primary-soft: light-dark(#e3f0f1, #173a40);
+  --focus: light-dark(#0f5f6b, #72c6d0);
+
+  /* Status – always paired with an icon and a label */
+  --done: light-dark(#1e7b4f, #5ccf95);
+  --done-soft: light-dark(#e4f3ea, #183527);
+  --progress: light-dark(#2459c6, #86acf7);
+  --progress-soft: light-dark(#e6edfb, #1c2b4a);
+  --waiting: light-dark(#8f5300, #eaa94b);
+  --waiting-soft: light-dark(#fbf0df, #3a2c16);
+  --failed: light-dark(#b42c2c, #f28b8b);
+  --failed-soft: light-dark(#fbe7e7, #432123);
+  --skipped: light-dark(#5f6878, #a6aebb);
+  --skipped-soft: light-dark(#eef0f3, #2a3039);
+  --mismatch: light-dark(#a3245a, #ee8ab4);
+  --mismatch-soft: light-dark(#f9e5ee, #41202f);
+
+  /* Type */
+  --font-sans: "Be Vietnam Pro", "Noto Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "Cascadia Mono", monospace;
+
+  /* Layout */
+  --sidebar-w: 240px;
+  --sidebar-w-collapsed: 56px;
+  --topbar-h: 48px;
+  --row-h: 36px;
+  --row-h-comfortable: 44px;
+}
+
+/* The <meta> is only a hint; author CSS must follow it explicitly. */
+:root:has(> head > meta[name="color-scheme"][content="dark"]) {
+  color-scheme: dark;
+}
+:root:has(> head > meta[name="color-scheme"][content="light"]) {
+  color-scheme: light;
+}

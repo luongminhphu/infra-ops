@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "infraops.name" . }}-web
+  labels: {{- include "infraops.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  replicas: {{ .Values.web.replicas }}
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: web }
+  template:
+    metadata:
+      labels: {{- include "infraops.labels" . | nindent 8 }}
+        app.kubernetes.io/component: web
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: web
+          image: "{{ .Values.image.web.repository }}:{{ .Values.image.web.tag }}"
+          imagePullPolicy: {{ .Values.image.web.pullPolicy }}
+          ports: [{ name: http, containerPort: 8080 }]
+          readinessProbe: { httpGet: { path: /, port: http }, periodSeconds: 10 }
+          resources: {{- toYaml .Values.web.resources | nindent 12 }}
+          {{- include "infraops.podSecurity" . | nindent 10 }}
+          volumeMounts:
+            - { name: cache, mountPath: /var/cache/nginx }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: cache, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "infraops.name" . }}-web
+  labels: {{- include "infraops.labels" . | nindent 4 }}
+spec:
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: web }
+  ports: [{ name: http, port: 80, targetPort: http }]

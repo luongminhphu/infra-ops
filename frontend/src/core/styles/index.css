@@ -1,0 +1,103 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-control-border: var(--control-border);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+  --color-primary-soft: var(--primary-soft);
+  --color-focus: var(--focus);
+  --color-done: var(--done);
+  --color-done-soft: var(--done-soft);
+  --color-progress: var(--progress);
+  --color-progress-soft: var(--progress-soft);
+  --color-waiting: var(--waiting);
+  --color-waiting-soft: var(--waiting-soft);
+  --color-failed: var(--failed);
+  --color-failed-soft: var(--failed-soft);
+  --color-skipped: var(--skipped);
+  --color-skipped-soft: var(--skipped-soft);
+  --color-mismatch: var(--mismatch);
+  --color-mismatch-soft: var(--mismatch-soft);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.4rem;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.1rem;
+}
+
+@layer base {
+  html {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Keep focused/anchored elements clear of the sticky topbar (WCAG 2.4.11). */
+    scroll-padding-top: calc(var(--topbar-h) + 8px);
+  }
+  body {
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    min-height: 100dvh;
+  }
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+  ::selection {
+    background: var(--primary-soft);
+  }
+  /* Native modal dialog: block page scroll behind it without touching body overflow. */
+  html:has(dialog[open]:modal) {
+    overflow: hidden;
+    scrollbar-gutter: stable;
+  }
+  dialog::backdrop {
+    background: rgb(10 16 24 / 0.45);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Field errors appear only after the user interacts (see ui/field.tsx). */
+@layer components {
+  .field-error {
+    display: none;
+  }
+  [aria-invalid="true"] ~ .field-error,
+  .field-error[data-visible="true"] {
+    display: flex;
+  }
+}

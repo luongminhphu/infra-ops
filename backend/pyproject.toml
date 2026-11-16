@@ -1,0 +1,71 @@
+[project]
+name = "infra-ops-backend"
+version = "0.1.0"
+description = "infra-ops internal IT operations platform – backend"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "pydantic>=2.9",
+  "pydantic-settings>=2.6",
+  "sqlalchemy[asyncio]>=2.0.36",
+  "asyncpg>=0.30",
+  "alembic>=1.14",
+  "structlog>=24.4",
+  "cryptography>=43",
+  "httpx>=0.28",
+  "pyjwt[crypto]>=2.10",
+  "ldap3>=2.9.1",
+  "pypsrp>=0.8.1",
+  "python-multipart>=0.0.17",
+  "itsdangerous>=2.2",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "respx>=0.21",
+  "ruff>=0.8",
+  "mypy>=1.13",
+  "import-linter>=2.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "S", "RUF"]
+ignore = ["S101", "RUF001", "RUF002", "RUF003", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106", "S108"]
+"migrations/**" = ["E501"]
+
+[tool.importlinter]
+root_package = "app"
+
+[[tool.importlinter.contracts]]
+name = "Modules must not import each other"
+type = "independence"
+modules = ["app.modules.lifecycle"]
+
+[[tool.importlinter.contracts]]
+name = "Core must not depend on modules"
+type = "forbidden"
+source_modules = ["app.core"]
+forbidden_modules = ["app.modules"]
