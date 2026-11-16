@@ -1,0 +1,42 @@
+# Values for Rancher / Kubernetes. Secrets are referenced, never written here.
+image:
+  api: { repository: registry.congty.local/infra-ops/api, tag: "0.1.0", pullPolicy: IfNotPresent }
+  web: { repository: registry.congty.local/infra-ops/web, tag: "0.1.0", pullPolicy: IfNotPresent }
+imagePullSecrets: []
+
+# Existing Secret holding: INFRAOPS_DATABASE_URL, INFRAOPS_MASTER_KEYS, INFRAOPS_SIGNING_SECRET
+# and (for SSO) INFRAOPS_OIDC_CLIENT_SECRET. Create it with kubectl or Rancher before installing.
+existingSecret: infra-ops-secrets
+
+env:
+  INFRAOPS_ENVIRONMENT: production
+  INFRAOPS_PUBLIC_BASE_URL: https://infraops.congty.local
+  INFRAOPS_AUTH_MODE: local
+  INFRAOPS_ENABLED_MODULES: lifecycle
+  INFRAOPS_SECRET_EXPIRY_WARN_DAYS: "30"
+  INFRAOPS_OIDC_TENANT_ID: ""
+  INFRAOPS_OIDC_CLIENT_ID: ""
+  INFRAOPS_BOOTSTRAP_ADMIN_UPNS: ""
+
+api:
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 512Mi }
+
+web:
+  replicas: 1
+  resources:
+    requests: { cpu: 20m, memory: 32Mi }
+    limits: { memory: 128Mi }
+
+# Optional: extra CA certificates (e.g. internal CA for SDP/BioStar TLS) mounted for the API.
+# Provide a ConfigMap with key "ca.crt"; it is appended via SSL_CERT_FILE.
+internalCaConfigMap: ""
+
+ingress:
+  enabled: true
+  className: nginx
+  host: infraops.congty.local
+  tlsSecretName: infraops-tls
+  annotations: {}

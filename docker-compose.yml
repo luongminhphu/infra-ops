@@ -1,0 +1,39 @@
+# Local / single-host deployment. For Kubernetes (Rancher) use deploy/helm/infra-ops.
+# Required: copy .env.example to .env and set INFRAOPS_MASTER_KEYS and INFRAOPS_SIGNING_SECRET.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: infraops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-infraops}
+      POSTGRES_DB: infraops
+    volumes: [db-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U infraops"]
+      interval: 5s
+      retries: 10
+
+  migrate:
+    build: ./backend
+    command: ["alembic", "upgrade", "heads"]
+    env_file: .env
+    environment:
+      INFRAOPS_DATABASE_URL: postgresql+asyncpg://infraops:${POSTGRES_PASSWORD:-infraops}@db:5432/infraops
+    depends_on:
+      db: { condition: service_healthy }
+
+  api:
+    build: ./backend
+    env_file: .env
+    environment:
+      INFRAOPS_DATABASE_URL: postgresql+asyncpg://infraops:${POSTGRES_PASSWORD:-infraops}@db:5432/infraops
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  web:
+    build: ./frontend
+    ports: ["8080:8080"]
+    depends_on: [api]
+
+volumes:
+  db-data:

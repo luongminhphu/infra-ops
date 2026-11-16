@@ -1,0 +1,26 @@
+# Runs database migrations before each install/upgrade.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "infraops.name" . }}-migrate-{{ .Release.Revision }}
+  labels: {{- include "infraops.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: "{{ .Values.image.api.repository }}:{{ .Values.image.api.tag }}"
+          command: ["alembic", "upgrade", "heads"]
+          envFrom: [{ secretRef: { name: {{ .Values.existingSecret }} } }]
+          env: {{- include "infraops.env" . | nindent 12 }}
+          {{- include "infraops.podSecurity" . | nindent 10 }}
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: {} }]

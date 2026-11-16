@@ -648,3 +648,61 @@ Ví dụ "Nguyễn Thanh Bình": tên = `binh`, chữ cái đầu họ + đệm 
   (vd. CloudNativePG) hay DB server có sẵn? Container registry nào (Harbor…)? Cluster có tới được DC (636), Exchange, BioStar,
   SDP và ra internet (Graph) không?
 - **Q15/Q16** (chưa trả lời): kênh thông báo (email/Teams)? Chu kỳ poll đối soát (đề xuất 30 phút), giữ snapshot 90 ngày?
+
+---
+
+## 12. Điều chỉnh ưu tiên (16/11/2026) & phân tích mẫu biên bản
+
+### 12.1 Quyết định
+- **Tạm hoãn** mọi tính năng/thông tin liên quan tài khoản Microsoft (Entra ID, AD, Exchange, Entra Connect).
+- **Ưu tiên** kết nối **ServiceDesk Plus** và **Suprema BioStar** để lấy dữ liệu, và xây dựng **Biên bản Bàn giao / Thu hồi** theo mẫu thật.
+- Đăng nhập app: dùng **tài khoản nội bộ** (`INFRAOPS_AUTH_MODE=local`) cho tới khi có App Registration; SSO Entra đã có sẵn trong code, bật bằng cấu hình.
+- PR của từng phase được merge thẳng vào `main`.
+
+### 12.2 Kế hoạch phase cập nhật
+
+| Phase | Nội dung |
+|---|---|
+| 1 ✅ | Platform Core; connector SDP + BioStar (test kết nối, quyền thực tế) |
+| 2 | Adapter đọc SDP (request RTR + parser mô tả, tài sản, người dùng) và BioStar (user, nhóm, access group); trang tra cứu theo Mã NV; đối soát SDP ↔ tài sản ↔ BioStar; export Excel/CSV |
+| 3 | Core template engine (docxtpl + LibreOffice) + Biên bản Bàn giao / Thu hồi từ 2 mẫu thật; số biên bản; upload bản ký |
+| 4 | Workflow Onboard không có bước Microsoft: gán tài sản SDP → user BioStar → đăng ký vân tay/thẻ (thủ công) → biên bản → worklog + đóng request |
+| 5 | Workflow Offboard: thu hồi tài sản → In Store → vô hiệu hoá/xoá BioStar → biên bản thu hồi; lên lịch theo ngày nghỉ việc |
+| sau | Bổ sung bước Microsoft vào workflow khi đã chốt |
+
+### 12.3 Phân tích mẫu ITD-FRM-AST-001 (Bàn giao) và ITD-FRM-AST-002 (Thu hồi)
+
+Cấu trúc chung: header (logo, tiêu đề, *Effected date*, *Document ID* `IT/OP/FRM/2026-06/01|02`, *Page*),
+**Nội dung A** (thông tin + danh mục thiết bị + cam kết + ký) và **Nội dung B** (checklist + ký). Song ngữ Việt/Anh.
+
+Placeholder đề xuất (Jinja2 trong DOCX):
+
+| Vùng | Placeholder | Nguồn dữ liệu |
+|---|---|---|
+| Ngày bàn giao / thu hồi | `{{ handover_date }}` / `{{ return_date }}` | Ngày thực hiện Job |
+| Người nhận / Người bàn giao | `{{ employee.full_name }}` | Request RTR (SDP) |
+| Mã nhân viên | `{{ employee.id }}` | Request RTR (giữ số 0 đầu) |
+| Phòng ban | `{{ employee.department }}` | RTR: Phòng / Bộ phận (mapping cấu hình được) |
+| Chức danh | `{{ employee.job_title }}` | RTR: Chức danh nội bộ |
+| Địa điểm làm việc | `{{ employee.work_location }}` | RTR: Nơi làm việc |
+| Bảng thiết bị (dòng lặp) | `{% for a in assets %}{{ loop.index }} · {{ a.name }} · {{ a.tag }} · {{ a.date }} · {{ a.note }}{% endfor %}` | Tài sản SDP gán/thu hồi trong Job |
+| Ký – Đại diện IT | `{{ it_rep.full_name }}`, `{{ signed_date }}` | Người thực hiện Job |
+| Ký – Người nhận / bàn giao | `{{ employee.full_name }}` | |
+| Ký – Người kiểm tra (Nội dung B) | `{{ reviewer.full_name }}` | Chọn khi lập biên bản |
+| Checklist (B) | `{{ '☑' if c.ok else '☐' }}` | Để trống (đánh tay trên giấy) hoặc tick trong app (Q24) |
+| Phần mềm đã cài (B – Bàn giao) | như trên | Như trên |
+
+Cần chỉnh nhẹ trong file mẫu khi làm Phase 3: bảng thiết bị hiện cố định 4 dòng → chuyển thành 1 dòng lặp
+(không giới hạn số thiết bị, tự sang trang).
+
+### 12.4 Câu hỏi về biên bản
+
+- **Q24.** Checklist Nội dung B (8 mục cấu hình + 10 phần mềm khi bàn giao, 3 mục khi thu hồi): để trống cho IT
+  đánh dấu tay trên bản in, hay IT tick trong app rồi in sẵn kết quả?
+- **Q25.** Mẫu không có ô **Số biên bản**. Có thêm số tự sinh (`BG-YYYYMM-####` / `TH-YYYYMM-####`) vào header không
+  (cạnh Document ID)? Số này dùng để tra cứu và đính kèm vào request SDP.
+- **Q26.** Biên bản Thu hồi không có cột **Tình trạng** (tốt / hỏng / thiếu phụ kiện) và mục tài sản **thiếu**.
+  Ghi vào cột *Ghi chú*, hay thêm cột *Tình trạng* và một dòng tổng hợp "Thiết bị chưa thu hồi"?
+- **Q27.** "Tên tài sản" lấy theo **Product** (vd. "Dell Latitude 5440") hay **tên tài sản** trong SDP (vd. "HSC-LT-0123")?
+  "Mã tài sản" là **Asset Tag** hay **Serial**?
+- **Q28.** Ai là "Người kiểm tra / Reviewer" ở Nội dung B: trưởng nhóm IT cố định, hay chọn theo từng biên bản?
