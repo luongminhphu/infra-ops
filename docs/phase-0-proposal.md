@@ -29,7 +29,7 @@
 | A3 | Người dùng app là team IT (khoảng vài chục người). Tải thấp: vài chục Job/tuần, vài nghìn nhân viên trong đối soát → 1 instance API + 1 worker là đủ; không cần thiết kế phân tán. |
 | A4 | Mã NV là duy nhất trong toàn công ty, không bao giờ tái sử dụng cho người khác. |
 | A5 | Một nhân viên có tối đa 1 tài khoản chính (không xử lý tài khoản admin phụ `adm.xxx` trong Module 1). |
-| A6 | Exchange Online là nơi chứa mailbox (không có Exchange on-prem hybrid đang quản lý thuộc tính mailbox). |
+| A6 | ~~Không có Exchange on-prem hybrid~~ → **Sai**: ảnh EAC cho thấy có Exchange hybrid. Xem §11.2. |
 | A7 | UI chỉ dành cho máy tính (laptop 13" trở lên). Mobile chỉ cần không vỡ layout, không tối ưu. |
 | A8 | Font chữ & asset tải về đóng gói cùng app (không phụ thuộc CDN/Google Fonts lúc chạy). |
 | A9 | Biên bản in khổ A4, font chữ theo mẫu thật (thường là Times New Roman) → container LibreOffice phải có font này. |
@@ -274,7 +274,9 @@ GET|PUT /settings                                   # chế độ tạo TK mặc
 
 ---
 
-## 7. Phân tích Hybrid: Cloud → On-prem và source of authority (cần anh/chị xác nhận)
+## 7. Phân tích Hybrid: Cloud → On-prem và source of authority
+
+> Đã được cập nhật theo câu trả lời vòng 1. **Xem §11.2 và §11.3**: các mục bên dưới vẫn đúng về nguyên tắc, nhưng cách tạo tài khoản và thứ tự Offboard được chốt lại ở §11.
 
 ### 7.1 Điểm cần làm rõ về "Cloud first"
 Entra Connect Sync **không đồng bộ user từ Entra xuống AD** (user writeback đã bị bỏ). Các cơ chế có thể đang chạy:
@@ -511,3 +513,138 @@ thông tin khác nhau, và danh sách dễ quét hơn khi có 10+ kết nối.
 6. Design tokens, layout shell, component dùng chung (DataTable, StatusBadge, SystemRail, Stepper,
    ConfirmDangerDialog, ConnectionRow, EmptyState, Skeleton), `docs/design-system.md`.
 7. Accessibility review + design critique cho các màn hình Phase 1.
+
+---
+
+## 11. Phase 0 – vòng 2: quyết định đã chốt & phân tích bổ sung
+
+### 11.1 Quyết định đã chốt
+
+| # | Quyết định |
+|---|---|
+| Q3 | `employeeId` (Entra) ↔ `employeeID` (AD) **có đồng bộ**. Đây là khoá đối soát chính. |
+| Q4 | Sau đồng bộ user là `onPremisesSyncEnabled = true` → **AD là source of authority** cho mọi user. |
+| Q5 | OU `Ban_Users` **nằm ngoài** phạm vi sync → user move vào đó sẽ bị **xoá** trên Entra (Deleted users, 30 ngày). |
+| Q7 | SDP **On-prem**. Mã NV không nằm trong field riêng mà trong **nội dung mô tả** của request (§11.4). |
+| Q8 | **BioStar 2**. Mã NV chỉ gồm chữ số. |
+| Q9 | Offboard luôn move sang `Ban_Users`; shared/forward mailbox chỉ làm khi quản lý yêu cầu (tuỳ chọn theo Job). |
+| Q12 | SSO Entra ID (OIDC) chỉ để **xác thực**; gán role **hoàn toàn trong app**. Admin đầu tiên khai báo qua env `BOOTSTRAP_ADMIN_UPNS`. |
+| Q13 | Triển khai **K8s qua Rancher** → Helm chart. |
+| Q14 | **Không dùng Redis**; PostgreSQL làm hàng đợi. |
+| Q17 | Quy tắc đặt tên: `<tên>.<chữ cái đầu họ + đệm>` (§11.5). |
+| Q18 | Đồng ý design direction "Bàn điều phối / System Rail", màu petrol, Be Vietnam Pro. |
+
+### 11.2 Phát hiện: có Exchange hybrid → cách tạo tài khoản thực tế là "On-prem first"
+
+Ảnh chụp menu **New → User mailbox / Linked mailbox / Office 365 mailbox** là của **Exchange Admin Center on-prem**
+(`https://<exchange-server>/ecp`) trong môi trường **Exchange hybrid**. Lựa chọn "Office 365 mailbox" chạy
+`New-RemoteMailbox`, thực hiện:
+1. Tạo user trên **AD on-prem**, ngay tại OU được chọn trong hộp thoại (khớp với "OU tuỳ theo ticket").
+2. Ghi các thuộc tính Exchange hybrid (`msExchRemoteRecipientType`, `targetAddress = …@<tenant>.mail.onmicrosoft.com`, `proxyAddresses`).
+3. Entra Connect đồng bộ user lên Entra → `onPremisesSyncEnabled = true` (khớp Q4).
+4. Sau đó vào admin.microsoft.com chỉ để **gán license** → mailbox được tạo trên Exchange Online.
+
+Như vậy quy trình hiện tại thực chất là **On-prem first qua Exchange hybrid**, không phải tạo user trên Entra rồi
+"chờ đồng bộ xuống". Điều này cũng giải thích vì sao không cần cơ chế Cloud → On-prem nào.
+
+**Hệ quả với thiết kế (đề xuất):**
+- Chế độ tạo tài khoản mặc định đổi thành **"Hybrid Exchange (Remote mailbox)"**:
+  `New-RemoteMailbox` (OU theo ticket, UPN, sAMAccountName, mật khẩu tạm + `ResetPasswordOnNextLogon`)
+  → ghi bổ sung `employeeID`, `department`, `title`, `manager`, `mobile`, `physicalDeliveryOfficeName` qua LDAPS
+  → (tuỳ chọn) trigger delta sync → **chờ user xuất hiện trên Entra** (poll Graph theo `employeeId`)
+  → set `usageLocation=VN` + gán license qua Graph → chờ mailbox EXO sẵn sàng.
+- **Không tạo user AD trần qua LDAP** khi có Exchange hybrid: thiếu thuộc tính remote mailbox → gán license sẽ sinh
+  mailbox cloud không được Exchange on-prem quản lý, gây lỗi khi chỉnh địa chỉ email về sau.
+- **Không tạo user trên Entra qua Graph `POST /users`**: user cloud-only không có object AD tương ứng; trái với cách đang vận hành.
+  Chế độ "Cloud first" vẫn giữ trong code ở dạng tắt, phòng khi sau này bỏ Exchange on-prem.
+- Cần connector mới **`exchange`** (Exchange Management Shell từ xa qua WinRM, dùng `pypsrp`, endpoint
+  `http(s)://<exchange>/PowerShell`, `ConfigurationName=Microsoft.Exchange`). Đề xuất an toàn hơn: dựng một
+  **JEA endpoint** trên server quản trị chỉ cho phép đúng các lệnh cần dùng (`New-RemoteMailbox`, `Get-RemoteMailbox`,
+  `Set-RemoteMailbox`, `Enable-RemoteMailbox`) → service account của app không có quyền Exchange admin đầy đủ.
+- Shared mailbox trong hybrid: `Set-RemoteMailbox -Type Shared` ở on-prem + `Set-Mailbox -Type Shared` ở Exchange Online
+  (cần Exchange 2016 CU21 / 2019 CU10 trở lên). Forward: `Set-Mailbox -ForwardingSmtpAddress` ở EXO.
+
+### 11.3 Offboard: thứ tự bước khi `Ban_Users` nằm ngoài phạm vi sync
+
+Vì move vào `Ban_Users` làm user bị **xoá** trên Entra (mất mailbox, license được trả lại, chỉ khôi phục được trong 30 ngày
+bằng cách move lại vào OU có sync), thứ tự Offboard phải là:
+
+| # | Bước | Ghi chú |
+|---|---|---|
+| 1 | Ghi `before_state`: OU cũ, group membership, license, thuộc tính mailbox | Đủ để khôi phục thủ công |
+| 2 | Graph `revokeSignInSessions` | Cắt phiên đăng nhập ngay, không chờ sync |
+| 3 | Disable user trên AD | |
+| 4 | Trigger delta sync (nếu có WinRM) → chờ Entra `accountEnabled=false` | Bảo đảm user bị chặn trên Entra trước khi bị xoá |
+| 5 | (Tuỳ chọn) Shared / forward mailbox | **Xung đột với bước 6**, xem bên dưới |
+| 6 | Move vào `Ban_Users` (confirm nhập lại Mã NV) | |
+| 7 | Trigger delta sync → chờ user vào Deleted users trên Entra | Xác nhận kết quả |
+| 8 | BioStar, tài sản, biên bản… | |
+
+⚠️ **Xung đột cần quyết định (Q19):** shared mailbox và forward đều cần object user **còn tồn tại** trên Entra.
+Move vào `Ban_Users` (ngoài sync) sẽ xoá luôn mailbox, kể cả mailbox đã chuyển sang shared. Phương án:
+- **(a)** Tạo OU `Ban_Users_Retained` **nằm trong** phạm vi sync, dành cho user nghỉ việc cần giữ mailbox; user vẫn disabled.
+  Hết thời hạn giữ (cấu hình được, vd. 90 ngày) app nhắc chuyển tiếp sang `Ban_Users`. **(Đề xuất)**
+- (b) Hoãn bước move OU tới ngày hết thời hạn giữ mailbox (Job ở trạng thái Waiting tới ngày đó).
+- (c) Export mailbox ra PST trước rồi mới move (thủ công, ngoài phạm vi app).
+
+### 11.4 Request từ SDP: đọc dữ liệu từ nội dung mô tả
+
+Request Onboard/Offboard do hệ thống **RTR (recruit transfer resign)** tạo tự động trên SDP:
+- Tiêu đề: `(RTR-<số>) <Loại biến động>/<Họ tên>/<Phòng>`; requester `RTR`.
+- Thông tin nhân viên nằm trong mô tả dạng "nhãn: giá trị". Ví dụ (dữ liệu giả):
+
+```
+Loại biến động: Chính thức
+A. Thông tin nhân viên
+1. Họ & tên: Nguyễn Văn A
+2. Mã nhân viên: 001234
+3. Ngày hiệu lực: 01/12/2026
+4. Chức danh nội bộ: …          5. Chức danh bên ngoài: …
+6. Khối: …   7. Phòng: …   8. Bộ phận: …   9. Nơi làm việc: …
+10. Số điện thoại: …
+11. Quản lý trực tiếp: Trần Văn B (001200)
+12. Quản lý gián tiếp: …
+```
+
+Thiết kế:
+- **Parser cấu hình được** (Settings → SDP → "Mapping nội dung request"): mỗi field app cần ↔ nhãn trong mô tả
+  (vd. `employee_id` ↔ "Mã nhân viên"), kiểu dữ liệu, bắt buộc hay không. Hỗ trợ mô tả dạng HTML (SDP API trả HTML).
+  Đổi mẫu RTR sau này chỉ cần sửa mapping, không sửa code.
+- Mã NV là **chuỗi** (giữ số 0 đầu: `003551` ≠ `3551`). Quản lý trực tiếp lấy Mã NV trong ngoặc → tra `manager` trên AD.
+- Thiếu field bắt buộc / không parse được → request vào trạng thái "Cần bổ sung", hiện rõ field lỗi, cho Helpdesk sửa tay (ghi audit).
+- Ngày hiệu lực → dùng để lên lịch Job (Onboard và Offboard).
+- **OU đích**: bảng mapping (Khối, Phòng, Bộ phận) → OU DN trong Settings; app đọc cây OU từ AD để chọn.
+  Không khớp mapping → Helpdesk chọn OU trong bước Preview.
+- Khuyến nghị dài hạn (ngoài phạm vi app): đề nghị team SDP/RTR thêm các trường riêng (UDF) cho Mã NV, loại tài khoản, ngày hiệu lực.
+
+### 11.5 Quy tắc đặt tên
+
+Ví dụ "Nguyễn Thanh Bình": tên = `binh`, chữ cái đầu họ + đệm = `nt` → `binh.nt`.
+- Bỏ dấu tiếng Việt, `Đ/đ → d`, chữ thường, bỏ ký tự không hợp lệ.
+- Danh sách ứng viên khi trùng (thứ tự cấu hình được trong Settings):
+  `binh.nt` → `binh.nt2` → `binh.nguyen` → `binh.nguyenthanh` → `binh.nt3` …
+  App đề xuất ứng viên trống đầu tiên; Helpdesk được chọn ứng viên khác hoặc nhập tay trong bước Preview.
+- "Trùng" kiểm tra trên: AD `sAMAccountName`, `userPrincipalName`, `mail`, `proxyAddresses`; Entra `userPrincipalName`,
+  `mail`, `proxyAddresses`, **kể cả user đã xoá (Deleted users) và user trong `Ban_Users`** (không tái sử dụng username của người đã nghỉ).
+- Giới hạn `sAMAccountName` 20 ký tự → nếu vượt, chuyển sang ứng viên kế tiếp.
+
+### 11.6 Câu hỏi còn mở (vòng 2)
+
+- **Q1'.** Xác nhận: Helpdesk tạo user bằng **Exchange Admin Center on-prem** (`https://<exchange>/ecp`, đăng nhập `DOMAIN\user`),
+  New → **Office 365 mailbox**, chọn OU trong hộp thoại, rồi mới vào admin.microsoft.com để gán license — đúng không?
+  Phiên bản Exchange Server (2016 / 2019 / SE)?
+- **Q2'.** Đồng ý đổi chế độ mặc định sang **"Hybrid Exchange (Remote mailbox)"** như §11.2? Có thể dựng JEA endpoint
+  (hoặc cho phép WinRM tới Exchange server bằng service account) không?
+- **Q6.** Có cho phép WinRM tới server Entra Connect để trigger delta sync không? Nếu không, mỗi bước "chờ sync" sẽ chờ chu kỳ mặc định (~30 phút).
+- **Q11.** SKU cụ thể cho "Office 365" và "User Account"; gán trực tiếp hay theo group?
+  Loại tài khoản (Office 365 / User Account) nằm ở đâu trong request RTR (không thấy trong ảnh)?
+- **Q19.** Xung đột shared mailbox ↔ `Ban_Users` (§11.3): chọn (a), (b) hay (c)?
+- **Q20.** Danh sách giá trị "Loại biến động" của RTR và ý nghĩa: "Chính thức" là **nhân viên mới** hay **chuyển từ thử việc
+  sang chính thức** (không cần tạo tài khoản)? Có các loại Thử việc, Thực tập, Điều chuyển, Nghỉ việc…? "Điều chuyển"
+  (đổi phòng → move OU, đổi group) có cần làm trong Module 1 không?
+- **Q21.** Trên BioStar 2, `user_id` đang lưu `003551` hay `3551`? Phiên bản BioStar 2?
+- **Q22.** Phiên bản/build SDP on-prem? Tài sản (PC, Laptop, Màn hình…) đang gán cho user theo cách nào: field "User" của asset hay qua "Assign to request"?
+- **Q23.** Rancher/K8s: ingress controller nào? Chứng chỉ TLS (CA nội bộ)? StorageClass cho PVC? PostgreSQL chạy trong cluster
+  (vd. CloudNativePG) hay DB server có sẵn? Container registry nào (Harbor…)? Cluster có tới được DC (636), Exchange, BioStar,
+  SDP và ra internet (Graph) không?
+- **Q15/Q16** (chưa trả lời): kênh thông báo (email/Teams)? Chu kỳ poll đối soát (đề xuất 30 phút), giữ snapshot 90 ngày?
