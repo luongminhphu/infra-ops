@@ -132,6 +132,18 @@ class SdpClient:
             start += len(page)
         return rows[:max_rows]
 
+    async def post_file(self, path: str, field: str, filename: str, data: bytes, mime: str) -> dict[str, Any]:
+        """Multipart upload (e.g. request attachments). Never retried on failure to avoid duplicates."""
+        resp = await http.request(
+            self._client,
+            "POST",
+            path,
+            max_attempts=1,
+            headers=await self._auth_headers(),
+            files={field: (filename, data, mime)},
+        )
+        return self._parse(resp)
+
     @staticmethod
     def _parse(resp: httpx.Response) -> dict[str, Any]:
         try:

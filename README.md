@@ -19,14 +19,14 @@ Tài liệu: [kiến trúc](docs/architecture.md) · [thêm module](docs/adding-
 |---|---|---|
 | 0 | Hiện trạng, kiến trúc, câu hỏi mở | Xong |
 | 1 | Platform Core: module, đăng nhập, RBAC, kết nối hệ thống (SDP, BioStar), audit, design system | Xong |
-| 2 | SDP + BioStar: đọc request RTR, user, tài sản, user BioStar; đối soát theo Mã NV; export; bộ lập lịch nền | **Xong** |
-| 3 | Biên bản Bàn giao / Thu hồi theo mẫu thật | Tiếp theo |
+| 2 | SDP + BioStar: đọc request RTR, user, tài sản, user BioStar; đối soát theo Mã NV; export; bộ lập lịch nền | Xong |
+| 3 | Biên bản Bàn giao / Thu hồi theo mẫu thật: mẫu có phiên bản, số tự sinh, PDF, tải bản ký, đính kèm SDP | **Xong** |
 | 4–5 | Workflow Onboard / Offboard (SDP + BioStar) | |
 | sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
 
 ## Chạy local
 
-Yêu cầu: Python 3.13 + [uv](https://docs.astral.sh/uv/), Node 22, PostgreSQL 16.
+Yêu cầu: Python 3.13 + [uv](https://docs.astral.sh/uv/), Node 22, PostgreSQL 16, LibreOffice (xuất PDF biên bản).
 
 ```bash
 # 1. Database
@@ -40,6 +40,7 @@ uv sync
 export INFRAOPS_DATABASE_URL=postgresql+asyncpg://infraops:infraops@localhost:5432/infraops
 export INFRAOPS_MASTER_KEYS=$(uv run python -m app.cli generate-master-key)
 export INFRAOPS_AUTH_MODE=dev INFRAOPS_BOOTSTRAP_ADMIN_UPNS=admin@congty.local INFRAOPS_SESSION_COOKIE_SECURE=false
+export INFRAOPS_STORAGE_DIR=$PWD/var/files   # mẫu biên bản, PDF, bản scan đã ký
 uv run alembic upgrade heads
 uv run uvicorn app.asgi:app --reload --port 8000
 
@@ -92,7 +93,11 @@ Mở http://<máy-chủ>:8080 và đăng nhập bằng tài khoản vừa tạo.
    (migration chạy tự động bằng Job trước mỗi lần cài/nâng cấp; chart tạo 3 Deployment: api, worker, web).
 4. Tạo quản trị viên đầu tiên:
    `kubectl exec -it deploy/infra-ops-api -- python -m app.cli create-admin --username admin`.
-5. Nếu SDP/BioStar dùng chứng chỉ CA nội bộ: tạo ConfigMap có key `ca.crt` (bundle CA đầy đủ)
+5. File (mẫu, PDF, bản ký) lưu trên PVC `infra-ops-files` (giữ lại khi gỡ chart). Nếu chạy nhiều replica
+   api, đặt `storage.accessMode: ReadWriteMany`.
+6. Font: mẫu biên bản dùng font **Aptos**. Image có font thay thế (Inter/DejaVu); để PDF giống hệt bản Word,
+   tạo Secret chứa file font Aptos (từ bản quyền Office của công ty) và đặt `fontsSecret`.
+7. Nếu SDP/BioStar dùng chứng chỉ CA nội bộ: tạo ConfigMap có key `ca.crt` (bundle CA đầy đủ)
    và đặt `internalCaConfigMap` trong values.
 
 ## Đăng nhập
@@ -125,6 +130,15 @@ Vai trò được gán hoàn toàn trong app (Người dùng & quyền).
 3. **Đồng bộ dữ liệu → Đồng bộ ngay** (worker phải đang chạy), sau đó gán các giá trị "Loại biến động" chưa
    phân loại ở Cấu hình module.
 4. Xem **Đối soát theo Mã NV**. Worker tự đồng bộ mỗi 30 phút.
+
+### Biên bản Bàn giao / Thu hồi
+- **Vòng đời nhân sự → Biên bản → Lập biên bản…**: nhập Mã NV để điền sẵn từ request RTR và thiết bị đang gán
+  trên SDP (hoặc mở từ trang Đối soát). Lưu nháp → Xem trước PDF → **Chốt** (cấp số `BG-YYYYMM-####` /
+  `TH-YYYYMM-####`, không sửa được nữa) → in, ký → **Tải lên bản đã ký** → **Đính kèm vào request SDP**
+  (cần credential Write; đường dẫn upload chỉnh được ở Cấu hình module).
+- **Mẫu biên bản**: tải mẫu đang dùng về, sửa trong Word (giữ placeholder `{{ … }}`), tải lên thành phiên bản
+  mới, xem thử với dữ liệu mẫu rồi bấm “Dùng phiên bản này”. Danh sách placeholder có ngay trên trang.
+- Mẫu gốc được tạo từ file Word của công ty bằng `backend/scripts/build_form_templates.py`.
 
 ### Suprema BioStar 2
 1. Tạo tài khoản BioStar riêng: Read = quyền xem User/Access Group; Write = Operator/Administrator có quyền quản lý User.

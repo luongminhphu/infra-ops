@@ -25,6 +25,10 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 - Reconciliation rules are pure functions (`modules/lifecycle/reconcile.py`) – add a rule there with a
   unit test; never judge a system whose read failed.
 - Employee IDs are strings (keep leading zeros, e.g. `003551`).
+- Printable records: declare a `DocumentKind` in the manifest (pydantic data model + `build_context`);
+  core handles templates (versioned DOCX, docxtpl autoescaped), numbering, PDF (LibreOffice), signed
+  uploads (magic-byte checked) and audit. Never hard-code layout in code – it lives in the DOCX.
+- Files go through `core.storage.service.save_file/read_file`, never direct filesystem paths.
 - Tests never contact real systems (mock with `respx`). Backend tests need PostgreSQL
   (`INFRAOPS_TEST_DATABASE_URL`).
 - UI: only design tokens (no raw hex), core components, icon + label for every status, native
@@ -42,6 +46,7 @@ uv run ruff check . && uv run ruff format --check . && uv run lint-imports
 uv run alembic upgrade heads
 uv run uvicorn app.asgi:app --reload --port 8000
 uv run python -m app.worker # scheduled tasks (sync); required for "Sync now"
+# PDF tests need LibreOffice (`soffice`); they are skipped when it is missing
 
 # frontend
 cd frontend && npm install

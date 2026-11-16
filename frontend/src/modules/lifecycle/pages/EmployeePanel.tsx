@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCheck, RotateCcw, X } from "lucide-react";
+import { CheckCheck, FilePlus2, RotateCcw, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
@@ -12,6 +12,7 @@ import { StatusBadge } from "@/core/ui/status";
 import { SystemRail } from "@/core/ui/system-rail";
 import { formatDate, formatDateTime } from "@/core/lib/format";
 import type { Issue, ReconRow, RtrRequest } from "../api";
+import { DOC_STATUS, KIND_SHORT_TITLE, SHORT_OF, type Doc } from "../docs";
 import { CELL_STATUS, KIND_LABEL, SEVERITY, SYSTEM_LABEL } from "../labels";
 
 interface Detail {
@@ -107,6 +108,46 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+function DocumentsSection({ employeeId }: { employeeId: string }) {
+  const { can } = useAuth();
+  const docs = useQuery({
+    queryKey: ["documents", "employee", employeeId],
+    queryFn: () => api<{ items: Doc[] }>(`/api/core/documents?subject_key=${encodeURIComponent(employeeId)}`),
+    enabled: can("lifecycle.documents.view"),
+  });
+  if (!can("lifecycle.documents.view")) return null;
+  return (
+    <Section title="Biên bản">
+      {docs.data && docs.data.items.length > 0 ? (
+        <ul className="mb-2 space-y-1 text-sm">
+          {docs.data.items.map((d) => (
+            <li key={d.id} className="flex flex-wrap items-center gap-2">
+              <Link to={`/lifecycle/documents/${d.id}`} className="font-medium hover:text-primary hover:underline">
+                {KIND_SHORT_TITLE[SHORT_OF[d.kind] ?? "handover"]} {d.number ?? "(nháp)"}
+              </Link>
+              <StatusBadge status={DOC_STATUS[d.status].status} label={DOC_STATUS[d.status].label} />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mb-2 text-sm text-muted">Chưa có biên bản nào.</p>
+      )}
+      {can("lifecycle.documents.create") && (
+        <div className="flex flex-wrap gap-2">
+          <Link to={`/lifecycle/documents/new?kind=handover&emp=${encodeURIComponent(employeeId)}`} className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-line-strong px-2.5 text-sm hover:bg-surface-2">
+            <FilePlus2 className="size-3.5" aria-hidden="true" />
+            Lập biên bản bàn giao
+          </Link>
+          <Link to={`/lifecycle/documents/new?kind=return&emp=${encodeURIComponent(employeeId)}`} className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-line-strong px-2.5 text-sm hover:bg-surface-2">
+            <FilePlus2 className="size-3.5" aria-hidden="true" />
+            Lập biên bản thu hồi
+          </Link>
+        </div>
+      )}
+    </Section>
+  );
+}
+
 export function EmployeePanel({ employeeId, onClose }: { employeeId: string; onClose: () => void }) {
   const q = useQuery({
     queryKey: ["lifecycle", "recon", "detail", employeeId],
@@ -157,6 +198,7 @@ export function EmployeePanel({ employeeId, onClose }: { employeeId: string; onC
               </ul>
             )}
           </Section>
+          <DocumentsSection employeeId={employeeId} />
           <Section title="Request RTR">
             {d.requests.length === 0 ? (
               <p className="text-sm text-muted">Không có request RTR trong khoảng thời gian đồng bộ.</p>

@@ -33,11 +33,13 @@ infra-ops is an internal platform for IT Infrastructure operations. It is built 
 | Connectors | `core/connectors` | Plugin registry. Each connector declares config schema, auth types and `test_connection()` (DNS → TLS → auth → real permission probes). Shared HTTP client: timeouts, retry with backoff + jitter, `Retry-After`. |
 | Dashboard | `core/dashboard` | Widgets declared by manifests, filtered by permission; a failing widget does not break the page. Modules provide the renderer for their widget `kind` in the frontend. |
 | Module settings | `core/settings` | Typed (pydantic) per-module configuration in `core_module_setting`; invalid stored values fall back to defaults; changes audited as diffs. |
+| Files | `core/storage` | `core_file` metadata + `LocalFileStorage` (directory / PVC; S3 later). Uploads are type-checked by magic bytes and size-limited. |
+| Documents | `core/documents` | `DocumentKind`s declared by modules. Versioned DOCX templates (bundled default seeded as v1; uploads validated, unknown placeholders flagged), rendering with docxtpl (autoescape), PDF via LibreOffice with an isolated profile per conversion, monthly numbering `PREFIX-YYYYMM-####` (atomic upsert), lifecycle draft → finalized → signed / void. |
 | Scheduler | `core/scheduler` + `app/worker.py` | `ScheduledTask`s declared in manifests; rows in `core_scheduled_task`; the worker leases due tasks with `FOR UPDATE SKIP LOCKED` + `lease_until` (safe with several replicas, crash-tolerant). "Run now" = set `next_run_at`. No Redis. |
 | Logging | `core/logging.py` | structlog JSON, correlation ID (`X-Request-ID`), secret redaction. |
 
 Planned core services (later phases): workflow engine (Job/Step, reusing the scheduler's leasing
-pattern), document templates (docxtpl + LibreOffice), file storage, notifications.
+pattern), notifications.
 
 ## Module 1 – IT Lifecycle (Phase 2)
 
@@ -66,6 +68,19 @@ API/UI: latest successful run · filters · detail · acknowledge (lifecycle_iss
   exposes no routes, nav, permissions or widgets.
 
 See [adding-a-module.md](adding-a-module.md).
+
+### Handover / return records (Phase 3)
+
+```
+prefill (RTR request + latest asset snapshot) → draft (editable, PDF preview with "bản nháp")
+  → finalize: number + DOCX/PDF stored, template version pinned, data frozen
+  → signed: scan uploaded (PDF/PNG/JPEG) → optional: attach scan to the SDP request (Write credential)
+  → void (reason; numbered records need lifecycle.templates.manage)
+```
+
+Templates come from the company forms (ITD-FRM-AST-001/002) via `scripts/build_form_templates.py`
+(record number in the header, one repeating asset row, Tình trạng column on returns, ☑/☐ checklist,
+fixed table layout).
 
 ## Security model
 

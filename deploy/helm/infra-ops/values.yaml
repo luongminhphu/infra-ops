@@ -37,6 +37,16 @@ web:
     requests: { cpu: 20m, memory: 32Mi }
     limits: { memory: 128Mi }
 
+# Files: templates, generated PDFs and signed scans. Use ReadWriteMany if api.replicas > 1.
+storage:
+  size: 10Gi
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  existingClaim: ""
+
+# Optional: ConfigMap or Secret with company fonts (e.g. Aptos .ttf) mounted for PDF rendering.
+fontsSecret: ""
+
 # Optional: extra CA certificates (e.g. internal CA for SDP/BioStar TLS) mounted for the API.
 # Provide a ConfigMap with key "ca.crt"; it is appended via SSL_CERT_FILE.
 internalCaConfigMap: ""

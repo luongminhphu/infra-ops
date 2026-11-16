@@ -9,7 +9,7 @@ from __future__ import annotations
 import importlib
 from collections.abc import Iterable
 
-from app.core.modules.manifest import ModuleManifest, NavItem, Permission, ScheduledTask
+from app.core.modules.manifest import DocumentKind, ModuleManifest, NavItem, Permission, ScheduledTask
 from app.core.permissions import CORE_MANIFEST
 
 
@@ -42,6 +42,12 @@ class ModuleRegistry:
 
     def scheduled_tasks(self) -> list[tuple[str, ScheduledTask]]:
         return [(m.id, t) for m in self._modules.values() for t in m.scheduled_tasks]
+
+    def document_kinds(self) -> list[tuple[str, DocumentKind]]:
+        return [(m.id, k) for m in self._modules.values() for k in m.document_kinds]
+
+    def document_kind(self, key: str) -> tuple[str, DocumentKind] | None:
+        return next(((mid, k) for mid, k in self.document_kinds() if k.key == key), None)
 
     def has_permission(self, code: str) -> bool:
         return code in self._permissions

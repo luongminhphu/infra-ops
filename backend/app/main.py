@@ -17,6 +17,8 @@ from app.core.connections.api import router as connections_router
 from app.core.connectors.registry import load_builtin_connectors
 from app.core.dashboard.api import router as dashboard_router
 from app.core.db import dispose_engine, get_sessionmaker
+from app.core.documents.api import router as documents_router
+from app.core.documents.service import ensure_default_templates
 from app.core.errors import install_error_handlers
 from app.core.logging import CorrelationIdMiddleware, configure_logging, get_logger
 from app.core.modules.registry import ModuleRegistry, build_registry, set_registry
@@ -32,6 +34,7 @@ async def startup(registry: ModuleRegistry) -> None:
     async with get_sessionmaker()() as session:
         new = await sync_permissions(session, registry)
         await sync_tasks(session, registry)
+        await ensure_default_templates(session, registry)
         await session.commit()
     if new:
         log.info("permissions_registered", codes=new)
@@ -63,7 +66,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     install_error_handlers(app)
 
     core = APIRouter(prefix="/api/core")
-    for r in (auth_router, rbac_router, connections_router, audit_router, dashboard_router):
+    for r in (auth_router, rbac_router, connections_router, audit_router, dashboard_router, documents_router):
         core.include_router(r)
     app.include_router(core)
     for manifest in registry.modules:

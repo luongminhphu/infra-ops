@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.modules.manifest import DashboardWidget, ModuleManifest, NavItem, Permission, ScheduledTask
 from app.modules.lifecycle.api import router
+from app.modules.lifecycle.documents import HANDOVER, RETURN
+from app.modules.lifecycle.documents_api import router as documents_router
 
 
 async def _sync(session: AsyncSession) -> dict[str, Any]:
@@ -38,10 +40,13 @@ manifest = ModuleManifest(
         Permission(
             "lifecycle.reconciliation.sync", "Đồng bộ dữ liệu và đánh dấu lệch đã biết", ("helpdesk",)
         ),
-        Permission("lifecycle.templates.manage", "Quản lý mẫu biên bản"),
+        Permission("lifecycle.documents.view", "Xem biên bản bàn giao/thu hồi", ("helpdesk", "viewer")),
+        Permission("lifecycle.documents.create", "Lập, chốt biên bản và tải bản đã ký", ("helpdesk",)),
+        Permission("lifecycle.templates.manage", "Quản lý mẫu biên bản và huỷ biên bản đã chốt"),
         Permission("lifecycle.settings.manage", "Cấu hình mapping của module"),
     ],
-    routers=[router],
+    routers=[router, documents_router],
+    document_kinds=[HANDOVER, RETURN],
     nav=[
         NavItem(
             "Đối soát theo Mã NV",
@@ -50,7 +55,9 @@ manifest = ModuleManifest(
             "lifecycle.reconciliation.view",
         ),
         NavItem("Request RTR", "/lifecycle/requests", "ticket", "lifecycle.reconciliation.view"),
+        NavItem("Biên bản", "/lifecycle/documents", "file-text", "lifecycle.documents.view"),
         NavItem("Đồng bộ dữ liệu", "/lifecycle/sync", "refresh-cw", "lifecycle.reconciliation.view"),
+        NavItem("Mẫu biên bản", "/lifecycle/templates", "file-cog", "lifecycle.templates.manage"),
         NavItem("Cấu hình module", "/lifecycle/settings", "settings", "lifecycle.settings.manage"),
     ],
     # Microsoft connectors (entra, ad, exchange) are added once that integration is cleared.
