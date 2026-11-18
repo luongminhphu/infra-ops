@@ -5,6 +5,7 @@ import { api, ApiError, errorMessage } from "@/core/api/client";
 import { Button } from "@/core/ui/button";
 import { ErrorState, LoadingRows, PageHeader, Panel } from "@/core/ui/feedback";
 import { Field, Input, Select, Switch } from "@/core/ui/field";
+import { DateInput } from "@/core/ui/date-input";
 import { announce } from "@/core/ui/live-region";
 import type { Kind } from "../api";
 import { KIND_LABEL } from "../labels";
@@ -25,6 +26,16 @@ interface Values {
   offboard_grace_days: number;
   snapshot_retention_days: number;
   reviewer_name: string;
+  auto_create_jobs: boolean;
+  sdp_close_status: string;
+  sdp_closed_statuses: string[];
+  sdp_add_note: boolean;
+  biostar_user_group_id: string;
+  biostar_access_group_ids: string[];
+  biostar_expiry_date: string;
+  biostar_offboard_action: "disable" | "delete";
+  sdp_attach_path: string;
+  sdp_attach_field: string;
 }
 
 interface SettingsResponse {
@@ -44,10 +55,19 @@ export function SettingsPage() {
   const [v, setV] = useState<Values | null>(null);
   const [productTypes, setProductTypes] = useState("");
   const [serverError, setServerError] = useState("");
+  const [closedStatuses, setClosedStatuses] = useState("");
+  const [loadGroups, setLoadGroups] = useState(false);
+  const groups = useQuery({
+    queryKey: ["lifecycle", "biostar-groups"],
+    queryFn: () => api<{ user_groups: { id: string; name: string }[]; access_groups: { id: string; name: string }[] }>("/api/lifecycle/biostar/groups"),
+    enabled: loadGroups,
+    retry: false,
+  });
   useEffect(() => {
     if (q.data) {
       setV(q.data.values);
       setProductTypes(q.data.values.asset_product_types.join(", "));
+      setClosedStatuses(q.data.values.sdp_closed_statuses.join(", "));
     }
   }, [q.data]);
 
@@ -74,7 +94,8 @@ export function SettingsPage() {
   const num = (key: keyof Values) => (e: React.ChangeEvent<HTMLInputElement>) => set(key, Number(e.target.value) as never);
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    save.mutate({ ...v, asset_product_types: productTypes.split(",").map((s) => s.trim()).filter(Boolean) });
+    const list = (text: string) => text.split(",").map((s) => s.trim()).filter(Boolean);
+    save.mutate({ ...v, asset_product_types: list(productTypes), sdp_closed_statuses: list(closedStatuses) });
   };
   const profileOptions = (type: string) => d.profiles.filter((p) => p.system_type === type);
 
@@ -208,7 +229,73 @@ export function SettingsPage() {
           </div>
         </Panel>
 
-        <Panel title="Biên bản" description="Dùng từ Phase 3 khi lập Biên bản Bàn giao / Thu hồi.">
+        <Panel title="Job onboard / offboard" description="Các bước ghi dữ liệu dùng credential Write của từng kết nối.">
+          <div className="space-y-4">
+            <Switch label="Tự tạo Job nháp sau mỗi lần đồng bộ" description="Mỗi request Nhân viên mới / Nghỉ việc có một Job nháp. Job nháp không thay đổi gì trên SDP hay BioStar." checked={v.auto_create_jobs} onChange={(x) => set("auto_create_jobs", x)} />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Trạng thái request khi đóng Job" hint="Tên trạng thái trên SDP, ví dụ Resolved hoặc Closed.">
+                <Input value={v.sdp_close_status} onChange={(e) => set("sdp_close_status", e.target.value)} />
+              </Field>
+              <Field label="Trạng thái được coi là đã đóng" hint="Cách nhau bằng dấu phẩy. Job dừng nếu request đang ở các trạng thái này.">
+                <Input value={closedStatuses} onChange={(e) => setClosedStatuses(e.target.value)} />
+              </Field>
+            </div>
+            <Switch label="Thêm ghi chú tóm tắt vào request khi đóng" checked={v.sdp_add_note} onChange={(x) => set("sdp_add_note", x)} />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Đường dẫn API đính kèm file" hint="{request_id} được thay bằng ID request. Kiểm tra với bản SDP đang dùng.">
+                <Input value={v.sdp_attach_path} onChange={(e) => set("sdp_attach_path", e.target.value)} className="font-mono" />
+              </Field>
+              <Field label="Tên field file">
+                <Input value={v.sdp_attach_field} onChange={(e) => set("sdp_attach_field", e.target.value)} className="font-mono" />
+              </Field>
+            </div>
+            <fieldset className="rounded-sm border border-line p-3">
+              <legend className="px-1 text-sm font-semibold">BioStar</legend>
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <Button size="sm" onClick={() => setLoadGroups(true)} loading={groups.isFetching}>Tải danh sách nhóm từ BioStar</Button>
+                {groups.isError && <span className="text-sm text-failed">{(groups.error as Error).message}</span>}
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Nhóm người dùng cho nhân viên mới">
+                  {groups.data ? (
+                    <Select value={v.biostar_user_group_id} onChange={(e) => set("biostar_user_group_id", e.target.value)}>
+                      {groups.data.user_groups.map((g) => <option key={g.id} value={g.id}>{g.name} (ID {g.id})</option>)}
+                    </Select>
+                  ) : (
+                    <Input value={v.biostar_user_group_id} onChange={(e) => set("biostar_user_group_id", e.target.value)} className="font-mono" />
+                  )}
+                </Field>
+                <Field label="Hiệu lực user tới ngày">
+                  <DateInput value={v.biostar_expiry_date} onChange={(x) => x && set("biostar_expiry_date", x)} />
+                </Field>
+              </div>
+              <fieldset className="mt-3">
+                <legend className="mb-1 text-sm font-medium">Nhóm quyền ra vào mặc định</legend>
+                {groups.data ? (
+                  <div className="grid gap-1 sm:grid-cols-2">
+                    {groups.data.access_groups.map((g) => (
+                      <label key={g.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                        <input type="checkbox" className="size-4 accent-[var(--primary)]" checked={v.biostar_access_group_ids.includes(g.id)}
+                          onChange={(e) => set("biostar_access_group_ids", e.target.checked ? [...v.biostar_access_group_ids, g.id] : v.biostar_access_group_ids.filter((x) => x !== g.id))} />
+                        {g.name} <span className="text-muted">(ID {g.id})</span>
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted">Đang chọn ID: {v.biostar_access_group_ids.join(", ") || "chưa có"}. Tải danh sách từ BioStar để chọn.</p>
+                )}
+              </fieldset>
+              <Field label="Khi offboard" className="mt-3 max-w-sm">
+                <Select value={v.biostar_offboard_action} onChange={(e) => set("biostar_offboard_action", e.target.value as "disable" | "delete")}>
+                  <option value="disable">Vô hiệu hoá user và gỡ nhóm quyền (giữ lịch sử)</option>
+                  <option value="delete">Xoá user khỏi BioStar</option>
+                </Select>
+              </Field>
+            </fieldset>
+          </div>
+        </Panel>
+
+        <Panel title="Biên bản" description="Dùng khi lập Biên bản Bàn giao / Thu hồi.">
           <Field label="Người kiểm tra (Nội dung B)" className="max-w-md">
             <Input value={v.reviewer_name} onChange={(e) => set("reviewer_name", e.target.value)} placeholder="Họ tên trưởng nhóm IT" />
           </Field>
@@ -216,7 +303,7 @@ export function SettingsPage() {
 
         {serverError && <p role="alert" className="rounded-sm bg-failed-soft px-3 py-2 text-sm text-failed">{serverError}</p>}
         <div className="sticky bottom-0 -mx-5 flex justify-end gap-2 border-t border-line bg-paper/95 px-5 py-3 backdrop-blur">
-          <Button onClick={() => { setV(d.values); setProductTypes(d.values.asset_product_types.join(", ")); }}>Hoàn tác thay đổi</Button>
+          <Button onClick={() => { setV(d.values); setProductTypes(d.values.asset_product_types.join(", ")); setClosedStatuses(d.values.sdp_closed_statuses.join(", ")); }}>Hoàn tác thay đổi</Button>
           <Button type="submit" variant="primary" loading={save.isPending}>Lưu cấu hình</Button>
         </div>
       </form>

@@ -94,6 +94,81 @@ class BioStarClient:
             )
         return data
 
+    async def send(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        """Write call with one re-login on an expired session. Never retried otherwise."""
+        if not self.session_id:
+            await self.login()
+        for attempt in range(2):
+            resp = await http.request(
+                self._client,
+                method,
+                path,
+                max_attempts=1,
+                json=json_body,
+                params=params,
+                headers={SESSION_HEADER: self.session_id or ""},
+            )
+            if resp.status_code == 401 and attempt == 0:
+                await self.login()
+                continue
+            data = self._json(resp) if resp.content else {}
+            code = str((data.get("Response") or {}).get("code", "0"))
+            if resp.status_code >= 400 or code not in ("0", ""):
+                message = (data.get("Response") or {}).get("message") or f"HTTP {resp.status_code}"
+                raise BioStarError(
+                    f"BioStar từ chối: {message}",
+                    status=resp.status_code,
+                    hint="Tài khoản Write cần quyền quản lý User trong BioStar."
+                    if resp.status_code == 403
+                    else "",
+                )
+            return resp.status_code, data
+        raise AssertionError("unreachable")
+
+    async def get_user(self, user_id: str) -> dict[str, Any] | None:
+        if not self.session_id:
+            await self.login()
+        resp = await http.request(
+            self._client, "GET", f"/api/users/{user_id}", headers={SESSION_HEADER: self.session_id or ""}
+        )
+        if resp.status_code == 401:
+            await self.login()
+            resp = await http.request(
+                self._client, "GET", f"/api/users/{user_id}", headers={SESSION_HEADER: self.session_id or ""}
+            )
+        if resp.status_code == 404:
+            return None
+        data = self._json(resp)
+        if resp.status_code >= 400:
+            raise BioStarError(
+                (data.get("Response") or {}).get("message") or f"HTTP {resp.status_code}",
+                status=resp.status_code,
+            )
+        user = data.get("User")
+        return user if isinstance(user, dict) and user.get("user_id") else None
+
+    async def create_user(self, user: dict[str, Any]) -> dict[str, Any]:
+        return (await self.send("POST", "/api/users", json_body={"User": user}))[1]
+
+    async def update_user(self, user_id: str, user: dict[str, Any]) -> dict[str, Any]:
+        return (await self.send("PUT", f"/api/users/{user_id}", json_body={"User": user}))[1]
+
+    async def delete_user(self, user_id: str) -> dict[str, Any]:
+        return (await self.send("DELETE", "/api/users", params={"id": user_id}))[1]
+
+    async def user_groups(self) -> list[dict[str, Any]]:
+        return (await self.get("/api/user_groups")).get("UserGroupCollection", {}).get("rows") or []
+
+    async def access_groups(self) -> list[dict[str, Any]]:
+        return (await self.get("/api/access_groups")).get("AccessGroupCollection", {}).get("rows") or []
+
     async def list_users(self, page_size: int = 500, max_rows: int = 50000) -> list[dict[str, Any]]:
         """All BioStar users, paging with limit/offset until ``UserCollection.total`` is reached."""
         rows: list[dict[str, Any]] = []

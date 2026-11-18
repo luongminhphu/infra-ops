@@ -8,6 +8,7 @@ from app.core.rbac.models import KnownPermission, Role, RolePermission, UserRole
 from app.core.scheduler.models import ScheduledTaskRow
 from app.core.settings.models import ModuleSetting
 from app.core.storage.models import StoredFile
+from app.core.workflow.models import Job, JobEvent, JobStep
 
 __all__ = [
     "AuditLog",
@@ -15,6 +16,9 @@ __all__ = [
     "Credential",
     "Document",
     "DocumentSequence",
+    "Job",
+    "JobEvent",
+    "JobStep",
     "KnownPermission",
     "ModuleSetting",
     "Role",

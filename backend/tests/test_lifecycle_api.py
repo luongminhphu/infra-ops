@@ -119,6 +119,12 @@ async def test_end_to_end_sync_and_reconciliation(admin, configured, respx_mock)
     assert summary["status"] == "success", summary
     assert summary["requests_fetched"] == 3 and summary["sdp_users"] == 3 and summary["biostar_users"] == 3
     assert summary["assets"] == 2  # printer filtered out by product types
+    assert summary["jobs_created"] == 2  # onboard 003551 + offboard 002100 (1003 has parse errors)
+    jobs = (await admin.get("/api/core/jobs", params={"status": "draft"})).json()["items"]
+    assert {(j["workflow_key"], j["subject_key"]) for j in jobs} >= {
+        ("lifecycle.onboard", "003551"),
+        ("lifecycle.offboard", "002100"),
+    }
     assert routes["list"].calls[0].request.headers["authtoken"] == "k-e2e-0000000001"
     criteria = json.loads(routes["list"].calls[0].request.url.params["input_data"])["list_info"][
         "search_criteria"
@@ -224,15 +230,16 @@ async def test_sync_now_runs_through_scheduler(admin, configured, respx_mock) ->
     mock_systems(respx_mock)
     resp = await admin.post("/api/lifecycle/sync")
     assert resp.status_code == 200
-    ran = await run_once(get_sessionmaker(), get_registry())
-    assert ran == "lifecycle.sync"
+    # Other due tasks (e.g. core.workflow woken by job actions) may run first.
+    ran = [await run_once(get_sessionmaker(), get_registry()) for _ in range(3)]
+    assert "lifecycle.sync" in ran
     task = (await admin.get("/api/lifecycle/sync")).json()["task"]
     assert task["last_status"] == "success" and task["running"] is False
     assert task["last_result"]["status"] in ("success", "partial")
     run = (await admin.get("/api/lifecycle/sync")).json()["runs"][0]
     assert run["trigger"] == "manual" and run["requested_by"] == "admin@test.local"
-    # Nothing else due right now
-    assert await run_once(get_sessionmaker(), get_registry()) is None
+    # The sync task is not due again right away
+    assert "lifecycle.sync" not in [await run_once(get_sessionmaker(), get_registry()) for _ in range(2)]
 
 
 async def test_settings_validation_and_permissions(admin, client) -> None:  # type: ignore[no-untyped-def]

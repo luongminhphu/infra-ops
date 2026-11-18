@@ -35,6 +35,7 @@ infra-ops is an internal platform for IT Infrastructure operations. It is built 
 | Module settings | `core/settings` | Typed (pydantic) per-module configuration in `core_module_setting`; invalid stored values fall back to defaults; changes audited as diffs. |
 | Files | `core/storage` | `core_file` metadata + `LocalFileStorage` (directory / PVC; S3 later). Uploads are type-checked by magic bytes and size-limited. |
 | Documents | `core/documents` | `DocumentKind`s declared by modules. Versioned DOCX templates (bundled default seeded as v1; uploads validated, unknown placeholders flagged), rendering with docxtpl (autoescape), PDF via LibreOffice with an isolated profile per conversion, monthly numbering `PREFIX-YYYYMM-####` (atomic upsert), lifecycle draft → finalized → signed / void. |
+| Workflow | `core/workflow` | Generic Job/Step engine. Workflows declared in manifests; the worker (`core.workflow` task, every 15 s or on demand) advances jobs under row locks: automatic steps, manual steps (prepare + validate input), typed confirmation, waits with timers/timeouts, failure + retry, skip, cancel, admin override-close, dry-run preview. Job log (`core_job_event`) + audit with before/after state. |
 | Scheduler | `core/scheduler` + `app/worker.py` | `ScheduledTask`s declared in manifests; rows in `core_scheduled_task`; the worker leases due tasks with `FOR UPDATE SKIP LOCKED` + `lease_until` (safe with several replicas, crash-tolerant). "Run now" = set `next_run_at`. No Redis. |
 | Logging | `core/logging.py` | structlog JSON, correlation ID (`X-Request-ID`), secret redaction. |
 
@@ -81,6 +82,19 @@ prefill (RTR request + latest asset snapshot) → draft (editable, PDF preview w
 Templates come from the company forms (ITD-FRM-AST-001/002) via `scripts/build_form_templates.py`
 (record number in the header, one repeating asset row, Tình trạng column on returns, ☑/☐ checklist,
 fixed table layout).
+
+### Onboard / Offboard jobs (Phase 4)
+
+```
+sync → draft job per RTR request (no external writes) → Helpdesk prepares (assets, SDP user) → preview
+Onboard : check request → find SDP user (waits for AD→SDP import) → assign In Store assets → create BioStar
+          user → enrolment (manual, verified on BioStar) → handover record until signed → attach + note + close
+Offboard: check request → find SDP user → collect assets + condition (manual) → assets back to In Store
+          → disable/delete BioStar user (retype employee ID) → return record until signed → attach + note + close
+```
+
+Writes use the Write credential of each connection; SDP writes send `input_data`; nothing is retried
+automatically except reads, and each step re-reads state so a manual retry never duplicates changes.
 
 ## Security model
 

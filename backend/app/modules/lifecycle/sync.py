@@ -250,6 +250,11 @@ async def run_sync(
             "issues": issue_total,
         }
     )
+    if sources["sdp"]:
+        # One draft job per onboard/offboard request (drafts never write to external systems).
+        from app.modules.lifecycle.jobs_api import auto_create_jobs
+
+        stats["jobs_created"] = await auto_create_jobs(session)
     run.stats = stats
     run.errors = errors
     run.notes = result.notes

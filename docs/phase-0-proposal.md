@@ -745,3 +745,19 @@ Cần chỉnh nhẹ trong file mẫu khi làm Phase 3: bảng thiết bị hiệ
 - **Cần kiểm tra với SDP 16020 thật**: API đính kèm file vào request. Mặc định dùng
   `POST /api/v3/requests/{request_id}/_uploads` với field `filename`; đổi được trong Cấu hình module
   nếu bản SDP dùng đường dẫn/field khác.
+
+---
+
+## 15. Phase 4 – Workflow Onboard / Offboard (18/11/2026)
+
+- Yêu cầu: cấu hình API key SDP trên giao diện (đã có từ Phase 1), lấy dữ liệu Onboard/Offboard từ SDP
+  (Phase 2) và **chạy quy trình** Onboard/Offboard (phase này). Bước Microsoft vẫn tạm hoãn.
+- Job nháp tự tạo sau mỗi lần đồng bộ cho request loại `onboard` / `offboard` (tắt được trong Cấu hình module).
+  Request loại *Thử việc → chính thức* và *Thuyên chuyển* chưa có quy trình.
+- Onboard chờ user SDP xuất hiện (tài khoản AD do Helpdesk tạo, LDAP import vào SDP), kiểm tra lại mỗi 15 phút,
+  tối đa 72 giờ.
+- **Cần kiểm tra với hệ thống thật (nên làm trên môi trường Test):**
+  - SDP 16020: `PUT /api/v3/assets/{id}` với `input_data` `{"asset":{"state":{"name":…},"user":{"id":…}}}`;
+    ghi chú `POST /api/v3/requests/{id}/notes`; đổi trạng thái `PUT /api/v3/requests/{id}`; tìm user theo trường
+    Mã NV; tìm tài sản theo `user.id`; đính kèm file (đường dẫn/field chỉnh trong Cấu hình module).
+  - BioStar 2: `GET/POST/PUT /api/users`, `DELETE /api/users?id=…`, nhóm người dùng / nhóm quyền ra vào.

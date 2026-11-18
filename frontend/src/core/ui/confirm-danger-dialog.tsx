@@ -14,7 +14,7 @@ interface Props {
   /** The value the user must type to unlock the action (e.g. employee ID or connection name). */
   confirmText: string;
   confirmLabel: string;
-  inputLabel?: string;
+  inputLabel?: ReactNode;
   loading?: boolean;
 }
 

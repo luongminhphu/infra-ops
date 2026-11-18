@@ -134,7 +134,7 @@ export function DashboardPage() {
       </div>
       <div className="grid gap-4 xl:grid-cols-2">
         {q.data?.map((w) => (
-          <Panel key={w.key} title={w.title} bodyClassName="py-1" className={w.kind === "lifecycle_reconciliation" ? "xl:col-span-2" : undefined}>
+          <Panel key={w.key} title={w.title} bodyClassName="py-1" className={["lifecycle_reconciliation", "lifecycle_jobs"].includes(w.kind) ? "xl:col-span-2" : undefined}>
             {w.error ? (
               <ErrorState error={new Error(w.error)} />
             ) : w.kind === "connections" ? (

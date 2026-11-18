@@ -132,6 +132,59 @@ class SdpClient:
             start += len(page)
         return rows[:max_rows]
 
+    async def write(self, method: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """API v3 write: the JSON body goes in the ``input_data`` form field. Not retried (avoid duplicates)."""
+        resp = await http.request(
+            self._client,
+            method,
+            path,
+            max_attempts=1,
+            headers=await self._auth_headers(),
+            data={"input_data": json.dumps(payload, ensure_ascii=False)},
+        )
+        return self._parse(resp)
+
+    # -- typed helpers used by workflows ------------------------------------------------
+    async def get_request(self, request_id: str) -> dict[str, Any]:
+        return (await self.get(f"/api/v3/requests/{request_id}")).get("request") or {}
+
+    async def get_asset(self, asset_id: str) -> dict[str, Any]:
+        return (await self.get(f"/api/v3/assets/{asset_id}")).get("asset") or {}
+
+    async def find_users(self, field: str, value: str) -> list[dict[str, Any]]:
+        return await self.list_all(
+            "/api/v3/users",
+            "users",
+            search_criteria={"field": field, "condition": "is", "value": value},
+            max_rows=20,
+        )
+
+    async def assets_of_user(self, user_id: str) -> list[dict[str, Any]]:
+        return await self.list_all(
+            "/api/v3/assets",
+            "assets",
+            search_criteria={"field": "user.id", "condition": "is", "value": user_id},
+            max_rows=200,
+        )
+
+    async def update_asset(self, asset_id: str, state: str, user_id: str | None) -> dict[str, Any]:
+        asset: dict[str, Any] = {"state": {"name": state}, "user": {"id": user_id} if user_id else None}
+        return (await self.write("PUT", f"/api/v3/assets/{asset_id}", {"asset": asset})).get("asset") or {}
+
+    async def add_note(self, request_id: str, html: str) -> dict[str, Any]:
+        note = {
+            "description": html,
+            "show_to_requester": False,
+            "mark_first_response": False,
+            "add_to_linked_requests": False,
+        }
+        return await self.write("POST", f"/api/v3/requests/{request_id}/notes", {"note": note})
+
+    async def set_request_status(self, request_id: str, status: str) -> dict[str, Any]:
+        return await self.write(
+            "PUT", f"/api/v3/requests/{request_id}", {"request": {"status": {"name": status}}}
+        )
+
     async def post_file(self, path: str, field: str, filename: str, data: bytes, mime: str) -> dict[str, Any]:
         """Multipart upload (e.g. request attachments). Never retried on failure to avoid duplicates."""
         resp = await http.request(

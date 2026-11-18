@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib
 from collections.abc import Iterable
+from typing import Any
 
 from app.core.modules.manifest import DocumentKind, ModuleManifest, NavItem, Permission, ScheduledTask
 from app.core.permissions import CORE_MANIFEST
@@ -48,6 +49,12 @@ class ModuleRegistry:
 
     def document_kind(self, key: str) -> tuple[str, DocumentKind] | None:
         return next(((mid, k) for mid, k in self.document_kinds() if k.key == key), None)
+
+    def workflow(self, key: str) -> tuple[str, Any] | None:
+        return next(((m.id, w) for m in self._modules.values() for w in m.workflows if w.key == key), None)
+
+    def workflows(self) -> list[tuple[str, Any]]:
+        return [(m.id, w) for m in self._modules.values() for w in m.workflows]
 
     def has_permission(self, code: str) -> bool:
         return code in self._permissions

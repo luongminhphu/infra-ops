@@ -110,12 +110,16 @@ class ModuleManifest:
     dashboard_widgets: Sequence[DashboardWidget] = ()
     scheduled_tasks: Sequence[ScheduledTask] = ()
     document_kinds: Sequence[DocumentKind] = ()
+    workflows: Sequence[Any] = ()  # WorkflowDefinition (app.core.workflow.definitions)
     tags: Sequence[str] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         for perm in self.permissions:
             if not perm.code.startswith(f"{self.id}."):
                 raise ValueError(f"Permission {perm.code!r} must be prefixed with module id {self.id!r}")
+        for wf in self.workflows:
+            if not wf.key.startswith(f"{self.id}."):
+                raise ValueError(f"Workflow {wf.key!r} must be prefixed with module id {self.id!r}")
         for kind in self.document_kinds:
             if not kind.key.startswith(f"{self.id}."):
                 raise ValueError(f"Document kind {kind.key!r} must be prefixed with module id {self.id!r}")
