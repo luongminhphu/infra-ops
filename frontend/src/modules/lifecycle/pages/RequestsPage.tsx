@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { useAuth } from "@/core/auth/AuthProvider";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Ticket, X } from "lucide-react";
-import { api } from "@/core/api/client";
+import { api, errorMessage } from "@/core/api/client";
 import { Button } from "@/core/ui/button";
 import { DataTable } from "@/core/ui/data-table";
 import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
@@ -12,6 +14,43 @@ import { StatusBadge } from "@/core/ui/status";
 import { formatDate, formatDateTime } from "@/core/lib/format";
 import type { RtrRequest } from "../api";
 import { KIND_LABEL } from "../labels";
+import { JOB_STATUS, type Job } from "../jobs";
+
+function JobLink({ r }: { r: RtrRequest }) {
+  const { can } = useAuth();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const jobs = useQuery({
+    queryKey: ["jobs", "request", r.id],
+    queryFn: () => api<{ items: Job[] }>(`/api/core/jobs?${new URLSearchParams({ q: r.id, status: "" })}`),
+    enabled: can("lifecycle.job.view"),
+  });
+  const create = useMutation({
+    mutationFn: () => api<Job>("/api/lifecycle/jobs", { method: "POST", json: { request_id: r.id } }),
+    onSuccess: async (j) => {
+      await qc.invalidateQueries({ queryKey: ["jobs"] });
+      navigate(`/lifecycle/jobs/${j.id}`);
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  if (!can("lifecycle.job.view") || !r.kind || !["onboard", "offboard"].includes(r.kind)) return null;
+  const job = jobs.data?.items.find((j) => j.external_ref === r.id);
+  return (
+    <div className="rounded-sm border border-line p-3">
+      <h3 className="mb-1.5 text-base font-semibold">Job {r.kind === "onboard" ? "onboard" : "offboard"}</h3>
+      {job ? (
+        <p className="flex flex-wrap items-center gap-2 text-sm">
+          <StatusBadge status={JOB_STATUS[job.status].status} label={JOB_STATUS[job.status].label} />
+          <Link to={`/lifecycle/jobs/${job.id}`} className="font-medium text-primary hover:underline">Mở Job ({job.progress.done}/{job.progress.total} bước)</Link>
+        </p>
+      ) : can("lifecycle.job.execute") && !r.parse_errors.length ? (
+        <Button variant="primary" size="sm" loading={create.isPending} onClick={() => create.mutate()}>Tạo Job từ request này</Button>
+      ) : (
+        <p className="text-sm text-muted">{r.parse_errors.length ? "Sửa lỗi đọc request trước khi tạo Job." : "Chưa có Job."}</p>
+      )}
+    </div>
+  );
+}
 
 function RequestPanel({ id, onClose }: { id: string; onClose: () => void }) {
   const q = useQuery({ queryKey: ["lifecycle", "request", id], queryFn: () => api<RtrRequest>(`/api/lifecycle/requests/${id}`) });
@@ -31,6 +70,7 @@ function RequestPanel({ id, onClose }: { id: string; onClose: () => void }) {
       {q.isError && <div className="p-4"><ErrorState error={q.error} /></div>}
       {r && (
         <div className="space-y-4 p-4">
+          <JobLink r={r} />
           {r.parse_errors.length > 0 && (
             <div role="alert" className="rounded-sm bg-failed-soft p-2.5 text-sm">
               <p className="font-medium text-failed">Chưa đọc được đầy đủ thông tin</p>

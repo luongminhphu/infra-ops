@@ -13,6 +13,30 @@ interface Data {
   top_rules?: { rule: string; title: string; severity: Severity; count: number }[];
 }
 
+/** Dashboard tile: open jobs by state, each linking to the filtered list. */
+export function JobsWidget({ data }: { data: unknown }) {
+  const rows = (data as { counts: { workflow: string; status: string; count: number }[] }).counts;
+  const sum = (statuses: string[]) => rows.filter((r) => statuses.includes(r.status)).reduce((n, r) => n + r.count, 0);
+  const tiles = [
+    { label: "Đang mở", value: sum(["running", "waiting", "scheduled", "failed"]), to: "open", tone: "" },
+    { label: "Chờ Helpdesk / chờ ký", value: sum(["waiting"]), to: "waiting", tone: "text-waiting" },
+    { label: "Lỗi", value: sum(["failed"]), to: "failed", tone: "text-failed" },
+    { label: "Nháp chưa bắt đầu", value: sum(["draft"]), to: "draft", tone: "" },
+  ];
+  return (
+    <ul className="grid grid-cols-2 gap-2 py-2 sm:grid-cols-4" aria-label="Job theo trạng thái">
+      {tiles.map((t) => (
+        <li key={t.to}>
+          <Link to={`/lifecycle/jobs?status=${t.to}`} className="block rounded-sm border border-line px-3 py-2 hover:bg-surface-2">
+            <span className="block text-sm text-muted">{t.label}</span>
+            <span className={`block tabular text-2xl font-semibold ${t.tone}`}>{t.value}</span>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** Dashboard tile: severity counts as text + proportion bars (counts are always shown as numbers). */
 export function ReconciliationWidget({ data }: { data: unknown }) {
   const d = data as Data;
