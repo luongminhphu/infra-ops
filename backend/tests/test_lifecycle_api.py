@@ -121,7 +121,10 @@ async def test_end_to_end_sync_and_reconciliation(admin, configured, respx_mock)
     assert summary["assets"] == 2  # printer filtered out by product types
     assert summary["jobs_created"] == 2  # onboard 003551 + offboard 002100 (1003 has parse errors)
     jobs = (await admin.get("/api/core/jobs", params={"status": "draft"})).json()["items"]
-    assert {(j["workflow_key"], j["subject_key"]) for j in jobs} >= {("lifecycle.onboard", "003551"), ("lifecycle.offboard", "002100")}
+    assert {(j["workflow_key"], j["subject_key"]) for j in jobs} >= {
+        ("lifecycle.onboard", "003551"),
+        ("lifecycle.offboard", "002100"),
+    }
     assert routes["list"].calls[0].request.headers["authtoken"] == "k-e2e-0000000001"
     criteria = json.loads(routes["list"].calls[0].request.url.params["input_data"])["list_info"][
         "search_criteria"
