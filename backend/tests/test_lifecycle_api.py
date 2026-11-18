@@ -224,15 +224,16 @@ async def test_sync_now_runs_through_scheduler(admin, configured, respx_mock) ->
     mock_systems(respx_mock)
     resp = await admin.post("/api/lifecycle/sync")
     assert resp.status_code == 200
-    ran = await run_once(get_sessionmaker(), get_registry())
-    assert ran == "lifecycle.sync"
+    # Other due tasks (e.g. core.workflow woken by job actions) may run first.
+    ran = [await run_once(get_sessionmaker(), get_registry()) for _ in range(3)]
+    assert "lifecycle.sync" in ran
     task = (await admin.get("/api/lifecycle/sync")).json()["task"]
     assert task["last_status"] == "success" and task["running"] is False
     assert task["last_result"]["status"] in ("success", "partial")
     run = (await admin.get("/api/lifecycle/sync")).json()["runs"][0]
     assert run["trigger"] == "manual" and run["requested_by"] == "admin@test.local"
-    # Nothing else due right now
-    assert await run_once(get_sessionmaker(), get_registry()) is None
+    # The sync task is not due again right away
+    assert "lifecycle.sync" not in [await run_once(get_sessionmaker(), get_registry()) for _ in range(2)]
 
 
 async def test_settings_validation_and_permissions(admin, client) -> None:  # type: ignore[no-untyped-def]

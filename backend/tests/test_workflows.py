@@ -393,6 +393,13 @@ async def test_closed_request_fails_and_retry_recovers(admin, systems) -> None: 
             await s.delete(old)
             await s.commit()
     j = (await admin.post("/api/lifecycle/jobs", json={"request_id": "9101"})).json()
+    # Do not reuse an SDP user guessed from an earlier sync: look it up live.
+    j = (
+        await admin.put(
+            f"/api/lifecycle/jobs/{j['id']}/params", json={"version": j["version"], "clear_sdp_user": True}
+        )
+    ).json()
+    assert j["params"]["sdp_user_id"] is None
     await admin.post(f"/api/core/jobs/{j['id']}/start", json={"version": j["version"]})
     await run_worker()
     j = await job(admin, j["id"])
