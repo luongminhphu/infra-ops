@@ -26,6 +26,7 @@ from app.core.rbac.api import router as rbac_router
 from app.core.rbac.service import sync_permissions
 from app.core.scheduler.service import sync_tasks
 from app.core.secrets.crypto import get_keyring
+from app.core.workflow.api import router as workflow_router
 
 log = get_logger(__name__)
 
@@ -66,7 +67,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     install_error_handlers(app)
 
     core = APIRouter(prefix="/api/core")
-    for r in (auth_router, rbac_router, connections_router, audit_router, dashboard_router, documents_router):
+    for r in (
+        auth_router,
+        rbac_router,
+        connections_router,
+        audit_router,
+        dashboard_router,
+        documents_router,
+        workflow_router,
+    ):
         core.include_router(r)
     app.include_router(core)
     for manifest in registry.modules:

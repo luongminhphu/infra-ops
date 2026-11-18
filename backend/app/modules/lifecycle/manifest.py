@@ -14,12 +14,29 @@ from app.core.modules.manifest import DashboardWidget, ModuleManifest, NavItem, 
 from app.modules.lifecycle.api import router
 from app.modules.lifecycle.documents import HANDOVER, RETURN
 from app.modules.lifecycle.documents_api import router as documents_router
+from app.modules.lifecycle.jobs_api import router as jobs_router
+from app.modules.lifecycle.workflows import OFFBOARD, ONBOARD
 
 
 async def _sync(session: AsyncSession) -> dict[str, Any]:
     from app.modules.lifecycle.sync import scheduled_sync
 
     return await scheduled_sync(session)
+
+
+async def _jobs(session: AsyncSession) -> dict[str, Any]:
+    from sqlalchemy import func, select
+
+    from app.core.workflow.models import Job
+
+    rows = (
+        await session.execute(
+            select(Job.workflow_key, Job.status, func.count())
+            .where(Job.module_id == "lifecycle")
+            .group_by(Job.workflow_key, Job.status)
+        )
+    ).all()
+    return {"counts": [{"workflow": w, "status": s, "count": n} for w, s, n in rows]}
 
 
 async def _summary(session: AsyncSession) -> dict[str, Any]:
@@ -45,7 +62,8 @@ manifest = ModuleManifest(
         Permission("lifecycle.templates.manage", "Quản lý mẫu biên bản và huỷ biên bản đã chốt"),
         Permission("lifecycle.settings.manage", "Cấu hình mapping của module"),
     ],
-    routers=[router, documents_router],
+    routers=[router, documents_router, jobs_router],
+    workflows=[ONBOARD, OFFBOARD],
     document_kinds=[HANDOVER, RETURN],
     nav=[
         NavItem(
@@ -72,6 +90,9 @@ manifest = ModuleManifest(
         ),
     ],
     dashboard_widgets=[
+        DashboardWidget(
+            "lifecycle.jobs", "Job onboard / offboard", "lifecycle_jobs", "lifecycle.job.view", _jobs, order=4
+        ),
         DashboardWidget(
             "lifecycle.reconciliation",
             "Đối soát theo Mã NV",

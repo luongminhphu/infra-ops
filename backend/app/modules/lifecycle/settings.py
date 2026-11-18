@@ -75,6 +75,18 @@ class LifecycleSettings(BaseModel):
 
     # Documents (Phase 3)
     reviewer_name: str = Field("", max_length=200)
+    # Workflows (Onboard / Offboard)
+    auto_create_jobs: bool = True
+    sdp_close_status: str = Field("Resolved", min_length=1, max_length=64)
+    sdp_closed_statuses: list[str] = Field(
+        default_factory=lambda: ["Closed", "Resolved", "Cancelled", "Canceled"]
+    )
+    sdp_add_note: bool = True
+    biostar_user_group_id: str = Field("1", max_length=32)
+    biostar_access_group_ids: list[str] = Field(default_factory=list)
+    biostar_expiry_date: str = Field("2037-12-31", pattern=r"^\d{4}-\d{2}-\d{2}$")
+    biostar_offboard_action: Literal["disable", "delete"] = "disable"
+
     # SDP attachment upload (verify against your SDP build; editable without code change)
     sdp_attach_path: str = Field("/api/v3/requests/{request_id}/_uploads", max_length=200)
     sdp_attach_field: str = Field("filename", max_length=50)

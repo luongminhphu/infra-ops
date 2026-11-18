@@ -6,7 +6,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.modules.manifest import DashboardWidget, ModuleManifest, NavItem, Permission
+from app.core.modules.manifest import DashboardWidget, ModuleManifest, NavItem, Permission, ScheduledTask
 
 DASHBOARD_VIEW = "core.dashboard.view"
 CONNECTIONS_VIEW = "core.connections.view"
@@ -28,6 +28,12 @@ async def _expiring_widget(session: AsyncSession) -> dict[str, Any]:
     return await expiring_secrets(session)
 
 
+async def _workflow_pump(session: AsyncSession) -> dict[str, Any]:
+    from app.core.workflow.engine import pump
+
+    return await pump(session)
+
+
 CORE_MANIFEST = ModuleManifest(
     id="core",
     name="Hệ thống",
@@ -39,6 +45,16 @@ CORE_MANIFEST = ModuleManifest(
         Permission(CONNECTIONS_TEST, "Kiểm tra kết nối", ("helpdesk",)),
         Permission(AUDIT_VIEW, "Xem nhật ký kiểm tra"),
         Permission(RBAC_MANAGE, "Quản lý người dùng và phân quyền"),
+    ],
+    scheduled_tasks=[
+        ScheduledTask(
+            "core.workflow",
+            "Chạy các bước tự động của Job",
+            _workflow_pump,
+            interval_seconds=15,
+            timeout_seconds=600,
+            initial_delay_seconds=5,
+        ),
     ],
     dashboard_widgets=[
         DashboardWidget(
