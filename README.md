@@ -20,8 +20,8 @@ Tài liệu: [kiến trúc](docs/architecture.md) · [thêm module](docs/adding-
 | 0 | Hiện trạng, kiến trúc, câu hỏi mở | Xong |
 | 1 | Platform Core: module, đăng nhập, RBAC, kết nối hệ thống (SDP, BioStar), audit, design system | Xong |
 | 2 | SDP + BioStar: đọc request RTR, user, tài sản, user BioStar; đối soát theo Mã NV; export; bộ lập lịch nền | Xong |
-| 3 | Biên bản Bàn giao / Thu hồi theo mẫu thật: mẫu có phiên bản, số tự sinh, PDF, tải bản ký, đính kèm SDP | **Xong** |
-| 4–5 | Workflow Onboard / Offboard (SDP + BioStar) | |
+| 3 | Biên bản Bàn giao / Thu hồi theo mẫu thật: mẫu có phiên bản, số tự sinh, PDF, tải bản ký, đính kèm SDP | Xong |
+| 4 | Workflow Onboard / Offboard từ request SDP (gán/thu hồi tài sản, BioStar, biên bản, đóng request) | **Xong** |
 | sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
 
 ## Chạy local
@@ -139,6 +139,20 @@ Vai trò được gán hoàn toàn trong app (Người dùng & quyền).
 - **Mẫu biên bản**: tải mẫu đang dùng về, sửa trong Word (giữ placeholder `{{ … }}`), tải lên thành phiên bản
   mới, xem thử với dữ liệu mẫu rồi bấm “Dùng phiên bản này”. Danh sách placeholder có ngay trên trang.
 - Mẫu gốc được tạo từ file Word của công ty bằng `backend/scripts/build_form_templates.py`.
+
+### Job Onboard / Offboard
+1. Nhập thêm credential **Write** cho ServiceDesk Plus (technician có quyền sửa Request, Asset) và BioStar
+   (tài khoản quản lý User). Nên thử trước trên kết nối **Test**.
+2. **Cấu hình module → Job onboard / offboard**: trạng thái đóng request (mặc định `Resolved`), bấm
+   **Tải danh sách nhóm từ BioStar** để chọn nhóm người dùng và nhóm quyền ra vào mặc định, chọn vô hiệu hoá
+   hay xoá user BioStar khi offboard.
+3. Sau mỗi lần đồng bộ, mỗi request *Nhân viên mới* / *Nghỉ việc* có một **Job nháp** (không ghi gì ra ngoài).
+4. Mở Job → (onboard) chọn tài sản trong kho → **Xem trước các bước** → **Bắt đầu ngay** hoặc **Lên lịch**
+   theo ngày hiệu lực. Worker chạy các bước tự động; Helpdesk xác nhận các bước thủ công (đăng ký vân tay/thẻ,
+   tình trạng tài sản thu hồi), nhập lại Mã NV trước khi vô hiệu hoá BioStar, chốt và tải biên bản đã ký.
+   Job tự đính kèm biên bản, ghi chú và đóng request SDP.
+5. Bước lỗi có thể **Chạy lại** (an toàn: bước đọc trạng thái hiện tại trước khi ghi); trạng thái trước khi thay
+   đổi được lưu ở từng bước để khôi phục thủ công. Admin có thể **Đóng Job bắt buộc** kèm lý do.
 
 ### Suprema BioStar 2
 1. Tạo tài khoản BioStar riêng: Read = quyền xem User/Access Group; Write = Operator/Administrator có quyền quản lý User.

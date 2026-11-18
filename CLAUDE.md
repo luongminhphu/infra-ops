@@ -29,6 +29,11 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
   core handles templates (versioned DOCX, docxtpl autoescaped), numbering, PDF (LibreOffice), signed
   uploads (magic-byte checked) and audit. Never hard-code layout in code – it lives in the DOCX.
 - Files go through `core.storage.service.save_file/read_file`, never direct filesystem paths.
+- Processes: declare a `WorkflowDefinition` (core/workflow) in the manifest. Steps run in the worker,
+  never in API requests; every write step must read current state first (idempotent on retry), return
+  `before_state`, and never roll back automatically. Dangerous steps use `confirm=True`.
+- Tests: edit files with assertions (`assert old in s`) or the Edit tool – silent no-op edits have
+  caused bugs; cover each wiring path (e.g. sync → auto-created jobs) with a test.
 - Tests never contact real systems (mock with `respx`). Backend tests need PostgreSQL
   (`INFRAOPS_TEST_DATABASE_URL`).
 - UI: only design tokens (no raw hex), core components, icon + label for every status, native
