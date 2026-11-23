@@ -25,7 +25,8 @@ Tài liệu: [kiến trúc](docs/architecture.md) · [thêm module](docs/adding-
 | 5 | Vai trò Manager / Supervisor / Operator / Viewer; module **Công việc Helpdesk**: task SDP theo Operator, chuyển việc (ghi sang SDP), thống kê theo kỳ | Xong |
 | 6 | Lưu đồ Onboard/Offboard, checklist từng bước, Operator xác nhận kèm bằng chứng | Xong |
 | 7 | Giao diện “Phòng điều khiển”: rail phân hệ + menu con, màu cobalt, font Inter, cho toàn app | Xong |
-| 8 | **Việc của tôi** cho Operator (task SDP theo trạng thái, Job onboard/offboard, việc cần chuẩn bị), tự tạo tài khoản Operator, Job theo technician request RTR + chuyển Job (ghi sang SDP), lưu đồ swimlane theo người, đề xuất mua thiết bị | **Xong** |
+| 8 | **Việc của tôi** cho Operator (task SDP theo trạng thái, Job onboard/offboard, việc cần chuẩn bị), tự tạo tài khoản Operator, Job theo technician request RTR + chuyển Job (ghi sang SDP), lưu đồ swimlane theo người, đề xuất mua thiết bị | Xong |
+| 9 | **PO tổng** theo hạn mức (mặc định 200 triệu, tự mở PO tiếp theo), bảng giá do Supervisor cập nhật, bằng chứng Function Head, **Chốt PO** → email nháp .eml; **Kho & cấp phát**: band trong RTR × tiêu chuẩn cấp phát × tài sản In Store → tận dụng hoặc đề xuất mua; tooltip hướng dẫn | **Xong** |
 | sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
 
 ## Chạy local
@@ -196,10 +197,17 @@ Kết nối hệ thống và người dùng/phân quyền chỉ Quản trị tha
    (cấu hình ở **Cấu hình công việc**, mặc định `In Progress`, `On Hold`/`Pending`). Bật **Tự tạo tài khoản
    Operator** để mỗi technician có e-mail mà chưa có tài khoản được tạo tài khoản vai trò Operator (đăng nhập SSO
    bằng e-mail đó) và liên kết sẵn.
-6. **Đề xuất mua thiết bị:** request có từ khoá thay thế / nâng cấp / sửa chữa (sửa được trong cấu hình) hiện thành
-   gợi ý ở **Việc của tôi**; Operator **Lập đề xuất** (thiết bị, số lượng, lý do) hoặc **Không cần**. Manager /
-   Supervisor duyệt → đặt mua → nhận hàng (hoặc từ chối kèm lý do) ở **Đề xuất mua thiết bị** và **Xuất Excel** gửi
-   bộ phận mua hàng. Đề xuất chỉ lưu trong infra-ops, không ghi lên SDP.
+6. **Đề xuất mua thiết bị** (chỉ lưu trong infra-ops, không ghi lên SDP):
+   - Gợi ý từ request có từ khoá thay thế / nâng cấp / sửa chữa (ở **Việc của tôi**) và từ **Kho & cấp phát**
+     (onboard thiếu thiết bị). Operator **Lập đề xuất**: chọn thiết bị trong bảng giá, số lượng, người dùng, lý do và
+     đính kèm **bằng chứng Function Head đã duyệt** (PNG/JPG/PDF, dán ảnh Ctrl+V).
+   - **Bảng giá**: Supervisor nhập/cập nhật đơn giá sau mỗi lần đối tác báo giá.
+   - **Duyệt** (Supervisor/Manager) cần bằng chứng và thiết bị có giá; đề xuất đã duyệt tự vào **PO tổng** đang mở
+     theo thứ tự duyệt, PO không đủ chỗ dưới **hạn mức** (Cấu hình công việc, mặc định 200.000.000 đ) thì hệ thống
+     tự mở PO tiếp theo. Đổi giá/hạn mức thì các PO nháp được gom lại.
+   - **Chốt PO**: cấp số `PO-<năm>-<STT>`, khoá đơn giá, chuyển đề xuất sang *Đã đặt mua* và tải file **.eml** – mở
+     bằng Outlook là email nháp theo mẫu (Cấu hình công việc), kèm Excel chi tiết và bằng chứng. Kiểm tra rồi gửi.
+   - Khi hàng về: **Đã nhận hàng**. **Xuất Excel** toàn bộ đề xuất (đơn giá, thành tiền, PO).
 
 ### Việc của tôi (Operator)
 Trang **Việc của tôi** (rail trái / thanh tab trên điện thoại) gom mọi việc của người đang đăng nhập:
@@ -212,6 +220,16 @@ Người phụ trách Job lấy theo **technician của request RTR** trên SDP 
 Supervisor bấm **Chuyển Job** trên trang Job: worker đổi technician của request trên SDP rồi ghi lịch sử phụ trách.
 **Lưu đồ** của Job vẽ mỗi người phụ trách một làn; mũi tên nhảy làn đánh dấu lúc chuyển giao (giờ, trên SDP hay
 trong infra-ops).
+
+### Kho & cấp phát (Vòng đời nhân sự)
+1. **Cấu hình module → Tiêu chuẩn cấp phát thiết bị theo band**: mỗi dòng là một thiết bị (band áp dụng, loại tài
+   sản SDP, model chứa – tuỳ chọn, số lượng, tên trong bảng giá). Band lấy từ dòng `Band:` trong request RTR (đổi
+   nhãn ở mục Request RTR); thiếu band thì Operator nhập tay trên trang Kho & cấp phát.
+2. **Kho & cấp phát** dùng tài sản In Store, chưa gán user, của lần đồng bộ gần nhất: nhân viên có ngày hiệu lực
+   sớm hơn được ưu tiên; tài sản đã chọn trên Job nháp giữ cho Job đó. Mỗi dòng hiện *Tận dụng* (tài sản cụ thể) hoặc
+   *Cần mua* → **Lập đề xuất mua** (điền sẵn thiết bị, số lượng, người dùng). **Chọn tài sản tận dụng vào Job** ghi
+   gợi ý vào Job nháp.
+3. Nút **?** cạnh tiêu đề / trường giải thích cách vận hành từng phần.
 
 ### Suprema BioStar 2
 1. Tạo tài khoản BioStar riêng: Read = quyền xem User/Access Group; Write = Operator/Administrator có quyền quản lý User.

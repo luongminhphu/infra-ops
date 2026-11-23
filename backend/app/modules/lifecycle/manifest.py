@@ -15,6 +15,7 @@ from app.modules.lifecycle.api import router
 from app.modules.lifecycle.assignment import REASSIGN_JOB
 from app.modules.lifecycle.documents import HANDOVER, RETURN
 from app.modules.lifecycle.documents_api import router as documents_router
+from app.modules.lifecycle.inventory_api import router as inventory_router
 from app.modules.lifecycle.jobs_api import router as jobs_router
 from app.modules.lifecycle.workflows import OFFBOARD, ONBOARD
 
@@ -86,7 +87,7 @@ manifest = ModuleManifest(
         ),
         Permission("lifecycle.settings.manage", "Cấu hình mapping của module", ("manager",)),
     ],
-    routers=[router, documents_router, jobs_router],
+    routers=[router, documents_router, jobs_router, inventory_router],
     workflows=[ONBOARD, OFFBOARD, REASSIGN_JOB],
     document_kinds=[HANDOVER, RETURN],
     nav=[
@@ -98,6 +99,7 @@ manifest = ModuleManifest(
         ),
         NavItem("Job onboard / offboard", "/lifecycle/jobs", "workflow", "lifecycle.job.view"),
         NavItem("Lưu đồ quy trình", "/lifecycle/flows", "route", "lifecycle.job.view"),
+        NavItem("Kho & cấp phát", "/lifecycle/inventory", "package", "lifecycle.job.view"),
         NavItem("Request RTR", "/lifecycle/requests", "ticket", "lifecycle.reconciliation.view"),
         NavItem("Biên bản", "/lifecycle/documents", "file-text", "lifecycle.documents.view"),
         NavItem("Đồng bộ dữ liệu", "/lifecycle/sync", "refresh-cw", "lifecycle.reconciliation.view"),

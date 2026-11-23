@@ -242,6 +242,25 @@ async def test_sync_now_runs_through_scheduler(admin, configured, respx_mock) ->
     assert "lifecycle.sync" not in [await run_once(get_sessionmaker(), get_registry()) for _ in range(2)]
 
 
+@respx.mock(assert_all_called=False)
+async def test_allocation_plan_and_band_override(admin, configured, respx_mock) -> None:  # type: ignore[no-untyped-def]
+    mock_systems(respx_mock)
+    await _sync()
+    data = (await admin.get("/api/lifecycle/allocation")).json()
+    req = next(r for r in data["requests"] if r["employee_id"] == "003551")
+    assert req["band"] == "B3" and req["band_source"] == "rtr" and req["job"]["status"] == "draft"
+    lines = {ln["label"]: ln for ln in req["lines"]}
+    assert [a["id"] for a in lines["Màn hình"]["reuse"]] == ["a2"]  # In Store monitor reused
+    assert lines["Laptop"]["buy"] == 1 and req["status"] == "buy"
+    stock = {s["label"]: s for s in data["stock"]}
+    assert stock["Màn hình"]["in_store"] == 1 and stock["Laptop"]["to_buy"] >= 1
+
+    r = await admin.put(f"/api/lifecycle/requests/{req['id']}/band", json={"band": "B5"})
+    assert r.json() == {"band": "B5", "band_source": "override"}
+    r = await admin.put(f"/api/lifecycle/requests/{req['id']}/band", json={"band": ""})
+    assert r.json()["band_source"] == "rtr"
+
+
 async def test_settings_validation_and_permissions(admin, client) -> None:  # type: ignore[no-untyped-def]
     bad = await admin.put("/api/lifecycle/settings", json={"rtr_lookback_days": 1})
     assert bad.status_code == 400 and bad.json()["error"]["code"] == "invalid_settings"

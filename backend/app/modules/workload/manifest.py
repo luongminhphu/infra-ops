@@ -57,6 +57,12 @@ manifest = ModuleManifest(
         Permission(
             "workload.purchase.manage", "Duyệt và cập nhật trạng thái đề xuất mua", ("manager", "supervisor")
         ),
+        Permission(
+            "workload.catalog.manage",
+            "Cập nhật bảng giá thiết bị (sau khi đối tác báo giá)",
+            ("manager", "supervisor"),
+        ),
+        Permission("workload.po.close", "Chốt PO tổng và tạo email nháp", ("manager", "supervisor")),
         Permission("workload.sync.run", "Đồng bộ task từ SDP ngay", ("manager", "supervisor", "operator")),
         Permission(
             "workload.settings.manage", "Cấu hình module và liên kết Operator ↔ technician", ("manager",)

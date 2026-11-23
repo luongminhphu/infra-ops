@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Box,
+  Package,
   Fingerprint,
   LayoutDashboard,
   Plug,
@@ -41,6 +42,7 @@ const ICONS: Record<string, LucideIcon> = {
   route: Route,
   "user-check": UserCheck,
   "shopping-cart": ShoppingCart,
+  package: Package,
 };
 
 export function iconFor(name: string): LucideIcon {

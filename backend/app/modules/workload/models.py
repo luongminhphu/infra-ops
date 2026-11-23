@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -70,6 +70,20 @@ class PurchaseRequest(Base):
     # proposed | approved | ordered | received | rejected
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="proposed", index=True)
     note: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    # Where the need came from: ticket (helpdesk request), onboard (allocation check) or manual.
+    source: Mapped[str] = mapped_column(String(16), nullable=False, default="manual", server_default="manual")
+    source_ref: Mapped[str | None] = mapped_column(String(64), index=True)
+    employee: Mapped[str | None] = mapped_column(String(256))
+    catalog_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workload_catalog_item.id", ondelete="SET NULL")
+    )
+    # Price per unit frozen when the PO is closed; while open the live catalog price applies.
+    unit_price: Mapped[int | None] = mapped_column(BigInteger)
+    po_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workload_po.id", ondelete="SET NULL"), index=True
+    )
+    approved_by: Mapped[str | None] = mapped_column(String(320))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -77,3 +91,57 @@ class PurchaseRequest(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class CatalogItem(Base):
+    """Device price list; a supervisor updates prices after each vendor quotation."""
+
+    __tablename__ = "workload_catalog_item"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(300), nullable=False, unique=True)
+    category: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    spec: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    unit_price: Mapped[int | None] = mapped_column(BigInteger)  # VND
+    vendor: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    quoted_at: Mapped[date | None] = mapped_column(Date)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    updated_by: Mapped[str | None] = mapped_column(String(320))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class PurchaseEvidence(Base):
+    """File proving the requester's Function Head approved the purchase."""
+
+    __tablename__ = "workload_purchase_evidence"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    purchase_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workload_purchase_request.id", ondelete="CASCADE"), index=True
+    )
+    file_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("core_file.id"))
+    filename: Mapped[str] = mapped_column(String(200), nullable=False)
+    mime: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(320), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class PurchaseOrder(Base):
+    """Approved proposals packed under the value limit; numbered and frozen when closed."""
+
+    __tablename__ = "workload_po"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    number: Mapped[str | None] = mapped_column(String(32), unique=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="open", index=True)  # open|closed
+    total: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    limit: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_by: Mapped[str | None] = mapped_column(String(320))

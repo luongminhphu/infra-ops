@@ -22,7 +22,8 @@ def rtr_html(
         "9. Nơi làm việc: Chi nhánh 1<br>"
         "10. Số điện thoại: 0900000000<br>"
         f"11. Quản lý trực tiếp: {manager}<br>"
-        "12. Quản lý gián tiếp: Lê Thị C<br><br>"
+        "12. Quản lý gián tiếp: Lê Thị C<br>"
+        "13. Band: B3<br><br>"
         "B. Thiết lập HR<br>1. Nhân viên môi giới: Có<br>4. Ghi chú: null</div>"
     )
 

@@ -87,21 +87,66 @@ export const useSyncStatus = () =>
   });
 
 export type PurchaseStatus = "proposed" | "approved" | "ordered" | "received" | "rejected";
+export interface Evidence {
+  id: string;
+  filename: string;
+  mime: string;
+  created_by: string;
+  created_at: string;
+}
 export interface Purchase {
   id: string;
   ticket_id: string | null;
   ticket_display_id: string | null;
+  source: "ticket" | "onboard" | "manual";
+  source_ref: string | null;
+  employee: string | null;
   kind: DeviceNeed | "new";
   item: string;
+  catalog_item: { id: string; name: string } | null;
   quantity: number;
+  unit_price: number | null;
+  amount: number | null;
   reason: string;
   status: PurchaseStatus;
   note: string;
   created_by: string;
   created_at: string;
   updated_at: string;
+  approved_by: string | null;
+  evidence: Evidence[];
+  po: { id: string; number: string | null; status: "open" | "closed" } | null;
   next: PurchaseStatus[];
 }
+
+export interface CatalogItem {
+  id: string;
+  name: string;
+  category: string;
+  spec: string;
+  unit_price: number | null;
+  vendor: string;
+  quoted_at: string | null;
+  active: boolean;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  number: string | null;
+  status: "open" | "closed";
+  total: number;
+  limit: number;
+  over_limit: boolean;
+  created_at: string;
+  closed_at: string | null;
+  closed_by: string | null;
+  items: Purchase[];
+}
+
+export const useCatalog = () =>
+  useQuery({ queryKey: ["workload", "catalog"], queryFn: () => api<CatalogItem[]>("/api/workload/catalog") });
 
 export interface MyWork {
   linked: boolean;

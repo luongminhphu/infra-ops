@@ -309,6 +309,9 @@ def test_phase_and_device_need_rules() -> None:
     assert device_need("Cấp quyền thư mục", s) is None
 
 
+PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 32
+
+
 @respx.mock(assert_all_called=False)
 async def test_portal_accounts_and_purchase_flow(admin, client, sdp) -> None:  # type: ignore[no-untyped-def]
     from app.modules.workload.sync import run_sync
@@ -355,12 +358,40 @@ async def test_portal_accounts_and_purchase_flow(admin, client, sdp) -> None:  #
         await client.patch(f"/api/workload/purchases/{pid}", json={"status": "approved"})
     ).status_code == 403
 
+    # Function Head approval evidence: magic bytes are checked.
+    bad_file = await client.post(
+        f"/api/workload/purchases/{pid}/evidence", files={"file": ("x.png", b"not an image", "image/png")}
+    )
+    assert bad_file.json()["error"]["code"] == "unsupported_file"
+    up = await client.post(
+        f"/api/workload/purchases/{pid}/evidence", files={"file": ("duyet.png", PNG, "image/png")}
+    )
+    assert up.status_code == 201 and up.json()["evidence"][0]["filename"] == "duyet.png"
+    ev_id = up.json()["evidence"][0]["id"]
+    assert (await client.get(f"/api/workload/purchases/{pid}/evidence/{ev_id}")).content == PNG
+
     await client.login("wl-mgr@test.local")
     bad = await client.patch(f"/api/workload/purchases/{pid}", json={"status": "received"})
     assert bad.json()["error"]["code"] == "invalid_transition"
-    for st in ("approved", "ordered", "received"):
-        r = await client.patch(f"/api/workload/purchases/{pid}", json={"status": st})
-        assert r.status_code == 200 and r.json()["status"] == st
+    no_price = await client.patch(f"/api/workload/purchases/{pid}", json={"status": "approved"})
+    assert no_price.json()["error"]["code"] == "price_required"
+    cat = await client.post(
+        "/api/workload/catalog",
+        json={"name": "Laptop Dell Latitude 5440", "category": "Laptop", "unit_price": 25_000_000},
+    )
+    assert cat.status_code == 201, cat.text
+    r = await client.patch(
+        f"/api/workload/purchases/{pid}", json={"status": "approved", "catalog_item_id": cat.json()["id"]}
+    )
+    assert r.status_code == 200 and r.json()["status"] == "approved" and r.json()["amount"] == 25_000_000
+    assert r.json()["po"]["status"] == "open"
+    open_po = (await client.get("/api/workload/pos")).json()["open"][0]
+    closed = await client.post(
+        f"/api/workload/pos/{open_po['id']}/close", json={"version_total": open_po["total"]}
+    )
+    assert closed.status_code == 200 and closed.json()["number"].startswith("PO-")
+    r = await client.patch(f"/api/workload/purchases/{pid}", json={"status": "received"})
+    assert r.status_code == 200 and r.json()["status"] == "received"
     listed = (await client.get("/api/workload/purchases")).json()
     assert any(p["id"] == pid for p in listed["items"])
     assert listed["counts"]["received"] == sum(p["status"] == "received" for p in listed["items"])
@@ -372,3 +403,88 @@ async def test_portal_accounts_and_purchase_flow(admin, client, sdp) -> None:  #
     mine = (await client.get("/api/workload/purchases")).json()["items"]
     assert all(p["created_by"] == "wl-op2@test.local" for p in mine)
     assert (await client.post("/api/workload/tickets/507/dismiss-purchase")).status_code == 204
+
+
+def test_po_packing_first_fit() -> None:
+    from app.modules.workload.po import pack
+
+    assert pack([("a", 120), ("b", 90), ("c", 70), ("d", 10)], 200) == [["a", "c", "d"], ["b"]]
+    # An item above the limit gets its own PO and never takes others.
+    assert pack([("big", 250), ("s", 10)], 200) == [["big"], ["s"]]
+    assert pack([], 200) == []
+
+
+async def test_po_limit_close_and_email(client) -> None:  # type: ignore[no-untyped-def]
+    """Approved proposals fill POs up to the limit, the next one opens a 2nd PO; closing freezes
+    prices and the .eml draft carries the template, the workbook and the approval evidence."""
+    import email
+    import email.policy
+
+    await client.login("wl-mgr@test.local")
+    s = (await client.get("/api/workload/settings")).json()["values"]
+    s.update(po_limit_vnd=60_000_000, po_email_to=["mua-hang@test.local"])
+    assert (await client.put("/api/workload/settings", json=s)).status_code == 200
+    cat = (
+        await client.post(
+            "/api/workload/catalog", json={"name": "Màn hình 27 inch PO", "unit_price": 20_000_000}
+        )
+    ).json()
+    ids = []
+    for qty in (2, 1, 1):  # 40M + 20M fit in PO 1; the last 20M opens PO 2
+        p = (
+            await client.post(
+                "/api/workload/purchases",
+                json={"kind": "new", "item": "Màn hình", "quantity": qty, "catalog_item_id": cat["id"],
+                      "source": "onboard", "source_ref": "RTR-1", "employee": "Nguyễn Văn A"},
+            )
+        ).json()  # fmt: skip
+        await client.post(
+            f"/api/workload/purchases/{p['id']}/evidence", files={"file": ("ok.png", PNG, "image/png")}
+        )
+        r = await client.patch(f"/api/workload/purchases/{p['id']}", json={"status": "approved"})
+        assert r.status_code == 200, r.text
+        ids.append(p["id"])
+    data = (await client.get("/api/workload/pos")).json()
+    assert [o["total"] for o in data["open"]] == [60_000_000, 20_000_000]
+    assert (await client.get("/api/workload/purchases?source_ref=RTR-1")).json()["items"][0][
+        "employee"
+    ] == "Nguyễn Văn A"
+
+    # A price change repacks the open POs (2×30M + 30M > 60M → each PO re-filled).
+    upd = await client.put(f"/api/workload/catalog/{cat['id']}", json={**cat, "unit_price": 30_000_000})
+    assert upd.status_code == 200
+    data = (await client.get("/api/workload/pos")).json()
+    assert [o["total"] for o in data["open"]] == [60_000_000, 60_000_000]
+    first = data["open"][0]
+    stale = await client.post(f"/api/workload/pos/{first['id']}/close", json={"version_total": 1})
+    assert stale.json()["error"]["code"] == "po_changed"
+
+    await client.login("wl-op1@test.local")  # operators cannot close POs
+    assert (
+        await client.post(f"/api/workload/pos/{first['id']}/close", json={"version_total": first["total"]})
+    ).status_code == 403
+    await client.login("wl-mgr@test.local")
+    closed = (
+        await client.post(f"/api/workload/pos/{first['id']}/close", json={"version_total": first["total"]})
+    ).json()
+    assert closed["status"] == "closed" and all(i["status"] == "ordered" for i in closed["items"])
+    # Frozen: a later price change does not alter the closed PO.
+    await client.put(f"/api/workload/catalog/{cat['id']}", json={**cat, "unit_price": 1_000_000})
+    again = next(
+        o for o in (await client.get("/api/workload/pos")).json()["closed"] if o["id"] == first["id"]
+    )
+    assert again["total"] == 60_000_000 and again["items"][0]["unit_price"] == 30_000_000
+
+    eml = await client.get(f"/api/workload/pos/{first['id']}/email")
+    assert eml.status_code == 200 and eml.headers["content-type"].startswith("message/rfc822")
+    msg = email.message_from_bytes(eml.content, policy=email.policy.default)
+    assert msg["X-Unsent"] == "1" and msg["To"] == "mua-hang@test.local"
+    assert closed["number"] in msg["Subject"]
+    names = [part.get_filename() for part in msg.iter_attachments()]
+    assert names[0].endswith("-chi-tiet.xlsx") and any(n.startswith("duyet-RTR-1") for n in names[1:])
+    body = msg.get_body(("plain",)).get_content()
+    assert "60.000.000 đ" in body and "Màn hình 27 inch PO" in body
+
+    # Settings reject a broken e-mail template.
+    s["po_email_body"] = "Xin chào {{ po_number "
+    assert (await client.put("/api/workload/settings", json=s)).json()["error"]["code"] == "invalid_settings"

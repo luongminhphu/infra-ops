@@ -37,3 +37,8 @@ export function pluralDays(days: number): string {
   if (days === 0) return "hết hạn hôm nay";
   return `còn ${days} ngày`;
 }
+
+/** 1.234.567 đ */
+export function formatVnd(value: number | null | undefined, fallback = "—"): string {
+  return value == null ? fallback : `${new Intl.NumberFormat("vi-VN").format(value)} đ`;
+}

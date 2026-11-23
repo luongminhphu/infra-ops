@@ -5,7 +5,9 @@ import { api, errorMessage } from "@/core/api/client";
 import { Button } from "@/core/ui/button";
 import { ErrorState, LoadingRows, PageHeader, Panel } from "@/core/ui/feedback";
 import { Field, Input, Select, Switch, Textarea } from "@/core/ui/field";
+import { HelpTip } from "@/core/ui/help-tip";
 import { StatusBadge } from "@/core/ui/status";
+import { formatVnd } from "@/core/lib/format";
 import { useTechnicians } from "../api";
 
 interface Values {
@@ -18,6 +20,11 @@ interface Values {
   on_hold_statuses: string[];
   auto_create_users: boolean;
   device_keywords: Record<"replace" | "upgrade" | "repair", string[]>;
+  po_limit_vnd: number;
+  po_email_to: string[];
+  po_email_cc: string[];
+  po_email_subject: string;
+  po_email_body: string;
 }
 interface SettingsResponse {
   values: Values;
@@ -38,8 +45,12 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
     kw_replace: data.values.device_keywords.replace.join("\n"),
     kw_upgrade: data.values.device_keywords.upgrade.join("\n"),
     kw_repair: data.values.device_keywords.repair.join("\n"),
+    po_email_to: data.values.po_email_to.join(", "),
+    po_email_cc: data.values.po_email_cc.join(", "),
   });
   const lookbackBad = !(v.lookback_days >= 30 && v.lookback_days <= 1100);
+  const limitBad = !(v.po_limit_vnd >= 1_000_000);
+  const emails = (t: string) => t.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
   const save = useMutation({
     mutationFn: () =>
       api("/api/workload/settings", {
@@ -52,6 +63,8 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
           in_progress_statuses: lines(text.in_progress_statuses),
           on_hold_statuses: lines(text.on_hold_statuses),
           device_keywords: { replace: lines(text.kw_replace), upgrade: lines(text.kw_upgrade), repair: lines(text.kw_repair) },
+          po_email_to: emails(text.po_email_to),
+          po_email_cc: emails(text.po_email_cc),
         },
       }),
     onSuccess: () => {
@@ -66,7 +79,7 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
         className="grid max-w-3xl gap-4 sm:grid-cols-2"
         onSubmit={(e) => {
           e.preventDefault();
-          if (!lookbackBad) save.mutate();
+          if (!lookbackBad && !limitBad) save.mutate();
         }}
       >
         <Field label="Kết nối SDP" hint="Để trống: dùng kết nối SDP Production đầu tiên đang bật.">
@@ -107,6 +120,41 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
           <Field label="Thay thế"><Textarea rows={3} value={text.kw_replace} onChange={(e) => setText({ ...text, kw_replace: e.target.value })} /></Field>
           <Field label="Nâng cấp"><Textarea rows={3} value={text.kw_upgrade} onChange={(e) => setText({ ...text, kw_upgrade: e.target.value })} /></Field>
           <Field label="Sửa chữa"><Textarea rows={3} value={text.kw_repair} onChange={(e) => setText({ ...text, kw_repair: e.target.value })} /></Field>
+        </fieldset>
+        <fieldset className="grid gap-3 border-t border-line pt-4 sm:col-span-2 sm:grid-cols-2">
+          <legend className="flex items-center gap-1 pt-2 text-base font-semibold">
+            PO tổng và email gửi Phòng Mua hàng
+            <HelpTip title="Mẫu email khi chốt PO">
+              <span className="block">Khi Supervisor bấm <b>Chốt PO</b>, hệ thống tạo file .eml (mở bằng Outlook là email nháp) theo mẫu dưới.</span>
+              <span className="block">Biến dùng được: <b>{"{{ po_number }}"}</b> số PO, <b>{"{{ date }}"}</b> ngày chốt, <b>{"{{ total }}"}</b> tổng tiền, <b>{"{{ limit }}"}</b> hạn mức, <b>{"{{ item_count }}"}</b> số hạng mục, <b>{"{{ items_text }}"}</b> danh sách hạng mục, <b>{"{{ closed_by }}"}</b> người chốt.</span>
+              <span className="block">Email luôn kèm file Excel chi tiết và bằng chứng Function Head.</span>
+            </HelpTip>
+          </legend>
+          <Field
+            label="Hạn mức mỗi PO (đ)"
+            hint={`${formatVnd(v.po_limit_vnd)} – vượt mức này hệ thống tự mở PO tiếp theo.`}
+            error="Tối thiểu 1.000.000 đ."
+            showError={limitBad}
+          >
+            <Input
+              inputMode="numeric"
+              value={v.po_limit_vnd ? new Intl.NumberFormat("vi-VN").format(v.po_limit_vnd) : ""}
+              onChange={(e) => setV({ ...v, po_limit_vnd: Number(e.target.value.replace(/\D/g, "").slice(0, 12)) || 0 })}
+            />
+          </Field>
+          <div />
+          <Field label="Gửi tới" hint="Các e-mail cách nhau bằng dấu phẩy.">
+            <Input value={text.po_email_to} onChange={(e) => setText({ ...text, po_email_to: e.target.value })} placeholder="muahang@congty.vn" />
+          </Field>
+          <Field label="CC">
+            <Input value={text.po_email_cc} onChange={(e) => setText({ ...text, po_email_cc: e.target.value })} />
+          </Field>
+          <Field label="Tiêu đề email" className="sm:col-span-2">
+            <Input value={v.po_email_subject} maxLength={300} onChange={(e) => setV({ ...v, po_email_subject: e.target.value })} />
+          </Field>
+          <Field label="Nội dung email" className="sm:col-span-2">
+            <Textarea rows={10} className="font-mono text-[0.8125rem]" value={v.po_email_body} maxLength={10000} onChange={(e) => setV({ ...v, po_email_body: e.target.value })} />
+          </Field>
         </fieldset>
         <div className="sm:col-span-2">
           <Button type="submit" variant="primary" loading={save.isPending}>Lưu cấu hình</Button>
