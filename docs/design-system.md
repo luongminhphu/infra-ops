@@ -53,6 +53,12 @@ Always icon + label + colour, never colour alone.
 Every text/background pair passes WCAG AA (4.5:1) in both themes; control borders and focus ≥ 3:1.
 See [Verifying contrast](#verifying-contrast).
 
+### Charts
+
+Series colours are `--series-1` (blue) and `--series-2` (orange), categorical slots validated with the dataviz
+validator against the light and dark surfaces (CVD ΔE ≥ 24). Never use status tokens for data series. Every chart
+has a legend, hover/focus values per period and a "Xem dạng bảng" table view; text keeps text tokens.
+
 ## Typography
 
 - **Be Vietnam Pro** (400/500/600) – all UI text. Chosen for clean Vietnamese diacritics at 13px.

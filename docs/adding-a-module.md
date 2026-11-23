@@ -22,7 +22,7 @@ manifest = ModuleManifest(
     id="assets",
     name="Tài sản & gia hạn",
     permissions=[
-        Permission("assets.renewal.view", "Xem lịch gia hạn", ("helpdesk", "viewer")),
+        Permission("assets.renewal.view", "Xem lịch gia hạn", ("manager", "operator", "viewer")),
         Permission("assets.renewal.manage", "Cập nhật lịch gia hạn"),
     ],
     routers=[router],                      # mounted under /api/assets

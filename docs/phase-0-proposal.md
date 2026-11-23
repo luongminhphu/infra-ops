@@ -761,3 +761,40 @@ Cần chỉnh nhẹ trong file mẫu khi làm Phase 3: bảng thiết bị hiệ
     ghi chú `POST /api/v3/requests/{id}/notes`; đổi trạng thái `PUT /api/v3/requests/{id}`; tìm user theo trường
     Mã NV; tìm tài sản theo `user.id`; đính kèm file (đường dẫn/field chỉnh trong Cấu hình module).
   - BioStar 2: `GET/POST/PUT /api/users`, `DELETE /api/users?id=…`, nhóm người dùng / nhóm quyền ra vào.
+
+---
+
+## 16. Phase 5 – Vai trò & module Công việc Helpdesk (23/11/2026)
+
+**Yêu cầu:** SSO Entra ID; vai trò Manager / Operator / Viewer; đồng bộ task Helpdesk/Support trên SDP theo từng
+Operator (đã thực hiện, đang chờ, quá hạn); Manager giao/chuyển task khi Operator nghỉ phép; thống kê theo tuần,
+tháng, quý, 6 tháng, 1 năm hoặc theo lịch. Nguồn dữ liệu của app: SDP (task, user, tài sản của user cho offboard)
+và BioStar (user ra vào). Không có nguồn Microsoft.
+
+**Quyết định đã chốt:**
+
+| Câu hỏi | Trả lời |
+|---|---|
+| Chuyển task có ghi sang SDP? | **Có** – đổi Technician của request trên SDP (credential Write), chạy trong worker, đọc trước khi ghi. |
+| Nguồn vai trò khi SSO | **Gán trong app** (như Q12). Đăng nhập SSO lần đầu = Chỉ xem. SSO Entra đã có từ Phase 1 (`INFRAOPS_AUTH_MODE=oidc`). |
+| Người backup khi nghỉ phép | **Chuyển thủ công**: Manager chọn nhiều task rồi chuyển hàng loạt. Không quản lý lịch nghỉ. |
+| Giao diện | Hướng **B · Phòng điều khiển** (mockup `docs/design/redesign-mockup.html`) – áp dụng ở Phase 7. |
+
+**Triển khai:**
+- Vai trò `helpdesk` đổi tên thành `operator` (migration `0005_core`, giữ nguyên quyền đã chỉnh); thêm `manager`
+  = quyền Operator + đóng Job bắt buộc + xem nhật ký + quyền module Công việc. Quản trị (toàn quyền) giữ nguyên.
+- Module `workload` (bảng `workload_technician`, `workload_ticket`): đồng bộ tăng dần theo `last_updated_time`
+  (chồng lấn 1 giờ). Trạng thái task suy từ tên trạng thái SDP theo cấu hình; quá hạn = đang mở và quá `due_by`,
+  hoặc hoàn tất sau `due_by`. Thống kê nhóm theo ngày/tuần/tháng tuỳ độ dài kỳ, tính theo giờ Việt Nam.
+- Chuyển việc = workflow `workload.reassign` (1 bước tự động, `before_state` lưu Technician cũ).
+
+**Cần kiểm tra với SDP 16020 thật:**
+- `GET /api/v3/technicians` (trường `email_id`), danh sách request có `technician`, `due_by_time`,
+  `completed_time` (hoặc `resolved_time`); điều kiện tìm `last_updated_time greater than` và `group.name` nhiều giá trị.
+- `PUT /api/v3/requests/{id}` với `{"request":{"technician":{"id":…}}}`: SDP có thể từ chối nếu technician
+  không thuộc Group của request → lỗi hiện ở banner chuyển việc.
+
+**Phase 6 (yêu cầu mới, chưa làm):** lưu đồ các bước Onboard/Offboard, checklist từng bước, mỗi bước cần Operator
+kiểm tra + xác nhận hoàn tất **kèm bằng chứng** mới hợp lệ. Câu hỏi cần chốt trước khi làm: loại bằng chứng
+(ảnh chụp màn hình, file PDF, ghi chú, liên kết) và bắt buộc ở mọi bước hay chỉ bước được đánh dấu; ai sửa
+checklist (Manager trên giao diện hay cố định trong code); bước tự động (đã ghi qua API) có cần Operator xác nhận lại không.

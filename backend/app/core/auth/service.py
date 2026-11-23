@@ -84,6 +84,9 @@ async def login_oidc(session: AsyncSession, settings: Settings, ident: OidcIdent
         if user is None:
             user = User(upn=ident.upn, display_name=ident.display_name, email=ident.email)
             session.add(user)
+            await session.flush()
+            # First SSO login: read-only until an admin assigns Manager/Operator in the app.
+            await grant_role(session, user.id, "viewer")
         user.entra_oid = ident.oid
     if not user.is_active:
         await record(

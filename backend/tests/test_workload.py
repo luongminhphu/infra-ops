@@ -1,0 +1,247 @@
+"""Workload module: SDP ticket sync, operator scoping, reassignment write-back, statistics."""
+
+from __future__ import annotations
+
+import json
+import re
+from datetime import UTC, datetime
+from urllib.parse import parse_qs
+
+import httpx
+import pytest
+import respx
+
+from app.core.db import get_sessionmaker
+from app.core.workflow.engine import pump
+from app.modules.workload.rules import is_overdue, normalize_ticket, pick_bucket
+from app.modules.workload.settings import WorkloadSettings
+
+SDP = "https://sdp-wl.test.local"
+OK = {"response_status": {"status_code": 2000, "status": "success"}}
+
+
+def ms(month: int, day: int, year: int = 2026) -> dict[str, str]:
+    return {"value": str(int(datetime(year, month, day, 3, tzinfo=UTC).timestamp() * 1000))}
+
+
+def req(
+    rid: str, status: str, tech: str | None, created: int, due: dict | None, done: int | None = None
+) -> dict:  # type: ignore[type-arg]
+    r = {
+        "id": rid,
+        "display_id": f"D{rid}",
+        "subject": f"Hỗ trợ {rid}",
+        "status": {"name": status},
+        "technician": {"id": tech, "name": f"Tech {tech}"} if tech else None,
+        "requester": {"name": "Nguyễn Văn Khách"},
+        "group": {"name": "Helpdesk"},
+        "created_time": ms(11, created),
+        "due_by_time": due,
+        "last_updated_time": ms(11, 20),
+    }
+    if done:
+        r["completed_time"] = ms(11, done)
+    return r
+
+
+# ------------------------------------------------------------------ pure rules
+def test_normalize_and_overdue_rules() -> None:
+    s = WorkloadSettings()
+    t = normalize_ticket(req("1", "resolved", "7", 1, ms(11, 5), 4), s)
+    assert t["state"] == "done" and t["technician_id"] == "7" and t["completed_at"] is not None
+    assert not is_overdue(t, datetime(2026, 12, 1, tzinfo=UTC))
+    late = normalize_ticket(req("2", "Closed", "7", 1, ms(11, 2), 6), s)
+    assert is_overdue(late, datetime(2026, 12, 1, tzinfo=UTC))
+    # Re-opened tickets drop a stale completion time.
+    reopened = normalize_ticket(req("3", "Open", None, 1, ms(11, 2), 6), s)
+    assert reopened["state"] == "open" and reopened["completed_at"] is None
+    assert is_overdue(reopened, datetime(2026, 11, 3, tzinfo=UTC))
+    assert not is_overdue(reopened, datetime(2026, 11, 1, tzinfo=UTC))
+    assert normalize_ticket(req("4", "Canceled", None, 1, None), s)["state"] == "cancelled"
+    assert [pick_bucket(d) for d in (7, 31, 92, 184, 365)] == ["day", "day", "week", "week", "month"]
+
+
+# ------------------------------------------------------------------ API + worker
+class FakeSdp:
+    def __init__(self) -> None:
+        far = ms(1, 1, 2099)
+        self.requests = {
+            "501": req("501", "Open", "11", 2, ms(11, 3)),
+            "502": req("502", "Resolved", "11", 1, ms(11, 5), 4),
+            "503": req("503", "Closed", "12", 1, ms(11, 2), 6),
+            "504": req("504", "Open", None, 10, far),
+            "505": req("505", "Canceled", "12", 3, None),
+        }
+        self.puts: list[str] = []
+
+    def install(self, r: respx.MockRouter) -> None:
+        techs = [
+            {"id": "11", "name": "Tech 11", "email_id": "wl-op1@test.local"},
+            {"id": "12", "name": "Tech 12", "email_id": "wl-op2@test.local"},
+        ]
+        r.get(f"{SDP}/api/v3/technicians").mock(
+            return_value=httpx.Response(
+                200, json={**OK, "list_info": {"has_more_rows": False}, "technicians": techs}
+            )
+        )
+        r.get(f"{SDP}/api/v3/requests").mock(
+            side_effect=lambda _: httpx.Response(
+                200,
+                json={**OK, "list_info": {"has_more_rows": False}, "requests": list(self.requests.values())},
+            )
+        )
+
+        def detail(request: httpx.Request, rid: str) -> httpx.Response:
+            if request.method == "PUT":
+                body = json.loads(parse_qs(request.content.decode())["input_data"][0])["request"]
+                tid = body["technician"]["id"]
+                self.requests[rid]["technician"] = {"id": tid, "name": f"Tech {tid}"}
+                self.puts.append(f"{rid}->{tid}")
+            return httpx.Response(200, json={**OK, "request": self.requests[rid]})
+
+        r.route(url__regex=rf"{re.escape(SDP)}/api/v3/requests/(?P<rid>\d+)$").mock(side_effect=detail)
+
+
+async def _user(admin, role: str, upn: str) -> None:  # type: ignore[no-untyped-def]
+    roles = {x["code"]: x["id"] for x in (await admin.get("/api/core/roles")).json()}
+    users = {u["upn"]: u for u in (await admin.get("/api/core/users")).json()}
+    if upn not in users:
+        resp = await admin.post(
+            "/api/core/users", json={"upn": upn, "display_name": upn, "role_ids": [roles[role]]}
+        )
+        assert resp.status_code == 201, resp.text
+
+
+@pytest.fixture
+async def sdp(admin, respx_mock):  # type: ignore[no-untyped-def]
+    fake = FakeSdp()
+    fake.install(respx_mock)
+    existing = {p["name"]: p for p in (await admin.get("/api/core/connections")).json()}
+    prof = (
+        existing.get("SDP WL")
+        or (
+            await admin.post(
+                "/api/core/connections",
+                json={"system_type": "sdp", "name": "SDP WL", "base_url": SDP, "config": {}},
+            )
+        ).json()
+    )
+    for purpose in ("read", "write"):
+        await admin.put(
+            f"/api/core/connections/{prof['id']}/credentials/{purpose}",
+            json={"auth_type": "api_key", "secrets": {"api_key": f"k-{purpose}-00000000"}},
+        )
+    values = (await admin.get("/api/workload/settings")).json()["values"]
+    assert (
+        await admin.put("/api/workload/settings", json={**values, "sdp_profile_id": prof["id"]})
+    ).status_code == 200
+    await _user(admin, "manager", "wl-mgr@test.local")
+    await _user(admin, "operator", "wl-op1@test.local")
+    await _user(admin, "operator", "wl-op2@test.local")
+    await _user(admin, "viewer", "wl-view@test.local")
+    from app.modules.workload.sync import run_sync
+
+    async with get_sessionmaker()() as s:
+        assert await run_sync(s) == {"technicians": 2, "tickets": 5}
+    return fake
+
+
+@respx.mock(assert_all_called=False)
+async def test_sync_operator_scope_and_stats(admin, client, sdp) -> None:  # type: ignore[no-untyped-def]
+    techs = (await admin.get("/api/workload/technicians")).json()
+    by_id = {t["id"]: t for t in techs["items"]}
+    # Linked automatically by e-mail = UPN.
+    assert by_id["11"]["user"]["upn"] == "wl-op1@test.local"
+    assert (by_id["11"]["open"], by_id["11"]["overdue"]) == (1, 1)
+    assert techs["unassigned"]["open"] == 1
+
+    await client.login("wl-op1@test.local")
+    mine = (await client.get("/api/workload/tickets?technician_id=me&state=all")).json()
+    assert sorted(t["id"] for t in mine["items"]) == ["501", "502"]
+    overdue = (await client.get("/api/workload/tickets?state=overdue")).json()
+    assert [t["id"] for t in overdue["items"]] == ["501"]
+
+    st = (await client.get("/api/workload/stats?from=2026-11-01&to=2026-11-30")).json()
+    assert st["bucket"] == "day"
+    assert st["totals"]["received"] == 5
+    assert (st["totals"]["completed"], st["totals"]["completed_late"], st["totals"]["open"]) == (2, 1, 2)
+    t11 = next(t for t in st["technicians"] if t["technician_id"] == "11")
+    assert (t11["received"], t11["completed"], t11["on_time_rate"], t11["overdue"]) == (2, 1, 1.0, 1)
+    assert sum(p["received"] for p in st["series"]) == 5
+    only12 = (await client.get("/api/workload/stats?from=2026-11-01&to=2026-11-30&technician_id=12")).json()
+    assert only12["totals"]["received"] == 2
+    assert (await client.get("/api/workload/stats?from=2026-11-30&to=2026-11-01")).status_code == 400
+
+    # Operators can sync but not reassign or change settings.
+    assert (await client.post("/api/workload/sync")).status_code == 200
+    resp = await client.post(
+        "/api/workload/tickets/reassign", json={"ticket_ids": ["501"], "to_technician_id": "12"}
+    )
+    assert resp.status_code == 403
+    assert (await client.get("/api/workload/settings")).status_code == 403
+    await client.login("wl-view@test.local")
+    assert (await client.get("/api/workload/tickets")).status_code == 200
+    assert (await client.post("/api/workload/sync")).status_code == 403
+
+
+@respx.mock(assert_all_called=False)
+async def test_manager_reassign_writes_back_to_sdp(admin, client, sdp) -> None:  # type: ignore[no-untyped-def]
+    await client.login("wl-mgr@test.local")
+    bad = await client.post(
+        "/api/workload/tickets/reassign", json={"ticket_ids": ["503"], "to_technician_id": "12"}
+    )
+    assert bad.status_code == 400 and bad.json()["error"]["code"] == "ticket_not_open"
+
+    resp = await client.post(
+        "/api/workload/tickets/reassign",
+        json={"ticket_ids": ["501", "504"], "to_technician_id": "12", "reason": "Nghỉ phép"},
+    )
+    assert resp.status_code == 201, resp.text
+    job_id = resp.json()["id"]
+    async with get_sessionmaker()() as s:
+        await pump(s)
+    job = (await client.get(f"/api/core/jobs/{job_id}")).json()
+    assert job["status"] == "completed", job
+    assert sorted(sdp.puts) == ["501->12", "504->12"]
+    assert job["steps"][0]["before_state"]["technicians"] == {"501": "Tech 11", "504": None}
+    t12 = (await client.get("/api/workload/tickets?technician_id=12")).json()
+    assert {"501", "504"} <= {t["id"] for t in t12["items"]}
+
+    # Idempotent: a second request for a ticket already on the target does not write again.
+    resp = await client.post(
+        "/api/workload/tickets/reassign", json={"ticket_ids": ["501"], "to_technician_id": "12"}
+    )
+    async with get_sessionmaker()() as s:
+        await pump(s)
+    assert (await client.get(f"/api/core/jobs/{resp.json()['id']}")).json()["status"] == "completed"
+    assert len(sdp.puts) == 2
+
+    audit = (await admin.get("/api/core/audit?action=workload.reassign_requested")).json()
+    assert any(e.get("message") == "Nghỉ phép" for e in audit["items"])
+
+
+@respx.mock(assert_all_called=False)
+async def test_manual_link_and_first_sso_login_is_viewer(admin, settings, sdp) -> None:  # type: ignore[no-untyped-def]
+    from sqlalchemy import select
+
+    from app.core.auth.models import User
+    from app.core.auth.oidc import OidcIdentity
+    from app.core.auth.service import login_oidc
+    from app.core.rbac.service import role_codes_for_user
+
+    async with get_sessionmaker()() as s:
+        user = await login_oidc(
+            s, settings, OidcIdentity("oid-new-1", "sso.new@test.local", "SSO New", None), None
+        )
+        await s.commit()
+        assert await role_codes_for_user(s, user.id) == ["viewer"]
+        uid = await s.scalar(select(User.id).where(User.upn == "sso.new@test.local"))
+
+    tid = "11"
+    resp = await admin.put(f"/api/workload/technicians/{tid}/user", json={"user_id": str(uid)})
+    assert resp.status_code == 200
+    linked = {t["id"]: t for t in (await admin.get("/api/workload/technicians")).json()["items"]}[tid]
+    assert linked["user"]["upn"] == "sso.new@test.local" and linked["mapped_manually"]
+    assert (await admin.delete(f"/api/workload/technicians/{tid}/user")).status_code == 204
+    relinked = {t["id"]: t for t in (await admin.get("/api/workload/technicians")).json()["items"]}[tid]
+    assert relinked["user"]["upn"] == "wl-op1@test.local" and not relinked["mapped_manually"]

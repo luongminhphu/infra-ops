@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     master_keys: SecretStr = SecretStr("")
 
     # Modules mounted at startup.
-    enabled_modules: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["lifecycle"])
+    enabled_modules: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["lifecycle", "workload"])
 
     # Authentication
     # "local": username/password accounts managed in the app (interim, until Entra SSO is set up).

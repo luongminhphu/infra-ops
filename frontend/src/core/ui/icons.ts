@@ -14,6 +14,8 @@ import {
   RefreshCw,
   Settings,
   Workflow,
+  ListChecks,
+  ChartColumn,
 } from "lucide-react";
 
 /** Icon names used by backend manifests (nav items, connectors) → components. */
@@ -31,6 +33,8 @@ const ICONS: Record<string, LucideIcon> = {
   "refresh-cw": RefreshCw,
   settings: Settings,
   "file-cog": FileCog,
+  "list-checks": ListChecks,
+  "chart-column": ChartColumn,
 };
 
 export function iconFor(name: string): LucideIcon {

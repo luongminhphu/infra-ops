@@ -45,7 +45,8 @@ async def test_secret_never_returned_and_encrypted(admin) -> None:  # type: igno
     profile = await _create(admin, "SDP Secret")
     assert profile["base_url"] == "https://sdp.example.local:8080"
     assert profile["status"] == "incomplete"
-    assert profile["used_by"] == [{"id": "lifecycle", "name": "Vòng đời nhân sự"}]
+    assert {"id": "lifecycle", "name": "Vòng đời nhân sự"} in profile["used_by"]
+    assert {"id": "workload", "name": "Công việc Helpdesk"} in profile["used_by"]
     resp = await admin.put(
         f"/api/core/connections/{profile['id']}/credentials/read",
         json={"auth_type": "api_key", "secrets": {"api_key": SECRET}},
