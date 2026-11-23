@@ -1,4 +1,7 @@
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/core/api/client";
+import { jobStatusLabel, WORKFLOW_LABEL, type Job } from "./jobs";
 import { GitCompareArrows } from "lucide-react";
 import { EmptyState } from "@/core/ui/feedback";
 import { StatusBadge } from "@/core/ui/status";
@@ -19,12 +22,14 @@ export function JobsWidget({ data }: { data: unknown }) {
   const sum = (statuses: string[]) => rows.filter((r) => statuses.includes(r.status)).reduce((n, r) => n + r.count, 0);
   const tiles = [
     { label: "Đang mở", value: sum(["running", "waiting", "scheduled", "failed"]), to: "open", tone: "" },
-    { label: "Chờ Helpdesk / chờ ký", value: sum(["waiting"]), to: "waiting", tone: "text-waiting" },
+    { label: "Chờ người xử lý / chờ ký", value: sum(["waiting"]), to: "waiting", tone: "text-waiting" },
     { label: "Lỗi", value: sum(["failed"]), to: "failed", tone: "text-failed" },
     { label: "Nháp chưa bắt đầu", value: sum(["draft"]), to: "draft", tone: "" },
   ];
   return (
-    <ul className="grid grid-cols-2 gap-2 py-2 sm:grid-cols-4" aria-label="Job theo trạng thái">
+    <div className="py-2">
+      <WaitingJobs />
+    <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Job theo trạng thái">
       {tiles.map((t) => (
         <li key={t.to}>
           <Link to={`/lifecycle/jobs?status=${t.to}`} className="block rounded-sm border border-line px-3 py-2 hover:bg-surface-2">
@@ -34,6 +39,33 @@ export function JobsWidget({ data }: { data: unknown }) {
         </li>
       ))}
     </ul>
+    </div>
+  );
+}
+
+/** The next action on onboarding/offboarding: jobs stopped on a step that needs a person. */
+function WaitingJobs() {
+  const q = useQuery({
+    queryKey: ["jobs", "dashboard-waiting"],
+    queryFn: () => api<{ items: Job[] }>("/api/core/jobs?status=waiting&limit=6"),
+    refetchInterval: 30_000,
+  });
+  const jobs = (q.data?.items ?? []).filter((j) => j.workflow_key.startsWith("lifecycle."));
+  if (!jobs.length) return null;
+  return (
+    <div className="mb-3">
+      <h3 className="mb-1 text-sm font-semibold">Cần xử lý tiếp</h3>
+      <ul className="divide-y divide-line rounded-sm border border-line text-sm">
+        {jobs.map((j) => (
+          <li key={j.id}>
+            <Link to={`/lifecycle/jobs/${j.id}`} className="flex flex-wrap items-baseline gap-x-3 px-3 py-2 hover:bg-surface-2">
+              <span className="font-medium">{WORKFLOW_LABEL[j.workflow_key] ?? j.workflow_title} · {j.subject_label}</span>
+              <span className="text-waiting">{jobStatusLabel(j)}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

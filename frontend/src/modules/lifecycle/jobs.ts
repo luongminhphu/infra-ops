@@ -102,11 +102,22 @@ export const STEP_STATUS: Record<StepStatus, { label: string; status: Status }> 
   pending: { label: "Chưa chạy", status: "pending" },
   in_progress: { label: "Đang chạy", status: "in_progress" },
   waiting: { label: "Đang chờ", status: "waiting" },
-  verify: { label: "Chờ kiểm tra", status: "warning" },
+  verify: { label: "Chờ Operator kiểm tra", status: "waiting" },
   done: { label: "Hoàn tất", status: "done" },
   failed: { label: "Lỗi", status: "failed" },
   skipped: { label: "Bỏ qua", status: "skipped" },
 };
+
+/** Job state for people: a waiting job says what it waits for and at which step. */
+export function jobStatusLabel(job: Pick<Job, "status" | "current_step" | "steps">): string {
+  const s = job.status === "waiting" ? job.steps.find((x) => x.key === job.current_step) : undefined;
+  if (!s) return JOB_STATUS[job.status].label;
+  const at = `bước ${s.seq}`;
+  if (s.status === "verify") return `Chờ Operator kiểm tra ${at}`;
+  if (s.requires_confirm && !s.confirmed_at && s.status === "waiting") return `Chờ nhập lại Mã NV ở ${at}`;
+  if (s.kind === "manual") return `Chờ Operator thực hiện ${at}`;
+  return `Chờ hệ thống ở ${at}`;
+}
 
 export const WORKFLOW_LABEL: Record<string, string> = { "lifecycle.onboard": "Onboard", "lifecycle.offboard": "Offboard" };
 export const SYSTEM_WRITE_LABEL: Record<string, string> = { sdp: "ServiceDesk Plus", biostar: "BioStar" };

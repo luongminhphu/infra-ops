@@ -65,7 +65,7 @@ export function LoginPage() {
           ) : (
             <form onSubmit={submit} noValidate className="space-y-3">
               <Field
-                label={mode === "dev" ? "UPN (chế độ phát triển)" : "Tên đăng nhập"}
+                label={mode === "dev" ? "Email công ty (chế độ phát triển)" : "Tên đăng nhập"}
                 required
                 error={!username ? "Nhập tên đăng nhập." : undefined}
                 showError={submitted}

@@ -6,7 +6,7 @@ import { ChevronDown, Download, GitCompareArrows, RefreshCw, TriangleAlert } fro
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
-import { Button } from "@/core/ui/button";
+import { Button, buttonVariants } from "@/core/ui/button";
 import { DataTable, type Density } from "@/core/ui/data-table";
 import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input, Select } from "@/core/ui/field";
@@ -43,6 +43,12 @@ function SyncBanner({ data }: { data: ReconResponse }) {
 
 export function ReconciliationPage() {
   const { can } = useAuth();
+  const connections = useQuery({
+    queryKey: ["connections"],
+    queryFn: () => api<unknown[]>("/api/core/connections"),
+    enabled: can("core.connections.view"),
+  });
+  const noConnections = connections.data?.length === 0;
   const [params, setParams] = useSearchParams();
   const [selected, setSelected] = useState<string | null>(params.get("emp"));
   const [density, setDensity] = useState<Density>("compact");
@@ -157,10 +163,11 @@ export function ReconciliationPage() {
                 {syncing ? "Đang đồng bộ…" : "Đồng bộ ngay"}
               </Button>
             )}
-            <Menu
+            {/* Nothing to export before the first sync, so the action is not offered at all. */}
+            {data?.run && <Menu
               label="Xuất dữ liệu"
               trigger={(p) => (
-                <Button {...p} disabled={!data?.run}>
+                <Button {...p}>
                   <Download className="size-4" aria-hidden="true" />
                   Xuất danh sách
                   <ChevronDown className="size-3.5" aria-hidden="true" />
@@ -169,7 +176,7 @@ export function ReconciliationPage() {
             >
               <MenuItem onSelect={() => download("xlsx")}>Excel (.xlsx) – theo bộ lọc hiện tại</MenuItem>
               <MenuItem onSelect={() => download("csv")}>CSV (.csv) – theo bộ lọc hiện tại</MenuItem>
-            </Menu>
+            </Menu>}
           </>
         }
       />
@@ -180,10 +187,24 @@ export function ReconciliationPage() {
           <EmptyState
             icon={GitCompareArrows}
             title="Chưa có dữ liệu đối soát"
-            action={can("lifecycle.reconciliation.sync") && <Button variant="primary" onClick={() => syncNow.mutate()} loading={!!syncing}>Đồng bộ lần đầu</Button>}
+            action={
+              noConnections ? (
+                can("core.connections.manage") && (
+                  <Link to="/settings/connections" className={buttonVariants({ variant: "primary" })}>Thêm kết nối</Link>
+                )
+              ) : (
+                can("lifecycle.reconciliation.sync") && <Button variant="primary" onClick={() => syncNow.mutate()} loading={!!syncing}>Đồng bộ lần đầu</Button>
+              )
+            }
           >
-            Cần kết nối ServiceDesk Plus và BioStar có credential Read, sau đó chạy đồng bộ. Xem trạng thái ở trang{" "}
-            <Link className="text-primary underline" to="/lifecycle/sync">Đồng bộ dữ liệu</Link>.
+            {noConnections ? (
+              <>Chưa có kết nối tới ServiceDesk Plus và BioStar. {can("core.connections.manage") ? "Thêm kết nối với credential Read rồi quay lại đồng bộ." : "Nhờ Quản trị thêm kết nối."}</>
+            ) : (
+              <>
+                Chạy đồng bộ để đọc request, user, tài sản từ SDP và user BioStar. Xem trạng thái ở trang{" "}
+                <Link className="text-primary underline" to="/lifecycle/sync">Đồng bộ dữ liệu</Link>.
+              </>
+            )}
           </EmptyState>
         </div>
       )}

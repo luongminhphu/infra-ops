@@ -111,7 +111,7 @@ manifest = ModuleManifest(
     ],
     dashboard_widgets=[
         DashboardWidget(
-            "lifecycle.jobs", "Job onboard / offboard", "lifecycle_jobs", "lifecycle.job.view", _jobs, order=4
+            "lifecycle.jobs", "Job onboard / offboard", "lifecycle_jobs", "lifecycle.job.view", _jobs, order=2
         ),
         DashboardWidget(
             "lifecycle.reconciliation",

@@ -10,7 +10,7 @@ import { Field, Input, Select } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
 import { formatDate, formatRelative } from "@/core/lib/format";
 import { cn } from "@/core/lib/cn";
-import { JOB_STATUS, WORKFLOW_LABEL, type Job, type JobStatus } from "../jobs";
+import { JOB_STATUS, WORKFLOW_LABEL, jobStatusLabel, type Job, type JobStatus } from "../jobs";
 
 const CHIPS: { value: string; label: string }[] = [
   { value: "open", label: "Đang mở" },
@@ -89,7 +89,7 @@ export function JobsPage() {
           );
         },
       },
-      { accessorKey: "status", header: "Trạng thái", cell: (c) => <StatusBadge status={JOB_STATUS[c.row.original.status as JobStatus].status} label={JOB_STATUS[c.row.original.status as JobStatus].label} /> },
+      { accessorKey: "status", header: "Trạng thái", cell: (c) => <StatusBadge status={JOB_STATUS[c.row.original.status as JobStatus].status} label={jobStatusLabel(c.row.original)} /> },
       { accessorKey: "updated_at", header: "Cập nhật", cell: (c) => <span className="text-sm whitespace-nowrap text-muted">{formatRelative(c.row.original.updated_at)}</span> },
     ],
     [navigate],

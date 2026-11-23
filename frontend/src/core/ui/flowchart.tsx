@@ -73,8 +73,8 @@ export function Flowchart({
             <Arrow />
             <section
               aria-label={`Bước ${i + 1}: ${s.title}`}
-              className={cn("rounded-md border border-line bg-surface p-3", s.status && "border-l-4")}
-              style={s.status ? { borderLeftColor: EDGE[s.status] ?? "var(--line-strong)" } : undefined}
+              className={cn("rounded-md border bg-surface p-3", s.status === "waiting" || s.status === "failed" ? "border-2" : "border-line")}
+              style={s.status === "waiting" || s.status === "failed" ? { borderColor: EDGE[s.status] } : undefined}
             >
               <header className="flex flex-wrap items-start justify-between gap-2">
                 <p className="flex items-center gap-2 font-semibold">
@@ -100,7 +100,7 @@ export function Flowchart({
               </div>
               {verify && (
                 <div className="mt-3 border-t border-line pt-2">
-                  <p className="mb-1 flex flex-wrap items-center gap-2 text-xs font-semibold text-muted uppercase">
+                  <p className="mb-1 flex flex-wrap items-center gap-2 text-sm font-semibold text-muted">
                     Checklist kiểm tra
                     {s.evidenceRequired && (
                       <span className="inline-flex items-center gap-1 rounded-xs bg-primary-soft px-1.5 py-0.5 font-medium text-primary normal-case">
@@ -112,7 +112,9 @@ export function Flowchart({
                     <ul className="space-y-0.5 text-sm">
                       {s.checklist.map((c) => (
                         <li key={c.id} className="flex items-start gap-1.5">
-                          {c.checked ? (
+                          {!s.status ? (
+                            <span aria-hidden="true" className="mt-2 size-1.5 shrink-0 rounded-full bg-muted" />
+                          ) : c.checked ? (
                             <SquareCheck className="mt-0.5 size-4 shrink-0 text-done" aria-hidden="true" />
                           ) : (
                             <Square className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden="true" />
