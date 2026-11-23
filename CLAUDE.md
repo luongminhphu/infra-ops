@@ -38,6 +38,9 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
   (`INFRAOPS_TEST_DATABASE_URL`).
 - UI: only design tokens (no raw hex), core components, icon + label for every status, native
   `<dialog>`, field errors after interaction, axe-clean in light and dark.
+- Project skills in `.claude/skills/` (vendored upstream, do not edit; update by re-copying):
+  `ui-ux-pro-max` (nextlevelbuilder/ui-ux-pro-max-skill – design-system/palette/UX search) and
+  `impeccable` (pbakaus/impeccable – design critique/polish). Use them for UI work.
 - Microsoft integrations (Entra/AD/Exchange) are deferred by the product owner – do not add them
   without being asked.
 
