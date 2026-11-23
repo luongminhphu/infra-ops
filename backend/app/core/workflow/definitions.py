@@ -72,6 +72,10 @@ class StepDefinition:
     # Which external systems the step writes to (shown in the UI).
     writes: tuple[str, ...] = ()
     when: Callable[[dict[str, Any]], bool] = lambda _params: True
+    # Default verification checklist (Managers edit it in the UI; see core.workflow.checklist).
+    checklist: tuple[str, ...] = ()
+    # Operators must attach evidence (screenshot, file, link or note) before confirming this step.
+    evidence_required: bool = False
 
 
 @dataclass(frozen=True)
@@ -84,3 +88,6 @@ class WorkflowDefinition:
     override_permission: str
     # Steps whose completion is required before the job may close (unless overridden).
     required_for_close: Sequence[str] = ()
+    # Every step ends in "verify": an operator ticks the checklist (and attaches evidence where
+    # required) before the next step runs.
+    verify_steps: bool = False

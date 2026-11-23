@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, ChevronLeft, Eye, Play, RotateCcw, ShieldAlert, SkipForward, XCircle } from "lucide-react";
+import { CalendarClock, ChevronLeft, Eye, Play, RotateCcw, ShieldAlert, SkipForward, Workflow, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
@@ -13,11 +13,13 @@ import { ErrorState, LoadingRows, Mono, PageHeader, Panel } from "@/core/ui/feed
 import { Field, Textarea } from "@/core/ui/field";
 import { announce } from "@/core/ui/live-region";
 import { StatusBadge, StatusIcon } from "@/core/ui/status";
+import { Flowchart } from "@/core/ui/flowchart";
 import { Stepper } from "@/core/ui/stepper";
 import { formatDate, formatDateTime } from "@/core/lib/format";
 import { cn } from "@/core/lib/cn";
 import { JOB_STATUS, STEP_STATUS, SYSTEM_WRITE_LABEL, WORKFLOW_LABEL, useJob, type Job, type JobAsset, type JobStep } from "../jobs";
 import { CollectAssetsForm, DocumentLink, DraftConfig, EnrollForm } from "./JobStepPanels";
+import { StepVerification } from "./StepVerification";
 
 interface PreviewStep {
   key: string;
@@ -87,15 +89,16 @@ function StepDetail({ job, step, act }: { job: Job; step: JobStep; act: ReturnTy
           </>
         )}
         {isDoc && <DocumentLink step={step} />}
+        <StepVerification job={job} step={step} canRun={canRun} />
 
-        {canRun && active && (step.status === "failed" || (step.skippable && !["done", "skipped"].includes(step.status))) && (
+        {canRun && active && (step.status === "failed" || (step.skippable && !["done", "skipped", "verify"].includes(step.status))) && (
           <div className="flex flex-wrap gap-2 border-t border-line pt-3">
             {step.status === "failed" && (
               <Button onClick={() => act.retry.mutate(step.key)} loading={act.retry.isPending}>
                 <RotateCcw className="size-4" aria-hidden="true" />Chạy lại bước
               </Button>
             )}
-            {step.skippable && !["done", "skipped"].includes(step.status) && (
+            {step.skippable && !["done", "skipped", "verify"].includes(step.status) && (
               <Button variant="ghost" onClick={() => { setReason(""); setSkipOpen(true); }}>
                 <SkipForward className="size-4" aria-hidden="true" />Bỏ qua bước
               </Button>
@@ -212,6 +215,7 @@ export function JobPage() {
   const act = useJobActions(job);
   const [selected, setSelected] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [flowOpen, setFlowOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("");
   const [closeMode, setCloseMode] = useState<"cancel" | "override" | null>(null);
@@ -258,6 +262,7 @@ export function JobPage() {
         }
         actions={
           <>
+            <Button onClick={() => setFlowOpen(true)}><Workflow className="size-4" aria-hidden="true" />Lưu đồ</Button>
             <Button onClick={() => setPreviewOpen(true)}><Eye className="size-4" aria-hidden="true" />Xem trước các bước</Button>
             {canRun && ["draft", "scheduled"].includes(job.status) && (
               <>
@@ -293,7 +298,7 @@ export function JobPage() {
               key: s.key,
               title: s.title,
               status: STEP_STATUS[s.status].status,
-              statusLabel: s.requires_confirm && !s.confirmed_at && s.status === "waiting" ? "Chờ xác nhận Mã NV" : s.kind === "manual" && s.status === "waiting" ? "Chờ Helpdesk xác nhận" : STEP_STATUS[s.status].label,
+              statusLabel: s.requires_confirm && !s.confirmed_at && s.status === "waiting" ? "Chờ xác nhận Mã NV" : s.kind === "manual" && s.status === "waiting" ? "Chờ Operator thực hiện" : s.status === "verify" ? "Chờ Operator kiểm tra" : STEP_STATUS[s.status].label,
               meta: s.finished_at ? formatDateTime(s.finished_at) : undefined,
             }))}
           />
@@ -324,6 +329,25 @@ export function JobPage() {
           )}
         </div>
       </div>
+
+      <Dialog open={flowOpen} onClose={() => setFlowOpen(false)} title={`Lưu đồ ${job.workflow_title}`} description={job.checklist_version !== null ? `Checklist phiên bản ${job.checklist_version} (cố định từ lúc bắt đầu Job)` : undefined} size="lg">
+        <Flowchart
+          label={`Lưu đồ ${job.workflow_title} – ${job.subject_label}`}
+          verify={job.checklist_version !== null}
+          systemLabel={SYSTEM_WRITE_LABEL}
+          steps={job.steps.map((s) => ({
+            key: s.key,
+            title: s.title,
+            kind: s.kind,
+            writes: s.writes,
+            confirm: s.requires_confirm,
+            checklist: s.checklist ?? [],
+            evidenceRequired: s.evidence_required,
+            status: STEP_STATUS[s.status].status,
+            statusLabel: STEP_STATUS[s.status].label,
+          }))}
+        />
+      </Dialog>
 
       <Dialog open={previewOpen} onClose={() => setPreviewOpen(false)} title="Xem trước các bước (không thay đổi dữ liệu)" size="lg">
         {preview.isLoading && <LoadingRows rows={5} label="Đang đọc trạng thái hiện tại" />}

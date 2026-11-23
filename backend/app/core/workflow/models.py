@@ -45,9 +45,14 @@ class Job(UUIDPk, Timestamps, Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     close_reason: Mapped[str | None] = mapped_column(String(500))
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # Checklist version snapshotted at start; None = no step verification (older jobs, other workflows).
+    checklist_version: Mapped[int | None] = mapped_column(Integer)
 
     steps: Mapped[list[JobStep]] = relationship(
         back_populates="job", cascade="all, delete-orphan", order_by="JobStep.seq", lazy="selectin"
+    )
+    evidence: Mapped[list[JobEvidence]] = relationship(
+        cascade="all, delete-orphan", order_by="JobEvidence.created_at", lazy="selectin"
     )
 
 
@@ -61,7 +66,7 @@ class JobStep(UUIDPk, Base):
     key: Mapped[str] = mapped_column(String(64), nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     kind: Mapped[str] = mapped_column(String(8), nullable=False)  # auto | manual
-    # pending | in_progress | waiting | done | failed | skipped
+    # pending | in_progress | waiting | verify | done | failed | skipped
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     requires_confirm: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     confirmed_by: Mapped[str | None] = mapped_column(String(320))
@@ -75,6 +80,12 @@ class JobStep(UUIDPk, Base):
     message: Mapped[str] = mapped_column(Text, nullable=False, default="")
     before_state: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     output: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    # [{"id", "text", "checked"}] snapshotted from the checklist version of the job.
+    checklist: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
+    evidence_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    verified_by: Mapped[str | None] = mapped_column(String(320))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verify_note: Mapped[str | None] = mapped_column(String(1000))
 
     job: Mapped[Job] = relationship(back_populates="steps")
 
@@ -98,3 +109,40 @@ class JobEvent(Base):
     data: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
     __table_args__ = (Index("ix_core_job_event_job_at", "job_id", "at"),)
+
+
+class JobEvidence(UUIDPk, Base):
+    """Proof attached by an operator to a job step (screenshot / file, link or note)."""
+
+    __tablename__ = "core_job_evidence"
+
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("core_job.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    step_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    kind: Mapped[str] = mapped_column(String(8), nullable=False)  # image | file | link | note
+    file_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("core_file.id"))
+    filename: Mapped[str | None] = mapped_column(String(200))
+    url: Mapped[str | None] = mapped_column(String(1000))
+    text: Mapped[str | None] = mapped_column(String(2000))
+    created_by: Mapped[str] = mapped_column(String(320), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class WorkflowChecklist(UUIDPk, Base):
+    """A version of the verification checklist of one workflow (edited by managers)."""
+
+    __tablename__ = "core_workflow_checklist"
+    __table_args__ = (UniqueConstraint("workflow_key", "version"),)
+
+    workflow_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    # {step_key: {"items": [{"id", "text"}], "evidence_required": bool}}
+    steps: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    note: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    created_by: Mapped[str] = mapped_column(String(320), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

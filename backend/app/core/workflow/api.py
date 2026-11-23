@@ -3,20 +3,28 @@ from __future__ import annotations
 import uuid
 from datetime import date
 from typing import Any, Literal
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth.deps import CurrentUser, current_user
+from app.core.audit.service import record
+from app.core.auth.deps import CurrentUser, current_user, require
+from app.core.config import get_settings
 from app.core.db import get_session
-from app.core.errors import PermissionDenied
+from app.core.errors import AppError, PermissionDenied
 from app.core.modules.registry import get_registry
 from app.core.scheduler.service import request_run
+from app.core.storage.service import check_size, read_file, safe_filename, save_file, sniff
+from app.core.workflow import checklist as cl
 from app.core.workflow import engine
 from app.core.workflow.definitions import WorkflowDefinition
-from app.core.workflow.models import Job, JobEvent
+from app.core.workflow.models import Job, JobEvent, JobEvidence, WorkflowChecklist
+
+CHECKLIST_MANAGE = "core.workflow.checklist.manage"
 
 router = APIRouter(tags=["workflow"])
 
@@ -51,6 +59,7 @@ def job_out(
         "close_reason": job.close_reason,
         "version": job.version,
         "progress": {"done": done, "total": len(job.steps)},
+        "checklist_version": job.checklist_version,
         "steps": [
             {
                 "key": s.key,
@@ -74,6 +83,12 @@ def job_out(
                 "message": s.message,
                 "before_state": s.before_state,
                 "output": s.output,
+                "checklist": s.checklist,
+                "evidence_required": s.evidence_required,
+                "verified_by": s.verified_by,
+                "verified_at": s.verified_at,
+                "verify_note": s.verify_note,
+                "evidence": [cl.evidence_out(e) for e in job.evidence if e.step_key == s.key],
             }
             for s in sorted(job.steps, key=lambda s: s.seq)
         ],
@@ -288,3 +303,240 @@ async def override_close(
     job, wf = await _load(session, user, job_id, "override", for_update=True)
     await engine.override_close(session, user.actor, job, body.reason)
     return await _done(session, user, job, wf)
+
+
+# ------------------------------------------------------------------ verification & evidence
+class VerifyIn(BaseModel):
+    ok: bool = True
+    checked: list[str] = Field(default_factory=list, max_length=50)
+    note: str = Field("", max_length=1000)
+
+
+@router.post("/jobs/{job_id}/steps/{key}/verify")
+async def verify(
+    job_id: uuid.UUID,
+    key: str,
+    body: VerifyIn,
+    user: CurrentUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    job, wf = await _load(session, user, job_id, "execute", for_update=True)
+    await engine.verify_step(session, user.actor, job, key, body.ok, body.checked, body.note)
+    return await _done(session, user, job, wf)
+
+
+async def _evidence_step(
+    session: AsyncSession, user: CurrentUser, job_id: uuid.UUID, key: str
+) -> tuple[Job, Any]:
+    job, wf = await _load(session, user, job_id, "execute", for_update=True)
+    step = engine._find_step(job, key)
+    cl.ensure_evidence_open(job, step)
+    return job, wf
+
+
+async def _evidence_added(session: AsyncSession, user: CurrentUser, job: Job, ev: JobEvidence) -> None:
+    job.evidence.append(ev)
+    engine.touch(job)
+    engine.event(
+        session, job, f"Thêm bằng chứng ({ev.filename or ev.kind}).", step=ev.step_key, actor=user.upn
+    )
+    await record(
+        session,
+        actor=user.actor,
+        module_id=job.module_id,
+        action="workflow.evidence_added",
+        target_type="job",
+        target_id=str(job.id),
+        target_label=f"{job.subject_label} – {ev.step_key}",
+        after={"kind": ev.kind, "filename": ev.filename, "url": ev.url},
+    )
+
+
+@router.post("/jobs/{job_id}/steps/{key}/evidence/file", status_code=201)
+async def add_evidence_file(
+    job_id: uuid.UUID,
+    key: str,
+    file: UploadFile = File(...),
+    user: CurrentUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    job, wf = await _evidence_step(session, user, job_id, key)
+    data = await file.read(get_settings().max_upload_mb * 1024 * 1024 + 1)
+    check_size(data)
+    mime = sniff(data, set(cl.EVIDENCE_MIME))
+    name = safe_filename(file.filename or "bang-chung")
+    stored = await save_file(session, data, name, mime, user.upn)
+    ev = JobEvidence(
+        job_id=job.id,
+        step_key=key,
+        kind=cl.EVIDENCE_MIME[mime],
+        file_id=stored.id,
+        filename=name,
+        created_by=user.upn,
+    )
+    await _evidence_added(session, user, job, ev)
+    return await _done(session, user, job, wf)
+
+
+class EvidenceIn(BaseModel):
+    kind: Literal["link", "note"]
+    url: str = Field("", max_length=1000)
+    text: str = Field("", max_length=2000)
+
+
+@router.post("/jobs/{job_id}/steps/{key}/evidence", status_code=201)
+async def add_evidence(
+    job_id: uuid.UUID,
+    key: str,
+    body: EvidenceIn,
+    user: CurrentUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    job, wf = await _evidence_step(session, user, job_id, key)
+    if body.kind == "link":
+        ev = JobEvidence(
+            job_id=job.id,
+            step_key=key,
+            kind="link",
+            url=cl.validate_link(body.url),
+            text=body.text.strip() or None,
+            created_by=user.upn,
+        )
+    else:
+        if len(body.text.strip()) < 3:
+            raise AppError("Ghi chú quá ngắn.", code="note_too_short")
+        ev = JobEvidence(
+            job_id=job.id, step_key=key, kind="note", text=body.text.strip(), created_by=user.upn
+        )
+    await _evidence_added(session, user, job, ev)
+    return await _done(session, user, job, wf)
+
+
+@router.delete("/jobs/{job_id}/evidence/{evidence_id}")
+async def delete_evidence(
+    job_id: uuid.UUID,
+    evidence_id: uuid.UUID,
+    user: CurrentUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    job, wf = await _load(session, user, job_id, "execute", for_update=True)
+    ev = cl.find_evidence(job, evidence_id)
+    cl.ensure_evidence_open(job, engine._find_step(job, ev.step_key))
+    job.evidence.remove(ev)
+    engine.touch(job)
+    engine.event(
+        session, job, f"Xoá bằng chứng ({ev.filename or ev.kind}).", step=ev.step_key, actor=user.upn
+    )
+    await record(
+        session,
+        actor=user.actor,
+        module_id=job.module_id,
+        action="workflow.evidence_removed",
+        target_type="job",
+        target_id=str(job.id),
+        target_label=f"{job.subject_label} – {ev.step_key}",
+        before={"kind": ev.kind, "filename": ev.filename, "url": ev.url},
+    )
+    return await _done(session, user, job, wf)
+
+
+@router.get("/jobs/{job_id}/evidence/{evidence_id}/file")
+async def evidence_file(
+    job_id: uuid.UUID,
+    evidence_id: uuid.UUID,
+    user: CurrentUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    job, _ = await _load(session, user, job_id, "view")
+    ev = cl.find_evidence(job, evidence_id)
+    if ev.file_id is None:
+        raise AppError("Bằng chứng này không có file.", code="no_file")
+    stored, data = await read_file(session, ev.file_id)
+    return Response(
+        data,
+        media_type=stored.mime,
+        headers={
+            "Content-Disposition": f"inline; filename*=UTF-8''{quote(ev.filename or 'file')}",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'",
+            "Cache-Control": "private, no-store",
+        },
+    )
+
+
+# ------------------------------------------------------------------ flowchart & checklists
+def _visible(user: CurrentUser, module: str = "") -> list[tuple[str, WorkflowDefinition]]:
+    return [
+        (m, w)
+        for m, w in get_registry().workflows()
+        if user.has(w.view_permission) and (not module or m == module)
+    ]
+
+
+async def _workflow_out(session: AsyncSession, module_id: str, wf: WorkflowDefinition) -> dict[str, Any]:
+    version, steps = await cl.current_checklist(session, wf)
+    history = (
+        await session.scalars(
+            select(WorkflowChecklist)
+            .where(WorkflowChecklist.workflow_key == wf.key)
+            .order_by(WorkflowChecklist.version.desc())
+            .limit(20)
+        )
+    ).all()
+    return {
+        "key": wf.key,
+        "module_id": module_id,
+        "title": wf.title,
+        "verify_steps": wf.verify_steps,
+        "checklist_version": version,
+        "required_for_close": list(wf.required_for_close),
+        "steps": [
+            {
+                "key": s.key,
+                "title": s.title,
+                "kind": s.kind,
+                "description": s.description,
+                "writes": list(s.writes),
+                "confirm": s.confirm,
+                "skippable": s.skippable,
+                "waits": s.wait_timeout_seconds is not None,
+                "checklist": steps[s.key],
+            }
+            for s in wf.steps
+        ],
+        "history": [
+            {"version": h.version, "note": h.note, "created_by": h.created_by, "created_at": h.created_at}
+            for h in history
+        ],
+    }
+
+
+@router.get("/workflows")
+async def list_workflows(
+    module: str = Query("", max_length=64),
+    user: CurrentUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict[str, Any]]:
+    return [await _workflow_out(session, m, w) for m, w in _visible(user, module)]
+
+
+class ChecklistIn(BaseModel):
+    steps: dict[str, Any]
+    note: str = Field("", max_length=500)
+
+
+@router.put("/workflows/{key}/checklist")
+async def put_checklist(
+    key: str,
+    body: ChecklistIn,
+    user: CurrentUser = Depends(require(CHECKLIST_MANAGE)),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    module_id, wf = engine.workflow_or_404(key)
+    if not user.has(wf.view_permission):
+        raise PermissionDenied("Bạn không có quyền xem quy trình này.")
+    if not wf.verify_steps:
+        raise AppError("Quy trình này không dùng checklist.", code="no_verification")
+    await cl.save_checklist(session, user.actor, module_id, wf, body.steps, body.note)
+    await session.commit()
+    return await _workflow_out(session, module_id, wf)

@@ -214,6 +214,34 @@ def step(j: dict, key: str) -> dict:  # type: ignore[type-arg]
     return next(s for s in j["steps"] if s["key"] == key)
 
 
+async def verify(admin, j: dict, key: str) -> dict:  # type: ignore[no-untyped-def,type-arg]
+    """Operator check of a performed step: evidence where required, every checklist item ticked."""
+    st = step(j, key)
+    if st["evidence_required"] and not st["evidence"]:
+        r = await admin.post(
+            f"/api/core/jobs/{j['id']}/steps/{key}/evidence",
+            json={"kind": "note", "text": "Đã kiểm tra trên hệ thống"},
+        )
+        assert r.status_code == 201, r.text
+    r = await admin.post(
+        f"/api/core/jobs/{j['id']}/steps/{key}/verify", json={"checked": [i["id"] for i in st["checklist"]]}
+    )
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+async def settle(admin, job_id: str) -> dict:  # type: ignore[no-untyped-def,type-arg]
+    """Run the worker and verify every performed step until the job needs something else."""
+    for _ in range(20):
+        await run_worker()
+        j = await job(admin, job_id)
+        pending = [s for s in j["steps"] if s["status"] == "verify"]
+        if not pending:
+            return j
+        await verify(admin, j, pending[0]["key"])
+    raise AssertionError("job did not settle")
+
+
 @needs_soffice
 @respx.mock(assert_all_called=False)
 async def test_onboard_end_to_end(admin, systems) -> None:  # type: ignore[no-untyped-def]
@@ -242,9 +270,61 @@ async def test_onboard_end_to_end(admin, systems) -> None:  # type: ignore[no-un
     started = await admin.post(f"/api/core/jobs/{j['id']}/start", json={"version": j["version"]})
     assert started.status_code == 200, started.text
     j = started.json()
-    assert j["status"] == "running"
+    assert j["status"] == "running" and j["checklist_version"] == 0
     await run_worker()
     j = await job(admin, j["id"])
+    # Each performed step waits for an operator check before the next one runs.
+    assert [s["status"] for s in j["steps"]][:2] == ["verify", "pending"] and j["status"] == "waiting"
+    await run_worker()
+    assert step(await job(admin, j["id"]), "find_sdp_user")["status"] == "pending"
+    half = await admin.post(f"/api/core/jobs/{j['id']}/steps/check_request/verify", json={"checked": ["c1"]})
+    assert half.json()["error"]["code"] == "checklist_incomplete"
+    j = await verify(admin, j, "check_request")
+    assert step(j, "check_request")["verified_by"] == "admin@test.local"
+    # Rejecting a check fails the step; retry re-runs it (read-before-write) and asks again.
+    await run_worker()
+    j = await job(admin, j["id"])
+    rej = await admin.post(
+        f"/api/core/jobs/{j['id']}/steps/find_sdp_user/verify", json={"ok": False, "note": "Sai user"}
+    )
+    assert step(rej.json(), "find_sdp_user")["status"] == "failed" and rej.json()["status"] == "failed"
+    await admin.post(f"/api/core/jobs/{j['id']}/steps/find_sdp_user/retry")
+    await run_worker()
+    j = await verify(admin, await job(admin, j["id"]), "find_sdp_user")
+    # assign_assets requires evidence: refused without, accepted with a screenshot.
+    await run_worker()
+    j = await job(admin, j["id"])
+    a = step(j, "assign_assets")
+    assert a["status"] == "verify" and a["evidence_required"]
+    no_ev = await admin.post(
+        f"/api/core/jobs/{j['id']}/steps/assign_assets/verify",
+        json={"checked": [i["id"] for i in a["checklist"]]},
+    )
+    assert no_ev.json()["error"]["code"] == "evidence_required"
+    bad = await admin.post(
+        f"/api/core/jobs/{j['id']}/steps/assign_assets/evidence/file",
+        files={"file": ("x.exe", b"MZ\x90\x00", "application/octet-stream")},
+    )
+    assert bad.json()["error"]["code"] == "unsupported_file"
+    png = await admin.post(
+        f"/api/core/jobs/{j['id']}/steps/assign_assets/evidence/file",
+        files={"file": ("sdp.png", b"\x89PNG\r\n\x1a\n" + b"0" * 32, "image/png")},
+    )
+    assert png.status_code == 201, png.text
+    ev = step(png.json(), "assign_assets")["evidence"][0]
+    assert ev["kind"] == "image" and ev["filename"] == "sdp.png"
+    f = await admin.get(f"/api/core/jobs/{j['id']}/evidence/{ev['id']}/file")
+    assert f.status_code == 200 and f.headers["content-type"] == "image/png"
+    assert (
+        await admin.post(
+            f"/api/core/jobs/{j['id']}/steps/assign_assets/evidence",
+            json={"kind": "link", "url": "javascript:x"},
+        )
+    ).json()["error"]["code"] == "invalid_link"
+    j = await verify(admin, png.json(), "assign_assets")
+    late = await admin.delete(f"/api/core/jobs/{j['id']}/evidence/{ev['id']}")
+    assert late.json()["error"]["code"] == "step_finished"
+    j = await settle(admin, j["id"])
     assert [s["status"] for s in j["steps"]][:5] == ["done", "done", "done", "done", "waiting"]
     assert systems.assets["5001"]["state"]["name"] == "In Use" and systems.assets["5001"]["user"] == {
         "id": "u1"
@@ -259,10 +339,9 @@ async def test_onboard_end_to_end(admin, systems) -> None:  # type: ignore[no-un
     systems.bs_users["003551"]["fingerprint_template_count"] = "2"
     ok = await admin.post(f"/api/core/jobs/{j['id']}/steps/biostar_enroll/complete", json={"data": {}})
     assert ok.status_code == 200, ok.text
-    assert step(ok.json(), "biostar_enroll")["status"] == "done"
+    assert step(ok.json(), "biostar_enroll")["status"] == "verify"
 
-    await run_worker()
-    j = await job(admin, j["id"])
+    j = await settle(admin, j["id"])
     doc_step = step(j, "handover_doc")
     assert doc_step["status"] == "waiting" and doc_step["output"]["document_id"]
     doc_id = doc_step["output"]["document_id"]
@@ -283,8 +362,7 @@ async def test_onboard_end_to_end(admin, systems) -> None:  # type: ignore[no-un
         st = await s.scalar(select(JobStep).where(JobStep.key == "handover_doc", JobStep.job_id == j["id"]))
         st.next_run_at = None
         await s.commit()
-    await run_worker()
-    j = await job(admin, j["id"])
+    j = await settle(admin, j["id"])
     assert j["status"] == "completed", [(s["key"], s["status"], s["message"]) for s in j["steps"]]
     assert systems.calls[-3:] == ["upload", "note", "status:9101:Resolved"]
 
@@ -295,6 +373,9 @@ async def test_onboard_end_to_end(admin, systems) -> None:  # type: ignore[no-un
         "workflow.job_started",
         "workflow.step_executed",
         "workflow.step_completed",
+        "workflow.step_verified",
+        "workflow.step_rejected",
+        "workflow.evidence_added",
     } <= set(actions)
 
 
@@ -328,8 +409,7 @@ async def test_offboard_schedule_confirm_and_override(admin, client, systems) ->
             f"/api/core/jobs/{j['id']}/start", json={"version": (await job(admin, j["id"]))["version"]}
         )
     ).json()
-    await run_worker()
-    j = await job(admin, j["id"])
+    j = await settle(admin, j["id"])
     collect = step(j, "collect_assets")
     assert collect["status"] == "waiting" and [a["id"] for a in collect["output"]["assets"]] == ["5002"]
 
@@ -341,8 +421,7 @@ async def test_offboard_schedule_confirm_and_override(admin, client, systems) ->
         f"/api/core/jobs/{j['id']}/steps/collect_assets/complete",
         json={"data": {"assets": [{"id": "5002", "condition": "missing_accessory", "note": "Thiếu sạc"}]}},
     )
-    await run_worker()
-    j = await job(admin, j["id"])
+    j = await settle(admin, j["id"])
     assert systems.assets["5002"]["state"]["name"] == "In Store" and systems.assets["5002"]["user"] is None
     bs_step = step(j, "biostar_offboard")
     assert bs_step["status"] == "waiting" and bs_step["requires_confirm"]
@@ -355,6 +434,12 @@ async def test_offboard_schedule_confirm_and_override(admin, client, systems) ->
     await admin.post(f"/api/core/jobs/{j['id']}/steps/biostar_offboard/confirm", json={"typed": "002100"})
     await run_worker()
     j = await job(admin, j["id"])
+    assert step(j, "biostar_offboard")["status"] == "verify"
+    skip = await admin.post(
+        f"/api/core/jobs/{j['id']}/steps/biostar_offboard/skip", json={"reason": "bỏ qua"}
+    )
+    assert skip.status_code == 409
+    j = await settle(admin, j["id"])
     assert (
         systems.bs_users["002100"]["disabled"] == "true" and systems.bs_users["002100"]["access_groups"] == []
     )
@@ -408,8 +493,7 @@ async def test_closed_request_fails_and_retry_recovers(admin, systems) -> None: 
     systems.requests["9101"] = "Open"
     await admin.post(f"/api/core/jobs/{j['id']}/steps/check_request/retry")
     systems.users = []  # AD account not yet in SDP → the job waits instead of failing
-    await run_worker()
-    j = await job(admin, j["id"])
+    j = await settle(admin, j["id"])
     assert step(j, "check_request")["status"] == "done"
     assert step(j, "find_sdp_user")["status"] == "waiting" and j["status"] == "waiting"
     cancelled = (
@@ -444,3 +528,66 @@ async def test_auto_create_jobs_and_list(admin) -> None:  # type: ignore[no-unty
     listed = (await admin.get("/api/core/jobs", params={"q": "004444"})).json()
     assert listed["total"] == 1 and listed["items"][0]["status"] == "draft"
     assert listed["items"][0]["created_by"] == "system (đồng bộ)"
+
+
+async def test_checklist_versions_and_snapshot(admin, client) -> None:  # type: ignore[no-untyped-def]
+    flows = {w["key"]: w for w in (await admin.get("/api/core/workflows?module=lifecycle")).json()}
+    assert set(flows) == {"lifecycle.onboard", "lifecycle.offboard"}
+    onboard = flows["lifecycle.onboard"]
+    assert onboard["verify_steps"] and onboard["checklist_version"] == 0
+    steps = {s["key"]: s["checklist"] for s in onboard["steps"]}
+    assert steps["assign_assets"]["evidence_required"] and steps["assign_assets"]["items"]
+
+    # A job started on version 0 keeps it after the checklist changes.
+    async with get_sessionmaker()() as s:
+        s.add(
+            LifecycleRequest(
+                id="9188",
+                display_id="7988",
+                subject="x",
+                employee_id="004488",
+                full_name="Nhân Viên Thử",
+                kind="onboard",
+                effective_date=date(2026, 11, 30),
+                fields={},
+                parse_errors=[],
+                description_text="",
+            )
+        )
+        await s.commit()
+    j = (await admin.post("/api/lifecycle/jobs", json={"request_id": "9188"})).json()
+    j = (await admin.post(f"/api/core/jobs/{j['id']}/start", json={"version": j["version"]})).json()
+    assert j["checklist_version"] == 0
+
+    steps["check_request"] = {
+        "items": [{"id": "k1", "text": "Đã gọi xác nhận với HR"}],
+        "evidence_required": True,
+    }
+    await client.login("op-cl@test.local")  # no role → no permission
+    assert (
+        await client.put("/api/core/workflows/lifecycle.onboard/checklist", json={"steps": steps})
+    ).status_code == 403
+    bad = await admin.put(
+        "/api/core/workflows/lifecycle.onboard/checklist", json={"steps": {**steps, "nope": {"items": []}}}
+    )
+    assert bad.json()["error"]["code"] == "unknown_step"
+    saved = await admin.put(
+        "/api/core/workflows/lifecycle.onboard/checklist", json={"steps": steps, "note": "Thêm gọi HR"}
+    )
+    assert saved.status_code == 200, saved.text
+    out = saved.json()
+    assert out["checklist_version"] == 1 and out["history"][0]["note"] == "Thêm gọi HR"
+    same = await admin.put("/api/core/workflows/lifecycle.onboard/checklist", json={"steps": steps})
+    assert same.json()["error"]["code"] == "no_change"
+
+    running = (await admin.get(f"/api/core/jobs/{j['id']}")).json()
+    assert (
+        step(running, "check_request")["checklist"][0]["text"] == "Request đúng nhân viên và loại biến động"
+    )
+    assert not step(running, "check_request")["evidence_required"]
+    await admin.post(f"/api/core/jobs/{j['id']}/cancel", json={"reason": "dọn dữ liệu thử"})
+    async with get_sessionmaker()() as s:
+        actions = (
+            await s.scalars(select(AuditLog.action).where(AuditLog.target_id == "lifecycle.onboard"))
+        ).all()
+    assert "workflow.checklist_saved" in actions

@@ -22,8 +22,8 @@ Tài liệu: [kiến trúc](docs/architecture.md) · [thêm module](docs/adding-
 | 2 | SDP + BioStar: đọc request RTR, user, tài sản, user BioStar; đối soát theo Mã NV; export; bộ lập lịch nền | Xong |
 | 3 | Biên bản Bàn giao / Thu hồi theo mẫu thật: mẫu có phiên bản, số tự sinh, PDF, tải bản ký, đính kèm SDP | Xong |
 | 4 | Workflow Onboard / Offboard từ request SDP (gán/thu hồi tài sản, BioStar, biên bản, đóng request) | Xong |
-| 5 | Vai trò Manager / Supervisor / Operator / Viewer; module **Công việc Helpdesk**: task SDP theo Operator, chuyển việc (ghi sang SDP), thống kê theo kỳ | **Xong** |
-| 6 | Lưu đồ Onboard/Offboard, checklist từng bước, Operator xác nhận kèm bằng chứng | Kế tiếp |
+| 5 | Vai trò Manager / Supervisor / Operator / Viewer; module **Công việc Helpdesk**: task SDP theo Operator, chuyển việc (ghi sang SDP), thống kê theo kỳ | Xong |
+| 6 | Lưu đồ Onboard/Offboard, checklist từng bước, Operator xác nhận kèm bằng chứng | **Xong** |
 | 7 | Áp dụng giao diện hướng B “Phòng điều khiển” cho toàn app | Kế tiếp |
 | sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
 
@@ -164,7 +164,14 @@ Kết nối hệ thống và người dùng/phân quyền chỉ Quản trị tha
    theo ngày hiệu lực. Worker chạy các bước tự động; Helpdesk xác nhận các bước thủ công (đăng ký vân tay/thẻ,
    tình trạng tài sản thu hồi), nhập lại Mã NV trước khi vô hiệu hoá BioStar, chốt và tải biên bản đã ký.
    Job tự đính kèm biên bản, ghi chú và đóng request SDP.
-5. Bước lỗi có thể **Chạy lại** (an toàn: bước đọc trạng thái hiện tại trước khi ghi); trạng thái trước khi thay
+5. **Kiểm tra từng bước:** mỗi bước làm xong chuyển sang *Chờ kiểm tra*. Operator kiểm tra trên hệ thống thật,
+   tick đủ checklist, đính kèm bằng chứng nếu bước được đánh dấu (ảnh chụp màn hình – dán Ctrl+V được, PDF/DOCX,
+   liên kết, ghi chú) rồi **Xác nhận hoàn tất**; bước sau chỉ chạy khi bước trước đã xác nhận. **Báo không đạt**
+   (kèm lý do) chuyển bước sang lỗi để sửa và chạy lại. Nút **Lưu đồ** trên Job hiện toàn bộ quy trình và tiến độ.
+6. **Lưu đồ quy trình** (menu Vòng đời nhân sự): sơ đồ Onboard / Offboard và checklist từng bước. Manager bấm
+   **Sửa checklist** để thêm/sửa/xoá mục và chọn bước bắt buộc bằng chứng; mỗi lần lưu là một phiên bản mới
+   (có lịch sử, ghi nhật ký). Job đang chạy giữ phiên bản lúc bắt đầu.
+7. Bước lỗi có thể **Chạy lại** (an toàn: bước đọc trạng thái hiện tại trước khi ghi); trạng thái trước khi thay
    đổi được lưu ở từng bước để khôi phục thủ công. Admin có thể **Đóng Job bắt buộc** kèm lý do.
 
 ### Module Công việc Helpdesk

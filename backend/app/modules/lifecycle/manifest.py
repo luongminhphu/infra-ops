@@ -90,6 +90,7 @@ manifest = ModuleManifest(
             "git-compare-arrows",
             "lifecycle.reconciliation.view",
         ),
+        NavItem("Lưu đồ quy trình", "/lifecycle/flows", "workflow", "lifecycle.job.view"),
         NavItem("Request RTR", "/lifecycle/requests", "ticket", "lifecycle.reconciliation.view"),
         NavItem("Biên bản", "/lifecycle/documents", "file-text", "lifecycle.documents.view"),
         NavItem("Đồng bộ dữ liệu", "/lifecycle/sync", "refresh-cw", "lifecycle.reconciliation.view"),

@@ -20,6 +20,7 @@ from app.core.audit.service import Actor, record
 from app.core.errors import AppError, Conflict, NotFound, PermissionDenied
 from app.core.logging import get_logger
 from app.core.modules.registry import get_registry
+from app.core.workflow.checklist import check_verification, snapshot, verifies
 from app.core.workflow.definitions import StepContext, StepDefinition, StepOutcome, WorkflowDefinition
 from app.core.workflow.models import Job, JobEvent, JobStep
 
@@ -99,6 +100,7 @@ async def create_job(
         params=params,
         created_by=actor.upn or "system",
         steps=[],
+        evidence=[],
     )
     seq = 0
     for s in wf.steps:
@@ -158,6 +160,9 @@ def touch(job: Job) -> None:
 async def start_job(session: AsyncSession, actor: Actor, job: Job, scheduled_for: date | None) -> Job:
     if job.status not in ("draft", "scheduled"):
         raise Conflict("Job đã được bắt đầu.", code="already_started")
+    _, wf = workflow_or_404(job.workflow_key)
+    if wf.verify_steps:
+        await snapshot(session, job, wf)
     job.started_by = actor.upn
     if scheduled_for and scheduled_for > today_vn():
         job.status = "scheduled"
@@ -248,6 +253,8 @@ async def complete_manual(
     if outcome.status != "done":
         raise AppError(outcome.message or "Chưa hoàn tất được bước này.", code="manual_incomplete")
     _apply(step, outcome, actor.upn)
+    if verifies(job):
+        step.status = "verify"
     _resume(job)
     touch(job)
     event(session, job, outcome.message or f"Đã hoàn tất “{step.title}”.", step=key, actor=actor.upn)
@@ -260,6 +267,69 @@ async def complete_manual(
         target_id=str(job.id),
         target_label=f"{job.subject_label} – {step.title}",
         after=outcome.output or None,
+    )
+    return step
+
+
+async def verify_step(
+    session: AsyncSession, actor: Actor, job: Job, key: str, ok: bool, checked: list[str], note: str
+) -> JobStep:
+    """Operator check of a performed step: confirm (checklist + evidence) or reject (step fails)."""
+    step = _find_step(job, key)
+    if step.status != "verify":
+        raise Conflict("Bước không ở trạng thái chờ kiểm tra.", code="not_verifying")
+    if job.status not in ACTIVE:
+        raise Conflict("Job chưa chạy hoặc đã kết thúc.", code="job_not_active")
+    note = note.strip()
+    label = f"{job.subject_label} – {step.title}"
+    if not ok:
+        if len(note) < 3:
+            raise AppError("Ghi rõ vì sao kiểm tra không đạt.", code="reason_required")
+        step.status = "failed"
+        step.message = f"Kiểm tra không đạt: {note}"[:1000]
+        job.status = "failed"
+        touch(job)
+        event(
+            session,
+            job,
+            f"Kiểm tra “{step.title}” không đạt: {note}",
+            step=key,
+            level="error",
+            actor=actor.upn,
+        )
+        await record(
+            session,
+            actor=actor,
+            module_id=job.module_id,
+            action="workflow.step_rejected",
+            result="failure",
+            target_type="job",
+            target_id=str(job.id),
+            target_label=label,
+            message=note[:1000],
+        )
+        return step
+    step.checklist = check_verification(job, step, checked)
+    step.status = "done"
+    step.verified_by = actor.upn
+    step.verified_at = now()
+    step.verify_note = note[:1000] or None
+    _resume(job)
+    touch(job)
+    event(session, job, f"Đã kiểm tra và xác nhận “{step.title}”.", step=key, actor=actor.upn)
+    await record(
+        session,
+        actor=actor,
+        module_id=job.module_id,
+        action="workflow.step_verified",
+        target_type="job",
+        target_id=str(job.id),
+        target_label=label,
+        after={
+            "checked": [i["text"] for i in step.checklist],
+            "evidence": [e.filename or e.url or e.kind for e in job.evidence if e.step_key == key],
+            "note": note or None,
+        },
     )
     return step
 
@@ -293,6 +363,10 @@ async def skip_step(session: AsyncSession, actor: Actor, job: Job, key: str, rea
         raise AppError("Bước này không được bỏ qua.", code="not_skippable")
     if step.status in FINISHED_STEP:
         raise Conflict("Bước đã hoàn tất.", code="step_finished")
+    if step.status == "verify":
+        raise Conflict(
+            "Bước đã thực hiện, đang chờ kiểm tra – hãy xác nhận hoặc báo không đạt.", code="step_verifying"
+        )
     step.status = "skipped"
     step.finished_at = now()
     step.actor = actor.upn
@@ -434,6 +508,9 @@ async def advance(session: AsyncSession, job: Job, worker_actor: Actor) -> None:
         if step.status == "failed":
             job.status = "failed"
             return
+        if step.status == "verify":
+            job.status = "waiting"
+            return
         if step.kind == "manual":
             if step.status != "waiting":
                 step.status = "waiting"
@@ -522,6 +599,11 @@ async def advance(session: AsyncSession, job: Job, worker_actor: Actor) -> None:
                 after=outcome.output or None,
                 message=outcome.message[:1000],
             )
+        if verifies(job):
+            step.status = "verify"
+            event(session, job, f"Chờ kiểm tra và xác nhận “{step.title}”.", step=step.key)
+            job.status = "waiting"
+            return
     job.status = "completed"
     job.current_step = None
     job.closed_at = now()
@@ -572,6 +654,8 @@ def _has_due_work(job: Job) -> bool:
     for s in sorted(job.steps, key=lambda s: s.seq):
         if s.status in FINISHED_STEP:
             continue
+        if s.status == "verify":
+            return False
         if s.kind == "manual":
             return s.status != "waiting"
         if s.requires_confirm and s.confirmed_at is None:
