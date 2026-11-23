@@ -34,9 +34,13 @@ const CONN_STATE: Record<ConnItem["state"], { status: Status; label: string }> =
 
 function Tile({ label, value, tone }: { label: string; value: number; tone?: "failed" | "waiting" }) {
   return (
-    <div className="rounded-md border border-line bg-surface px-4 py-3">
+    // Only a non-zero problem count is highlighted (accent edge + colour), so zeros stay calm.
+    <div
+      className={`rounded-md border border-line bg-surface px-4 py-3 shadow-card ${tone && value > 0 ? "border-l-4" : ""}`}
+      style={tone && value > 0 ? { borderLeftColor: `var(--${tone})` } : undefined}
+    >
       <p className="text-sm text-muted">{label}</p>
-      <p className={`tabular mt-1 text-2xl font-semibold ${tone === "failed" ? "text-failed" : tone === "waiting" ? "text-waiting" : ""}`}>
+      <p className={`tabular mt-1 text-2xl font-semibold ${value > 0 && tone === "failed" ? "text-failed" : value > 0 && tone === "waiting" ? "text-waiting" : ""}`}>
         {value}
       </p>
     </div>

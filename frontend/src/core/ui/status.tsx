@@ -54,7 +54,7 @@ export function StatusBadge({ status, label, className }: { status: Status; labe
   return (
     <span
       className={cn(
-        "inline-flex h-6 items-center gap-1 rounded-xs px-1.5 text-sm font-medium whitespace-nowrap",
+        "inline-flex h-6 items-center gap-1 rounded-full px-2 text-sm font-medium whitespace-nowrap",
         def.fg,
         def.bg,
         className,

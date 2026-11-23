@@ -38,7 +38,7 @@ export function EmptyState({
       <span className="flex size-10 items-center justify-center rounded-md bg-surface-2 text-muted">
         <Icon className="size-5" aria-hidden="true" />
       </span>
-      <h3 className="text-lg font-semibold">{title}</h3>
+      <p className="text-lg font-semibold">{title}</p>
       {children && <div className="max-w-md text-sm text-muted">{children}</div>}
       {action && <div className="mt-2">{action}</div>}
     </div>
@@ -78,7 +78,7 @@ export function Panel({
   bodyClassName?: string;
 }) {
   return (
-    <section className={cn("rounded-md border border-line bg-surface", className)}>
+    <section className={cn("rounded-md border border-line bg-surface shadow-card", className)}>
       {(title || actions) && (
         <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-2.5">
           <div>

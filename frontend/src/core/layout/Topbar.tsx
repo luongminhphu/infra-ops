@@ -61,11 +61,11 @@ export function Topbar() {
       <button
         type="button"
         onClick={() => setPaletteOpen(true)}
-        className="flex h-8 w-full max-w-sm cursor-pointer items-center gap-2 rounded-sm border border-line bg-paper px-2.5 text-base text-muted hover:border-line-strong"
+        className="flex h-8 w-auto cursor-pointer items-center gap-2 rounded-sm border border-line bg-paper px-2.5 text-base text-muted hover:border-line-strong sm:w-full sm:max-w-sm"
       >
         <Search className="size-4" aria-hidden="true" />
-        <span className="flex-1 text-left">Tìm trang, chức năng…</span>
-        <Kbd>Ctrl K</Kbd>
+        <span className="sr-only flex-1 text-left sm:not-sr-only">Tìm trang, chức năng…</span>
+        <span className="hidden sm:inline"><Kbd>Ctrl K</Kbd></span>
       </button>
       <div className="ml-auto flex items-center gap-1">
         <Menu
@@ -92,7 +92,7 @@ export function Topbar() {
               <span className="flex size-6 items-center justify-center rounded-full bg-primary-soft text-primary">
                 <UserRound className="size-3.5" aria-hidden="true" />
               </span>
-              <span className="max-w-40 truncate">{me?.display_name}</span>
+              <span className="hidden max-w-40 truncate sm:inline">{me?.display_name}</span>
             </Button>
           )}
         >

@@ -3,18 +3,13 @@
 Single reference for every module, current and future. Tokens live in
 `frontend/src/core/styles/tokens.css`; shared components in `frontend/src/core/ui/`.
 
-## Direction: "Bàn điều phối" (switchboard)
+## Direction: "Phòng điều khiển" (control room) – since Phase 7
 
-The daily question for IT Ops is *"is this person consistent across every system?"*.
-The one memorable element is the **System Rail** (`ui/system-rail.tsx`): a fixed sequence of
-system cells (SDP · Tài sản · Entra · AD · M365 · BioStar · Biên bản), always in the same order and
-position – reconciliation rows, job headers, dashboard. Everything else stays quiet: no gradients,
-no decorative shadows, no card-in-card.
-
-Sources: `ui-ux-pro-max` (style *Data-Dense Dashboard* + *Minimalism & Swiss*, typography
-*Vietnamese Friendly*, density 8/10, motion 2/10, bullet charts for KPI vs threshold) combined with
-`frontend-design`. Decisions not taken from the skill output are explained in
-`docs/phase-0-proposal.md` §8.0.
+Chosen by the product owner from two directions (mockup `docs/design/redesign-mockup.html`, direction B).
+Cool slate neutrals, one cobalt accent, an **icon rail** of modules and a **sub-navigation** for the pages of
+the active module, KPI cards with a soft shadow, pill status badges. The **System Rail**
+(`ui/system-rail.tsx`) keeps the fixed system order (SDP · Tài sản · BioStar · Biên bản) wherever a person's
+state across systems is shown. Still quiet: no gradients, no card-in-card, colour only for meaning.
 
 ## Colour
 
@@ -23,35 +18,21 @@ All colours use `light-dark()`; never hard-code hex in components – use Tailwi
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
-| `ink` | #1C2430 | #E6EAF0 | Primary text |
-| `muted` | #566171 | #9AA5B4 | Secondary text |
-| `paper` | #F6F7F9 | #161B22 | App background |
-| `surface` | #FFFFFF | #1E242D | Panels, tables |
-| `surface-2` | #EEF1F4 | #252C36 | Table header, hover, code |
-| `line` / `line-strong` | #DDE2E8 / #C3CAD3 | #2E3642 / #3E4757 | Dividers (decorative) |
-| `control-border` | #7C8593 | #707B8C | Form control borders (≥ 3:1) |
-| `primary` (petrol) | #0F5F6B | #4FB3BF | Primary buttons, links, active nav |
-| `focus` | #0F5F6B | #72C6D0 | Focus ring (2px outline, offset 2) |
+| `ink` | #0F172A | #E5EAF3 | Primary text |
+| `muted` | #526077 | #95A1B6 | Secondary text |
+| `paper` | #F1F4F9 | #0B1120 | App background |
+| `surface` | #FFFFFF | #111A2C | Panels, tables, cards |
+| `surface-2` | #E8EDF5 | #18233A | Table header, hover, code |
+| `rail` | #FFFFFF | #0E1626 | Module rail |
+| `line` / `line-strong` | #DBE2EC / #C2CCDA | #233049 / #33425F | Dividers (decorative) |
+| `control-border` | #74819A | #6F7D97 | Form control borders (≥ 3:1) |
+| `primary` (cobalt) | #2F5BD3 | #7C9DFF | Primary buttons, links, active nav |
+| `focus` | #2F5BD3 | #A1B8FF | Focus ring (2px outline, offset 2) |
+| `shadow-card` | slate 7 % | none | Cards and panels (light theme only) |
 
-Petrol is deliberately not blue: blue is reserved for *In Progress*, so a button never looks like a status.
-
-### Status vocabulary (`ui/status.tsx`)
-
-Always icon + label + colour, never colour alone.
-
-| Status | Label | Icon | Token |
-|---|---|---|---|
-| done / match | Hoàn tất / Khớp | circle-check | `done` |
-| in_progress | Đang chạy | loader (spins; static with reduced motion) | `progress` |
-| waiting | Đang chờ | clock | `waiting` |
-| failed | Lỗi | circle-x | `failed` |
-| skipped / pending | Bỏ qua / Chưa làm | circle-minus / circle-dashed | `skipped` |
-| mismatch | Lệch | triangle-alert | `mismatch` |
-| warning | Cần chú ý | triangle-alert | `waiting` |
-| disabled | Đang tắt | power-off | `skipped` |
-
-Every text/background pair passes WCAG AA (4.5:1) in both themes; control borders and focus ≥ 3:1.
-See [Verifying contrast](#verifying-contrast).
+Status colours (`done` #166534 / #4ADE80, `progress` #1D4ED8 / #93B4FF, `waiting` #92400E / #FBBF24,
+`failed` #B91C1C / #F87171, `skipped`, `mismatch`) each have a `-soft` background; *In Progress* is a deeper
+blue than the cobalt primary and always carries its spinner icon and label, so a button never reads as a status.
 
 ### Charts
 
@@ -61,19 +42,24 @@ has a legend, hover/focus values per period and a "Xem dạng bảng" table view
 
 ## Typography
 
-- **Be Vietnam Pro** (400/500/600) – all UI text. Chosen for clean Vietnamese diacritics at 13px.
+- **Inter** (variable, Vietnamese subset) – all UI text; tabular figures for numbers.
   Fallback: Noto Sans, system-ui.
 - **JetBrains Mono** – *only* for identifiers people compare or copy: employee ID, UPN, serial,
   asset tag, DN, document number, URLs. Never for labels.
 - Scale: 12 (`text-xs`, minimum) · 13 (`text-sm`, table cells/secondary) · 14 (`text-base`, body) ·
-  16 (`text-lg`, panel titles) · 20 (`text-xl`, page title) · 28 (`text-2xl`, KPI).
+  16 (`text-lg`, panel titles) · 20 (`text-xl`, page title) · 28 (`text-2xl`, KPI). Rail labels 11px.
 - Sentence case everywhere; no all-caps labels. `tabular` class for numeric columns.
 
 ## Layout & density
 
-- Sidebar 240px (collapsed 56px), grouped by module; topbar 48px.
+- **Rail** 76px (`core/layout/AppShell.tsx` + `nav.ts`): Tổng quan, one entry per module (short label), and
+  *Hệ thống* (platform settings) at the bottom. Opening an entry goes to its first page.
+- **Sub-navigation** 220px with the pages of the active module (headed by the module name); below 1024px it
+  becomes a horizontally scrolling bar under the topbar. Detail pages highlight their module.
+- Topbar 48px: search / command palette (Ctrl K), theme, account. On phones the search shows its icon only.
 - Spacing base 4px. Table rows 36px (compact, default) / 44px (comfortable).
-- Radius by hierarchy: 4px badges/cells, 6px controls/buttons, 8px panels/dialogs.
+- Radius by hierarchy: 4px cells, 6px controls/buttons, 10px panels/cards/dialogs, full for status badges.
+- KPI tiles highlight only non-zero problem counts (accent edge + status colour).
 - Left aligned; numbers right aligned; content max width 1600px. Optimised for 1366–1920px.
 
 ## Components (core)
@@ -120,7 +106,7 @@ what it means, next action), **error** (`role=alert`, message from the API + "Th
 - Visible focus ring everywhere; `scroll-padding-top` keeps focus clear of the sticky topbar.
 - Theme: three states (system/light/dark) through `<meta name="color-scheme">`; works without JS.
 - `prefers-reduced-motion` disables animation.
-- Verified with axe-core on every screen in light and dark (0 violations, Phase 1).
+- Verified with axe-core on every screen in light and dark (0 violations, re-checked in Phase 7 on 16 pages + login).
 
 ## Verifying contrast
 
