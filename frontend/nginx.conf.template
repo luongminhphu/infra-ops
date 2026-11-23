@@ -1,5 +1,6 @@
 # Serves the SPA and proxies /api to the backend. Rendered at container start by the nginx image
-# (envsubst): API_UPSTREAM = host:port of the API (compose: api:8000, Helm: <release>-api:8000).
+# (envsubst): API_UPSTREAM = host:port of the API (compose: api:8000, Helm: the service's full DNS name,
+# because nginx's resolver ignores DNS search domains).
 # The upstream is a variable + resolver so a restarted/recreated API container is found again
 # (a literal proxy_pass host is resolved once at startup and goes stale).
 resolver ${NGINX_LOCAL_RESOLVERS} valid=10s;
