@@ -14,6 +14,7 @@ CONNECTIONS_MANAGE = "core.connections.manage"
 CONNECTIONS_TEST = "core.connections.test"
 AUDIT_VIEW = "core.audit.view"
 RBAC_MANAGE = "core.rbac.manage"
+CHECKLIST_MANAGE = "core.workflow.checklist.manage"
 
 
 async def _connections_widget(session: AsyncSession) -> dict[str, Any]:
@@ -45,6 +46,9 @@ CORE_MANIFEST = ModuleManifest(
         Permission(CONNECTIONS_TEST, "Kiểm tra kết nối", ("manager", "supervisor", "operator")),
         Permission(AUDIT_VIEW, "Xem nhật ký kiểm tra", ("manager",)),
         Permission(RBAC_MANAGE, "Quản lý người dùng và phân quyền"),
+        Permission(
+            CHECKLIST_MANAGE, "Sửa checklist và yêu cầu bằng chứng của các bước quy trình", ("manager",)
+        ),
     ],
     scheduled_tasks=[
         ScheduledTask(

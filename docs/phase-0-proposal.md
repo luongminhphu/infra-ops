@@ -813,3 +813,22 @@ checklist (Manager trên giao diện hay cố định trong code); bước tự 
 - Chỉ **bước được đánh dấu** trong checklist mới bắt buộc bằng chứng; bước tự động hợp lệ nhờ nhật ký API.
 - **Manager sửa checklist trên giao diện** (có phiên bản + nhật ký; Job đang chạy giữ checklist lúc bắt đầu).
 - Operator xác nhận là đủ, **không** cần Manager duyệt lại.
+
+---
+
+## 17. Phase 6 – Lưu đồ, checklist và xác nhận kèm bằng chứng (23/11/2026)
+
+Theo câu trả lời ở §16:
+- **Trạng thái bước mới `verify` (Chờ kiểm tra).** Với quy trình bật `verify_steps` (Onboard, Offboard), mỗi bước
+  tự động hoặc thủ công sau khi làm xong sẽ dừng ở `verify`. Bước sau chỉ chạy khi Operator xác nhận: tick đủ mục
+  checklist, và có ≥ 1 bằng chứng nếu bước được đánh dấu. *Báo không đạt* (bắt buộc lý do) chuyển bước sang lỗi →
+  sửa → *Chạy lại* (bước đọc trạng thái hiện tại trước khi ghi). Bước đang chờ kiểm tra không bỏ qua được.
+- **Bằng chứng:** ảnh PNG/JPG (dán ảnh chụp màn hình), PDF/DOCX (kiểm tra magic bytes, lưu qua core storage),
+  liên kết http(s), ghi chú. Sửa/xoá được đến khi bước được xác nhận; sau đó cố định. Mọi thay đổi ghi nhật ký.
+- **Checklist có phiên bản** theo quy trình (`core_workflow_checklist`): phiên bản 0 = mặc định trong code,
+  Manager (`core.workflow.checklist.manage`) lưu phiên bản mới trên trang *Lưu đồ quy trình*. Job chụp checklist khi
+  bắt đầu (`core_job.checklist_version`), Job đang chạy không bị ảnh hưởng khi sửa. Job bắt đầu trước khi nâng cấp
+  không yêu cầu kiểm tra.
+- **Lưu đồ:** trang *Lưu đồ quy trình* và nút *Lưu đồ* trên Job (trạng thái từng bước + checklist đã tick).
+- Checklist mặc định: bước ghi SDP/BioStar và bước thu hồi/đăng ký vân tay **bắt buộc bằng chứng**; kiểm tra
+  request, xác định user SDP, biên bản, đóng request chỉ cần tick checklist. Manager chỉnh lại được.

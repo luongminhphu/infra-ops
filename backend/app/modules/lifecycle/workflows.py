@@ -625,6 +625,7 @@ CHECK = StepDefinition(
     run=check_request,
     preview=preview_check_request,
     skippable=False,
+    checklist=("Request đúng nhân viên và loại biến động", "Ngày hiệu lực khớp với HR"),
 )
 FIND_USER = StepDefinition(
     "find_sdp_user",
@@ -634,6 +635,7 @@ FIND_USER = StepDefinition(
     run=find_sdp_user,
     preview=preview_find_sdp_user,
     wait_timeout_seconds=72 * 3600,
+    checklist=("User SDP đúng Mã NV, họ tên và phòng ban",),
 )
 CLOSE = StepDefinition(
     "close_request",
@@ -643,6 +645,7 @@ CLOSE = StepDefinition(
     run=close_request,
     preview=preview_close,
     writes=("sdp",),
+    checklist=("Request SDP đã đóng, có ghi chú kết quả và biên bản đính kèm",),
 )
 
 ONBOARD = WorkflowDefinition(
@@ -652,6 +655,7 @@ ONBOARD = WorkflowDefinition(
     execute_permission=EXECUTE,
     override_permission=OVERRIDE,
     required_for_close=("handover_doc",),
+    verify_steps=True,
     steps=[
         CHECK,
         FIND_USER,
@@ -663,6 +667,11 @@ ONBOARD = WorkflowDefinition(
             run=assign_assets,
             preview=preview_assign,
             writes=("sdp",),
+            checklist=(
+                "Tài sản trên SDP đã In Use và gán đúng nhân viên",
+                "Asset Tag khớp với thiết bị bàn giao thực tế",
+            ),
+            evidence_required=True,
         ),
         StepDefinition(
             "biostar_user",
@@ -672,6 +681,8 @@ ONBOARD = WorkflowDefinition(
             run=biostar_create,
             preview=preview_biostar_create,
             writes=("biostar",),
+            checklist=("User BioStar đúng Mã NV và họ tên", "Đúng nhóm người dùng và nhóm quyền ra vào"),
+            evidence_required=True,
         ),
         StepDefinition(
             "biostar_enroll",
@@ -679,6 +690,8 @@ ONBOARD = WorkflowDefinition(
             "manual",
             "Nhân viên đăng ký tại thiết bị BioStation 3; infra-ops kiểm tra lại trên BioStar khi xác nhận.",
             run=biostar_enroll,
+            checklist=("Nhân viên đã đăng ký thẻ / vân tay / khuôn mặt", "Thử ra vào cửa thành công"),
+            evidence_required=True,
         ),
         StepDefinition(
             "handover_doc",
@@ -688,6 +701,7 @@ ONBOARD = WorkflowDefinition(
             run=handover_doc,
             preview=preview_doc,
             skippable=False,
+            checklist=("Biên bản đủ chữ ký các bên", "Thông tin thiết bị trên biên bản khớp thực tế"),
         ),
         CLOSE,
     ],
@@ -700,6 +714,7 @@ OFFBOARD = WorkflowDefinition(
     execute_permission=EXECUTE,
     override_permission=OVERRIDE,
     required_for_close=("return_doc",),
+    verify_steps=True,
     steps=[
         CHECK,
         StepDefinition(
@@ -710,6 +725,7 @@ OFFBOARD = WorkflowDefinition(
             run=find_sdp_user,
             preview=preview_find_sdp_user,
             wait_timeout_seconds=3600,
+            checklist=("User SDP đúng Mã NV, họ tên và phòng ban",),
         ),
         StepDefinition(
             "collect_assets",
@@ -719,6 +735,8 @@ OFFBOARD = WorkflowDefinition(
             run=collect_assets,
             prepare=prepare_collect,
             skippable=False,
+            checklist=("Đã nhận lại thiết bị theo danh sách", "Tình trạng từng thiết bị đã ghi nhận đúng"),
+            evidence_required=True,
         ),
         StepDefinition(
             "return_assets",
@@ -728,6 +746,7 @@ OFFBOARD = WorkflowDefinition(
             run=return_assets,
             preview=preview_return,
             writes=("sdp",),
+            checklist=("Tài sản đã về In Store và bỏ gán user trên SDP",),
         ),
         StepDefinition(
             "biostar_offboard",
@@ -739,6 +758,8 @@ OFFBOARD = WorkflowDefinition(
             writes=("biostar",),
             confirm=True,
             confirm_text="Nhân viên sẽ không vào được văn phòng bằng thẻ/vân tay/khuôn mặt. Nhập lại Mã NV để xác nhận.",
+            checklist=("User BioStar đã vô hiệu hoá / xoá", "Thẻ / vân tay không còn mở được cửa"),
+            evidence_required=True,
         ),
         StepDefinition(
             "return_doc",
@@ -748,6 +769,7 @@ OFFBOARD = WorkflowDefinition(
             run=return_doc,
             preview=preview_doc,
             skippable=False,
+            checklist=("Biên bản đủ chữ ký các bên", "Tình trạng thiết bị trên biên bản khớp thực tế"),
         ),
         CLOSE,
     ],

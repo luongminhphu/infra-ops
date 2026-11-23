@@ -53,7 +53,8 @@ export function Dialog({ open, onClose, title, description, children, footer, si
               <X className="size-4" aria-hidden="true" />
             </Button>
           </header>
-          <div className="overflow-y-auto px-5 py-4">{children}</div>
+          {/* Scrollable region must be keyboard-focusable (WCAG 2.1.1). */}
+          <div className="overflow-y-auto px-5 py-4" tabIndex={0} aria-label={title}>{children}</div>
           {footer && <footer className="flex justify-end gap-2 border-t border-line px-5 py-3">{footer}</footer>}
         </div>
       )}
