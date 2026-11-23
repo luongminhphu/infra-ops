@@ -16,7 +16,8 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 - Modules import only `app.core.*` (enforced by `uv run lint-imports`). Core never imports modules.
 - Tables prefixed `core_` / `<module>_`. Never edit another module's migrations.
 - Permissions: `<module>.<resource>.<action>`, declared in the manifest; protect endpoints with `require()`.
-  System roles: `admin` (all), `manager`, `operator`, `viewer` – use them as `default_roles`.
+  System roles: `admin` (all), `manager`, `supervisor`, `operator`, `viewer` – use them as `default_roles`.
+  Row-level scoping (e.g. operators see only their own tasks) is enforced in the API with a `*.view_all` permission.
 - Every state change by a user: `audit.record(...)` in the same transaction. Never log or return secrets.
 - External systems only via `open_connection(session, system_type, Purpose.READ|WRITE)`; credentials
   never come from env. Connectors must not write data in `test_connection()`.

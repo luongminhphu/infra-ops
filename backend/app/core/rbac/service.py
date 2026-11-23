@@ -12,7 +12,16 @@ from app.core.rbac.models import KnownPermission, Role, RolePermission, UserRole
 
 SYSTEM_ROLES: dict[str, tuple[str, str, bool]] = {
     "admin": ("Quản trị", "Toàn quyền trên mọi module, không chỉnh sửa được.", True),
-    "manager": ("Manager", "Giao và điều chuyển task giữa các Operator, xem thống kê.", False),
+    "manager": (
+        "Manager",
+        "Toàn bộ task của Operator, điều phối, cấu hình module và đóng Job bắt buộc; không quản lý kết nối và người dùng.",
+        False,
+    ),
+    "supervisor": (
+        "Supervisor",
+        "Xem và điều phối task của các Operator, làm việc Helpdesk/Support; không cấu hình hệ thống, không quản lý người dùng.",
+        False,
+    ),
     "operator": ("Operator", "Thực hiện các task trên app và xem dữ liệu vận hành.", False),
     "viewer": ("Chỉ xem", "Xem dữ liệu, không thay đổi.", False),
 }

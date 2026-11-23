@@ -798,3 +798,18 @@ và BioStar (user ra vào). Không có nguồn Microsoft.
 kiểm tra + xác nhận hoàn tất **kèm bằng chứng** mới hợp lệ. Câu hỏi cần chốt trước khi làm: loại bằng chứng
 (ảnh chụp màn hình, file PDF, ghi chú, liên kết) và bắt buộc ở mọi bước hay chỉ bước được đánh dấu; ai sửa
 checklist (Manager trên giao diện hay cố định trong code); bước tự động (đã ghi qua API) có cần Operator xác nhận lại không.
+
+**Bổ sung phân quyền (23/11/2026):**
+- Operator **chỉ thấy task và thống kê của mình** (API ép bộ lọc theo technician đã liên kết; quyền
+  `workload.tickets.view_all` mở xem tất cả – mặc định Manager, Supervisor, Chỉ xem).
+- Vai trò mới **Supervisor** (giữa Operator và Manager): quyền Operator + xem task mọi Operator + điều phối/chuyển task.
+  Không cấu hình hệ thống/module, không quản lý người dùng. Migration `0006_core` tạo vai trò cho DB đang chạy.
+- Manager thêm quyền cấu hình module Vòng đời và mẫu biên bản. Kết nối hệ thống và quản lý người dùng vẫn chỉ
+  Quản trị (cấp `core.rbac.manage` cho Manager sẽ cho phép tự gán vai trò Quản trị).
+- Job chuyển việc chỉ hiện với người có quyền điều phối.
+
+**Phase 6 – câu trả lời (23/11/2026):**
+- Bằng chứng: ảnh chụp màn hình, file PDF/tài liệu, ghi chú, liên kết (một bước có thể nhận nhiều loại).
+- Chỉ **bước được đánh dấu** trong checklist mới bắt buộc bằng chứng; bước tự động hợp lệ nhờ nhật ký API.
+- **Manager sửa checklist trên giao diện** (có phiên bản + nhật ký; Job đang chạy giữ checklist lúc bắt đầu).
+- Operator xác nhận là đủ, **không** cần Manager duyệt lại.

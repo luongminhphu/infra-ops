@@ -11,7 +11,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-SystemRole = Literal["admin", "manager", "operator", "viewer"]
+SystemRole = Literal["admin", "manager", "supervisor", "operator", "viewer"]
 
 
 @dataclass(frozen=True)

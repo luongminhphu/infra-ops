@@ -36,6 +36,8 @@ export interface TechniciansResponse {
   items: Technician[];
   unassigned: { open: number; overdue: number };
   me: string | null;
+  /** False for operators: the API only returns their own tasks and figures. */
+  view_all: boolean;
 }
 
 export interface StatRow {

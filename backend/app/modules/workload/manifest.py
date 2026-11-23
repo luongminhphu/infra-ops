@@ -26,12 +26,25 @@ manifest = ModuleManifest(
     name="Công việc Helpdesk",
     description="Task Helpdesk/Support trên ServiceDesk Plus theo từng Operator, chuyển việc và thống kê.",
     permissions=[
-        Permission("workload.tickets.view", "Xem task Helpdesk/Support", ("manager", "operator", "viewer")),
         Permission(
-            "workload.tickets.assign", "Giao và chuyển task giữa các Operator (ghi sang SDP)", ("manager",)
+            "workload.tickets.view",
+            "Xem task Helpdesk/Support",
+            ("manager", "supervisor", "operator", "viewer"),
         ),
-        Permission("workload.stats.view", "Xem thống kê task", ("manager", "operator", "viewer")),
-        Permission("workload.sync.run", "Đồng bộ task từ SDP ngay", ("manager", "operator")),
+        Permission(
+            "workload.tickets.assign",
+            "Giao và chuyển task giữa các Operator (ghi sang SDP)",
+            ("manager", "supervisor"),
+        ),
+        Permission(
+            "workload.tickets.view_all",
+            "Xem task và thống kê của mọi Operator (không có: chỉ thấy task của mình)",
+            ("manager", "supervisor", "viewer"),
+        ),
+        Permission(
+            "workload.stats.view", "Xem thống kê task", ("manager", "supervisor", "operator", "viewer")
+        ),
+        Permission("workload.sync.run", "Đồng bộ task từ SDP ngay", ("manager", "supervisor", "operator")),
         Permission(
             "workload.settings.manage", "Cấu hình module và liên kết Operator ↔ technician", ("manager",)
         ),

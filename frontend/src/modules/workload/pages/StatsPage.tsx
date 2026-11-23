@@ -127,7 +127,14 @@ export function StatsPage() {
   };
   return (
     <>
-      <PageHeader title="Thống kê công việc" description="Task Helpdesk/Support tiếp nhận, hoàn tất và quá hạn theo Operator. Ngày tính theo giờ Việt Nam." />
+      <PageHeader
+        title="Thống kê công việc"
+        description={
+          techs.data && !techs.data.view_all
+            ? "Task Helpdesk/Support của bạn: tiếp nhận, hoàn tất và quá hạn. Ngày tính theo giờ Việt Nam."
+            : "Task Helpdesk/Support tiếp nhận, hoàn tất và quá hạn theo Operator. Ngày tính theo giờ Việt Nam."
+        }
+      />
       <div className="mb-4 flex flex-wrap items-end gap-3">
         <div role="group" aria-label="Kỳ thống kê" className="flex flex-wrap gap-1.5">
           {PRESETS.map((p) => (
@@ -151,12 +158,14 @@ export function StatsPage() {
             <Button type="submit" size="sm" variant="primary" disabled={!customValid} className="mb-1">Xem</Button>
           </form>
         )}
+        {techs.data?.view_all && (
         <Field label="Operator" className="ml-auto w-60">
           <Select value={tech} onChange={(e) => setTech(e.target.value)}>
             <option value="">Tất cả</option>
             {techs.data?.items.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </Select>
         </Field>
+        )}
       </div>
       <p className="mb-3 text-sm text-muted">Kỳ: {formatDate(range.from)} – {formatDate(range.to)}</p>
 

@@ -26,7 +26,7 @@ infra-ops is an internal platform for IT Infrastructure operations. It is built 
 |---|---|---|
 | Configuration | `core/config.py` | Infrastructure only (DB, master keys, SSO). External-system credentials are **never** in env. |
 | Auth | `core/auth` | Server-side sessions (SHA-256 of token stored), httpOnly cookie, CSRF header on mutations. Modes: `local` (scrypt, lockout), `oidc` (Entra, code + PKCE), `dev` (blocked in production). |
-| RBAC | `core/rbac` | Permission codes `<module>.<resource>.<action>` declared by manifests. System roles Admin (all permissions, locked), Manager, Operator, Viewer; a first SSO login gets Viewer. Default grants applied once, the first time a permission appears. |
+| RBAC | `core/rbac` | Permission codes `<module>.<resource>.<action>` declared by manifests. System roles Admin (all permissions, locked), Manager, Supervisor, Operator, Viewer; a first SSO login gets Viewer. Default grants applied once, the first time a permission appears. |
 | Audit | `core/audit` | Append-only table (DB trigger rejects UPDATE/DELETE/TRUNCATE) + SHA-256 hash chain, verifiable from the UI. Values are redacted before storage. |
 | Secrets | `core/secrets` | AES-256-GCM, versioned keyring (`INFRAOPS_MASTER_KEYS`), AAD binds ciphertext to `credential:<profile>:<purpose>`. |
 | Connections | `core/connections` | Connection Profiles (non-secret config, validated by the connector schema) + Credentials per purpose (`read` / `write`). `open_connection()` is the only way modules get credentials. |

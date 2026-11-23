@@ -22,7 +22,7 @@ Tài liệu: [kiến trúc](docs/architecture.md) · [thêm module](docs/adding-
 | 2 | SDP + BioStar: đọc request RTR, user, tài sản, user BioStar; đối soát theo Mã NV; export; bộ lập lịch nền | Xong |
 | 3 | Biên bản Bàn giao / Thu hồi theo mẫu thật: mẫu có phiên bản, số tự sinh, PDF, tải bản ký, đính kèm SDP | Xong |
 | 4 | Workflow Onboard / Offboard từ request SDP (gán/thu hồi tài sản, BioStar, biên bản, đóng request) | Xong |
-| 5 | Vai trò Manager / Operator / Viewer; module **Công việc Helpdesk**: task SDP theo Operator, chuyển việc (ghi sang SDP), thống kê theo kỳ | **Xong** |
+| 5 | Vai trò Manager / Supervisor / Operator / Viewer; module **Công việc Helpdesk**: task SDP theo Operator, chuyển việc (ghi sang SDP), thống kê theo kỳ | **Xong** |
 | 6 | Lưu đồ Onboard/Offboard, checklist từng bước, Operator xác nhận kèm bằng chứng | Kế tiếp |
 | 7 | Áp dụng giao diện hướng B “Phòng điều khiển” cho toàn app | Kế tiếp |
 | sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
@@ -116,9 +116,12 @@ Vai trò được gán hoàn toàn trong app (Người dùng & quyền). Ngườ
 | Vai trò | Quyền chính |
 |---|---|
 | Quản trị | Toàn quyền, cấu hình kết nối hệ thống và phân quyền |
-| Manager | Mọi quyền của Operator + giao/chuyển task giữa các Operator (ghi sang SDP), cấu hình module Công việc, đóng Job bắt buộc, xem nhật ký |
-| Operator | Thực hiện các task trên app (Job onboard/offboard, biên bản, đồng bộ) |
-| Chỉ xem | Chỉ đọc |
+| Manager | Quyền của Supervisor + cấu hình module (Vòng đời, Công việc, mẫu biên bản), đóng Job bắt buộc, xem nhật ký |
+| Supervisor | Quyền của Operator + xem task của mọi Operator và điều phối/chuyển task (ghi sang SDP). Không cấu hình hệ thống/module, không quản lý người dùng |
+| Operator | Thực hiện các task trên app (Job onboard/offboard, biên bản, đồng bộ); **chỉ thấy task và thống kê của mình** |
+| Chỉ xem | Chỉ đọc (thấy task của mọi Operator) |
+
+Kết nối hệ thống và người dùng/phân quyền chỉ Quản trị thay đổi. Quản trị có thể chỉnh quyền từng vai trò trong ma trận phân quyền.
 
 ## Kết nối hệ thống (Admin)
 
@@ -170,7 +173,8 @@ Vai trò được gán hoàn toàn trong app (Người dùng & quyền). Ngườ
 2. Worker đọc technician và request mỗi 10 phút (lần đầu đọc 400 ngày gần nhất, sau đó chỉ đọc request mới cập nhật).
    Technician tự liên kết với tài khoản infra-ops khi e-mail trên SDP trùng tên đăng nhập; chọn tay ở bảng
    **Operator ↔ Technician SDP** nếu khác.
-3. **Công việc**: task đang chờ / quá hạn / đã thực hiện theo từng Operator, “Việc của tôi”. Manager chọn task →
+3. **Công việc**: task đang chờ / quá hạn / đã thực hiện theo từng Operator (Operator chỉ thấy task của mình).
+   Manager / Supervisor chọn task →
    **Chuyển việc** (vd. khi nghỉ phép): infra-ops đổi Technician trên SDP qua worker, ghi nhật ký; lỗi hiện ngay
    trên trang kèm nút **Thử lại**.
 4. **Thống kê công việc**: tuần / tháng / quý / 6 tháng / 1 năm hoặc khoảng ngày tuỳ chọn; tiếp nhận, hoàn tất,
