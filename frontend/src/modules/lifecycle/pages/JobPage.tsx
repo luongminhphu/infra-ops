@@ -17,7 +17,7 @@ import { Flowchart } from "@/core/ui/flowchart";
 import { Stepper } from "@/core/ui/stepper";
 import { formatDate, formatDateTime } from "@/core/lib/format";
 import { cn } from "@/core/lib/cn";
-import { JOB_STATUS, STEP_STATUS, SYSTEM_WRITE_LABEL, WORKFLOW_LABEL, useJob, type Job, type JobAsset, type JobStep } from "../jobs";
+import { JOB_STATUS, STEP_STATUS, jobStatusLabel, SYSTEM_WRITE_LABEL, WORKFLOW_LABEL, useJob, type Job, type JobAsset, type JobStep } from "../jobs";
 import { CollectAssetsForm, DocumentLink, DraftConfig, EnrollForm } from "./JobStepPanels";
 import { StepVerification } from "./StepVerification";
 
@@ -109,7 +109,7 @@ function StepDetail({ job, step, act }: { job: Job; step: JobStep; act: ReturnTy
         <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
           {step.attempts > 0 && (<><dt className="text-muted">Số lần chạy</dt><dd className="tabular">{step.attempts}</dd></>)}
           {step.started_at && (<><dt className="text-muted">Bắt đầu</dt><dd>{formatDateTime(step.started_at)}</dd></>)}
-          {step.finished_at && (<><dt className="text-muted">Kết thúc</dt><dd>{formatDateTime(step.finished_at)} · {step.actor}</dd></>)}
+          {step.finished_at && (<><dt className="text-muted">Thực hiện xong</dt><dd>{formatDateTime(step.finished_at)} · {step.actor?.startsWith("worker") ? "hệ thống" : step.actor}</dd></>)}
           {step.confirmed_at && (<><dt className="text-muted">Xác nhận bởi</dt><dd>{step.confirmed_by} · {formatDateTime(step.confirmed_at)}</dd></>)}
         </dl>
         {step.before_state && (
@@ -201,7 +201,7 @@ function useJobActions(job: Job | undefined) {
     }),
     override: useMutation({
       mutationFn: (reason: string) => api<Job>(`/api/core/jobs/${id}/override-close`, { method: "POST", json: { reason } }),
-      onSuccess: (j) => done(j, "Đã đóng Job bắt buộc."),
+      onSuccess: (j) => done(j, "Đã buộc đóng Job."),
       onError: fail,
     }),
   };
@@ -254,7 +254,7 @@ export function JobPage() {
         title={`${WORKFLOW_LABEL[job.workflow_key] ?? job.workflow_title} – ${job.subject_label}`}
         description={
           <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-            <StatusBadge status={js.status} label={js.label} />
+            <StatusBadge status={js.status} label={jobStatusLabel(job)} />
             Request <Mono>#{job.params.request_display_id ?? job.external_ref}</Mono> · hiệu lực {formatDate(eff)}
             {job.scheduled_for && job.status === "scheduled" && ` · chạy ngày ${formatDate(job.scheduled_for)}`}
             {job.started_by && ` · bắt đầu bởi ${job.started_by}`}
@@ -289,7 +289,8 @@ export function JobPage() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-        <Panel title={`Các bước (${job.progress.done}/${job.progress.total})`} bodyClassName="p-2">
+        {/* On phones the current step (what to do now) comes before the list of steps. */}
+        <Panel title={`Các bước (${job.progress.done}/${job.progress.total})`} bodyClassName="p-2" className="order-2 lg:order-none">
           <Stepper
             label="Các bước của Job"
             selected={selected}
@@ -303,13 +304,13 @@ export function JobPage() {
             }))}
           />
         </Panel>
-        <div className="space-y-4">
+        <div className="order-1 min-w-0 space-y-4 lg:order-none">
           <StepDetail job={job} step={step} act={act} />
           <Panel title="Nhật ký Job" bodyClassName="p-0">
             {/* Scrollable region must be keyboard-focusable (WCAG 2.1.1). */}
             <ol className="max-h-80 divide-y divide-line overflow-y-auto" tabIndex={0} aria-label="Nhật ký Job">
               {(job.events ?? []).map((e, i) => (
-                <li key={i} className="flex gap-3 px-4 py-2 text-sm">
+                <li key={i} className="flex flex-wrap gap-x-3 gap-y-0.5 px-4 py-2 text-sm">
                   <StatusIcon status={e.level === "error" ? "failed" : e.level === "warn" ? "warning" : "done"} label={e.level === "error" ? "Lỗi" : e.level === "warn" ? "Cảnh báo" : "Thông tin"} />
                   <span className="min-w-0 flex-1">{e.message}</span>
                   <span className="shrink-0 text-muted tabular">{formatDateTime(e.at)}{e.actor ? ` · ${e.actor}` : ""}</span>
@@ -318,14 +319,25 @@ export function JobPage() {
             </ol>
           </Panel>
           {canRun && !finished && (
-            <div className="flex flex-wrap justify-end gap-2">
-              {can("lifecycle.job.override_close") && job.status !== "draft" && (
-                <Button variant="ghost" onClick={() => { setReason(""); setCloseMode("override"); }}>Đóng Job bắt buộc</Button>
-              )}
-              <Button variant="ghost" className="text-failed" onClick={() => { setReason(""); setCloseMode("cancel"); }}>
-                <XCircle className="size-4" aria-hidden="true" />Huỷ Job
-              </Button>
-            </div>
+            <details className="rounded-md border border-line bg-surface px-4 py-2.5 text-sm">
+              <summary className="cursor-pointer font-medium">Kết thúc Job sớm</summary>
+              <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+                {can("lifecycle.job.override_close") && job.status !== "draft" && (
+                  <div>
+                    <dt><Button size="sm" onClick={() => { setReason(""); setCloseMode("override"); }}>Buộc đóng Job</Button></dt>
+                    <dd className="mt-1 text-muted">Đánh dấu hoàn tất dù còn bước chưa xong, khi phần còn lại đã xử lý ngoài infra-ops.</dd>
+                  </div>
+                )}
+                <div>
+                  <dt>
+                    <Button size="sm" variant="ghost" className="text-failed" onClick={() => { setReason(""); setCloseMode("cancel"); }}>
+                      <XCircle className="size-4" aria-hidden="true" />Huỷ Job
+                    </Button>
+                  </dt>
+                  <dd className="mt-1 text-muted">Dừng hẳn, các bước còn lại không chạy. Thay đổi đã ghi lên SDP/BioStar giữ nguyên.</dd>
+                </div>
+              </dl>
+            </details>
           )}
         </div>
       </div>
@@ -382,7 +394,7 @@ export function JobPage() {
       <Dialog
         open={closeMode !== null}
         onClose={() => setCloseMode(null)}
-        title={closeMode === "cancel" ? "Huỷ Job?" : "Đóng Job bắt buộc?"}
+        title={closeMode === "cancel" ? "Huỷ Job?" : "Buộc đóng Job?"}
         size="sm"
         footer={
           <>
@@ -393,7 +405,7 @@ export function JobPage() {
               loading={act.cancel.isPending || act.override.isPending}
               onClick={() => (closeMode === "cancel" ? act.cancel : act.override).mutate(reason, { onSuccess: () => setCloseMode(null) })}
             >
-              {closeMode === "cancel" ? "Huỷ Job" : "Đóng Job"}
+              {closeMode === "cancel" ? "Huỷ Job" : "Buộc đóng Job"}
             </Button>
           </>
         }

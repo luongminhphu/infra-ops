@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ClipboardEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { FileText, Image, Link2, Paperclip, StickyNote, Trash2, Upload } from "lucide-react";
+import { Camera, FileText, Image, Link2, Paperclip, StickyNote, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
 import { Button } from "@/core/ui/button";
@@ -52,6 +52,8 @@ export function StepVerification({ job, step, canRun }: { job: Job; step: JobSte
   const [rejectOpen, setRejectOpen] = useState(false);
   const [reason, setReason] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const [saving, setSaving] = useState(false);
   useEffect(() => {
     setChecked((step.checklist ?? []).filter((i) => i.checked).map((i) => i.id));
     setTried(false);
@@ -104,7 +106,28 @@ export function StepVerification({ job, step, canRun }: { job: Job; step: JobSte
   const verifying = step.status === "verify" && active && canRun;
   const canAddEvidence = canRun && active && !["done", "skipped"].includes(step.status);
   const missing = items.filter((i) => !checked.includes(i.id));
-  const needEvidence = step.evidence_required && step.evidence.length === 0;
+  // A typed but not yet added link/note is saved on confirm, so it counts as evidence.
+  const pendingLink = link.trim();
+  const pendingNote = note.trim();
+  const noteTooShort = pendingNote.length > 0 && pendingNote.length < 3;
+  const evidenceCount = step.evidence.length + (pendingLink ? 1 : 0) + (pendingNote.length >= 3 ? 1 : 0);
+  const needEvidence = step.evidence_required && evidenceCount === 0;
+  const ids = { checklist: `chk-err-${step.key}`, evidence: `ev-err-${step.key}` };
+
+  const confirm = async () => {
+    setTried(true);
+    if (missing.length || needEvidence || noteTooShort) return;
+    setSaving(true);
+    try {
+      if (pendingLink) await addOther.mutateAsync({ kind: "link", url: pendingLink });
+      if (pendingNote) await addOther.mutateAsync({ kind: "note", text: pendingNote });
+      await verify.mutateAsync({ ok: true, checked });
+    } catch {
+      // onError already showed the message; nothing is confirmed.
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const onPaste = (e: ClipboardEvent) => {
     if (!canAddEvidence) return;
@@ -116,7 +139,7 @@ export function StepVerification({ job, step, canRun }: { job: Job; step: JobSte
   };
 
   return (
-    <section aria-labelledby={`verify-${step.key}`} className="rounded-sm border border-line p-3" onPaste={onPaste}>
+    <section aria-labelledby={`verify-${step.key}`} className="border-t border-line pt-4" onPaste={onPaste}>
       <h3 id={`verify-${step.key}`} className="mb-2 flex flex-wrap items-center gap-2 font-semibold">
         Kiểm tra và xác nhận
         {step.evidence_required && (
@@ -141,6 +164,7 @@ export function StepVerification({ job, step, canRun }: { job: Job; step: JobSte
                     className="mt-0.5 size-4 accent-[var(--primary)]"
                     checked={checked.includes(i.id)}
                     disabled={!verifying}
+                    aria-describedby={tried && missing.length ? ids.checklist : undefined}
                     onChange={(e) => setChecked((c) => (e.target.checked ? [...c, i.id] : c.filter((x) => x !== i.id)))}
                   />
                   {i.text}
@@ -151,10 +175,20 @@ export function StepVerification({ job, step, canRun }: { job: Job; step: JobSte
         ) : (
           <p className="text-sm text-muted">Bước này không có mục checklist.</p>
         )}
+        {verifying && tried && missing.length > 0 && (
+          <p id={ids.checklist} role="alert" className="mt-1.5 text-sm text-failed">
+            Còn {missing.length} mục chưa kiểm tra – tick sau khi đã xem trên hệ thống thật.
+          </p>
+        )}
       </fieldset>
 
       <div className="mt-3 border-t border-line pt-2">
         <h4 className="text-sm font-semibold">Bằng chứng ({step.evidence.length})</h4>
+        {verifying && tried && needEvidence && (
+          <p id={ids.evidence} role="alert" className="mt-1 text-sm text-failed">
+            Bước này cần ít nhất một bằng chứng: tải ảnh hoặc file, dán ảnh chụp màn hình, thêm liên kết hoặc ghi chú.
+          </p>
+        )}
         {step.evidence.length > 0 && (
           <ul className="divide-y divide-line">
             {step.evidence.map((e) => (
@@ -178,8 +212,26 @@ export function StepVerification({ job, step, canRun }: { job: Job; step: JobSte
                   e.target.value = "";
                 }}
               />
+              <input
+                ref={cameraRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="sr-only"
+                tabIndex={-1}
+                aria-hidden="true"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) upload.mutate(f);
+                  e.target.value = "";
+                }}
+              />
               <Button size="sm" loading={upload.isPending} onClick={() => fileRef.current?.click()}>
                 <Upload className="size-4" aria-hidden="true" />Tải ảnh / file
+              </Button>
+              {/* Phones: open the camera directly (at the BioStar device, the returned laptop…). */}
+              <Button size="sm" className="sm:hidden" onClick={() => cameraRef.current?.click()}>
+                <Camera className="size-4" aria-hidden="true" />Chụp ảnh
               </Button>
               <span className="text-xs text-muted">PNG, JPG, PDF, DOCX · hoặc dán ảnh chụp màn hình (Ctrl+V) vào khung này</span>
             </div>
@@ -190,7 +242,7 @@ export function StepVerification({ job, step, canRun }: { job: Job; step: JobSte
                 if (link.trim()) addOther.mutate({ kind: "link", url: link.trim() });
               }}
             >
-              <Field label="Liên kết" className="min-w-60 flex-1">
+              <Field label="Liên kết" className="min-w-60 flex-1" hint={verifying && pendingLink ? "Được thêm khi bạn xác nhận hoàn tất." : undefined}>
                 <Input type="url" inputMode="url" placeholder="https://…" value={link} onChange={(e) => setLink(e.target.value)} />
               </Field>
               <Button type="submit" size="sm" className="mb-0.5" disabled={!link.trim()}>Thêm liên kết</Button>
@@ -202,7 +254,13 @@ export function StepVerification({ job, step, canRun }: { job: Job; step: JobSte
                 if (note.trim().length >= 3) addOther.mutate({ kind: "note", text: note.trim() });
               }}
             >
-              <Field label="Ghi chú" className="min-w-60 flex-1">
+              <Field
+                label="Ghi chú"
+                className="min-w-60 flex-1"
+                hint={verifying && pendingNote.length >= 3 ? "Được thêm khi bạn xác nhận hoàn tất." : undefined}
+                error="Ghi chú cần ít nhất 3 ký tự, hoặc xoá đi."
+                showError={tried && noteTooShort}
+              >
                 <Textarea rows={2} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Đã kiểm tra gì, ở đâu" />
               </Field>
               <Button type="submit" size="sm" className="mb-0.5" disabled={note.trim().length < 3}>Thêm ghi chú</Button>
@@ -213,24 +271,14 @@ export function StepVerification({ job, step, canRun }: { job: Job; step: JobSte
 
       {verifying && (
         <div className="mt-3 border-t border-line pt-3">
-          {tried && (missing.length > 0 || needEvidence) && (
-            <ul role="alert" className="mb-2 list-disc pl-5 text-sm text-failed">
-              {missing.length > 0 && <li>Còn {missing.length} mục chưa kiểm tra.</li>}
-              {needEvidence && <li>Bước này cần ít nhất một bằng chứng.</li>}
-            </ul>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="primary"
-              loading={verify.isPending && verify.variables?.ok}
-              onClick={() => {
-                setTried(true);
-                if (!missing.length && !needEvidence) verify.mutate({ ok: true, checked });
-              }}
-            >
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <Button variant="primary" loading={saving} onClick={() => void confirm()}>
               Xác nhận hoàn tất
             </Button>
-            <Button variant="ghost" className="text-failed" onClick={() => { setReason(""); setRejectOpen(true); }}>Báo không đạt</Button>
+            <span className="text-sm text-muted tabular">
+              {items.length - missing.length}/{items.length} mục · {evidenceCount} bằng chứng
+            </span>
+            <Button variant="ghost" className="ml-auto text-failed" onClick={() => { setReason(""); setRejectOpen(true); }}>Báo không đạt</Button>
           </div>
         </div>
       )}

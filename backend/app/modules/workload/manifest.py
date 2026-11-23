@@ -10,7 +10,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.modules.manifest import ModuleManifest, NavItem, Permission, ScheduledTask
+from app.core.modules.manifest import DashboardWidget, ModuleManifest, NavItem, Permission, ScheduledTask
 from app.modules.workload.api import router
 from app.modules.workload.workflows import REASSIGN
 
@@ -19,6 +19,10 @@ async def _sync(session: AsyncSession) -> dict[str, Any]:
     from app.modules.workload.sync import scheduled_sync
 
     return await scheduled_sync(session)
+
+
+async def _empty(_: AsyncSession) -> dict[str, Any]:
+    return {}
 
 
 manifest = ModuleManifest(
@@ -55,6 +59,12 @@ manifest = ModuleManifest(
         NavItem("Công việc", "/workload/tickets", "list-checks", "workload.tickets.view"),
         NavItem("Thống kê công việc", "/workload/stats", "chart-column", "workload.stats.view"),
         NavItem("Cấu hình công việc", "/workload/settings", "settings", "workload.settings.manage"),
+    ],
+    # The widget renders per-user data itself (operators see only their own tasks).
+    dashboard_widgets=[
+        DashboardWidget(
+            "workload.next", "Công việc Helpdesk", "workload_next", "workload.tickets.view", _empty, order=1
+        ),
     ],
     connectors_used=["sdp"],
     scheduled_tasks=[

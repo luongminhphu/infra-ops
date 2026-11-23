@@ -71,7 +71,7 @@ CORE_MANIFEST = ModuleManifest(
         ),
         DashboardWidget(
             "core.expiring_secrets",
-            "Secret / chứng chỉ sắp hết hạn",
+            "Mật khẩu / chứng chỉ sắp hết hạn",
             "expiring_secrets",
             CONNECTIONS_VIEW,
             _expiring_widget,

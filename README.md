@@ -120,7 +120,7 @@ Vai trò được gán hoàn toàn trong app (Người dùng & quyền). Ngườ
 | Vai trò | Quyền chính |
 |---|---|
 | Quản trị | Toàn quyền, cấu hình kết nối hệ thống và phân quyền |
-| Manager | Quyền của Supervisor + cấu hình module (Vòng đời, Công việc, mẫu biên bản), đóng Job bắt buộc, xem nhật ký |
+| Manager | Quyền của Supervisor + cấu hình module (Vòng đời, Công việc, mẫu biên bản), buộc đóng Job, xem nhật ký |
 | Supervisor | Quyền của Operator + xem task của mọi Operator và điều phối/chuyển task (ghi sang SDP). Không cấu hình hệ thống/module, không quản lý người dùng |
 | Operator | Thực hiện các task trên app (Job onboard/offboard, biên bản, đồng bộ); **chỉ thấy task và thống kê của mình** |
 | Chỉ xem | Chỉ đọc (thấy task của mọi Operator) |
@@ -176,7 +176,7 @@ Kết nối hệ thống và người dùng/phân quyền chỉ Quản trị tha
    **Sửa checklist** để thêm/sửa/xoá mục và chọn bước bắt buộc bằng chứng; mỗi lần lưu là một phiên bản mới
    (có lịch sử, ghi nhật ký). Job đang chạy giữ phiên bản lúc bắt đầu.
 7. Bước lỗi có thể **Chạy lại** (an toàn: bước đọc trạng thái hiện tại trước khi ghi); trạng thái trước khi thay
-   đổi được lưu ở từng bước để khôi phục thủ công. Admin có thể **Đóng Job bắt buộc** kèm lý do.
+   đổi được lưu ở từng bước để khôi phục thủ công. Manager có thể **Buộc đóng Job** kèm lý do (mục *Kết thúc Job sớm* cuối trang Job).
 
 ### Module Công việc Helpdesk
 1. **Cấu hình công việc**: chọn kết nối SDP (dùng credential Read để đọc, Write để chuyển việc), nhóm hỗ trợ cần

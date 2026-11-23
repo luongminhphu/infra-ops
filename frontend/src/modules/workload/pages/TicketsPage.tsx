@@ -30,7 +30,7 @@ function stateBadge(t: Ticket): { status: Status; label: string } {
   return t.overdue ? { status: "failed", label: "Quá hạn" } : { status: "waiting", label: "Đang chờ" };
 }
 
-function ReassignDialog({ ids, onClose, onDone }: { ids: string[]; onClose: () => void; onDone: () => void }) {
+function ReassignDialog({ tickets, onClose, onDone }: { tickets: Ticket[]; onClose: () => void; onDone: () => void }) {
   const techs = useTechnicians();
   const qc = useQueryClient();
   const [to, setTo] = useState("");
@@ -38,21 +38,27 @@ function ReassignDialog({ ids, onClose, onDone }: { ids: string[]; onClose: () =
   const [touched, setTouched] = useState(false);
   const submit = useMutation({
     mutationFn: () =>
-      api<{ id: string }>("/api/workload/tickets/reassign", { method: "POST", json: { ticket_ids: ids, to_technician_id: to, reason } }),
+      api<{ id: string }>("/api/workload/tickets/reassign", {
+        method: "POST",
+        json: { ticket_ids: tickets.map((t) => t.id), to_technician_id: to, reason },
+      }),
     onSuccess: () => {
-      toast.success("Đã gửi yêu cầu chuyển việc. infra-ops đang cập nhật Technician trên SDP.");
+      toast.success(`Đang chuyển ${numbers} cho ${target?.name}. infra-ops cập nhật Technician trên SDP trong ít giây.`);
       void qc.invalidateQueries({ queryKey: ["workload"] });
       onDone();
     },
     onError: (e) => toast.error(errorMessage(e)),
   });
   const options = (techs.data?.items ?? []).filter((t) => t.active);
+  const target = options.find((t) => t.id === to);
+  const numbers = tickets.map((t) => `#${t.display_id ?? t.id}`).join(", ");
+  const unlinked = options.some((t) => !t.user);
   return (
     <Dialog
       open
       onClose={onClose}
-      title={`Chuyển ${ids.length} task`}
-      description="Technician của các request được đổi trực tiếp trên ServiceDesk Plus và ghi nhật ký kiểm tra."
+      title={`Chuyển ${tickets.length} task`}
+      description="Technician của các request dưới đây được đổi trực tiếp trên ServiceDesk Plus và ghi nhật ký kiểm tra. Không có thao tác hoàn tác tự động."
       footer={
         <>
           <Button onClick={onClose}>Huỷ</Button>
@@ -64,18 +70,33 @@ function ReassignDialog({ ids, onClose, onDone }: { ids: string[]; onClose: () =
               if (to) submit.mutate();
             }}
           >
-            Chuyển việc
+            {target ? `Chuyển ${tickets.length} task cho ${target.name}` : "Chuyển việc"}
           </Button>
         </>
       }
     >
       <div className="space-y-3">
-        <Field label="Chuyển cho" required error="Chọn người nhận việc." showError={touched && !to}>
+        <div>
+          <p className="mb-1 text-sm font-medium">Task sẽ chuyển</p>
+          <ul className="max-h-44 divide-y divide-line overflow-y-auto rounded-sm border border-line text-sm" tabIndex={0} aria-label="Task sẽ chuyển">
+            {tickets.map((t) => (
+              <li key={t.id} className="flex items-baseline gap-2 px-2.5 py-1.5">
+                <Mono className="shrink-0">#{t.display_id ?? t.id}</Mono>
+                <span className="min-w-0 flex-1 truncate" title={t.subject}>{t.subject}</span>
+                <span className="shrink-0 text-muted">{t.technician_name ?? "Chưa giao"}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <Field
+          label="Chuyển cho"
+          required
+          hint={unlinked ? "Technician chưa liên kết tài khoản infra-ops vẫn nhận được việc trên SDP, nhưng chưa thấy task này trong infra-ops." : undefined} error="Chọn người nhận việc." showError={touched && !to}>
           <Select value={to} onChange={(e) => setTo(e.target.value)} onBlur={() => setTouched(true)}>
             <option value="">— Chọn Operator —</option>
             {options.map((t) => (
               <option key={t.id} value={t.id}>
-                {t.name} · đang có {t.open} task{t.user ? "" : " (chưa liên kết tài khoản)"}
+                {t.name} · đang có {t.open} task
               </option>
             ))}
           </Select>
@@ -180,11 +201,19 @@ export function TicketsPage() {
   const columns = useMemo<ColumnDef<Ticket, unknown>[]>(() => {
     const cols: ColumnDef<Ticket, unknown>[] = [
       { accessorKey: "display_id", header: "Request", cell: (c) => <Mono>#{c.row.original.display_id ?? c.row.original.id}</Mono> },
-      { accessorKey: "subject", header: "Tiêu đề", cell: (c) => <span className="block max-w-96 truncate" title={c.row.original.subject}>{c.row.original.subject}</span> },
+      { accessorKey: "subject", header: "Tiêu đề", cell: (c) => <span className="block max-w-80 truncate" title={c.row.original.subject}>{c.row.original.subject}</span> },
       { accessorKey: "requester_name", header: "Người yêu cầu", cell: (c) => c.row.original.requester_name ?? "—" },
       { accessorKey: "technician_name", header: "Người xử lý", cell: (c) => <span className="whitespace-nowrap">{c.row.original.technician_name ?? <span className="text-muted">Chưa giao</span>}</span> },
-      { accessorKey: "status", header: "Trạng thái SDP" },
-      { id: "sla", header: "Tiến độ", cell: (c) => <StatusBadge {...stateBadge(c.row.original)} /> },
+      {
+        id: "sla",
+        header: "Tiến độ",
+        cell: (c) => (
+          <span className="block whitespace-nowrap">
+            <StatusBadge {...stateBadge(c.row.original)} />
+            <span className="mt-0.5 block text-xs text-muted">SDP: {c.row.original.status || "—"}</span>
+          </span>
+        ),
+      },
       { accessorKey: "due_by", header: "Hạn xử lý", cell: (c) => <span className="tabular whitespace-nowrap">{formatDateTime(c.row.original.due_by)}</span> },
       {
         accessorKey: state === "done" || state === "cancelled" ? "completed_at" : "created_at",
@@ -319,7 +348,7 @@ export function TicketsPage() {
       {list.data && list.data.total > items.length && (
         <p className="mt-2 text-sm text-muted">Đang hiện {items.length}/{list.data.total} task. Thu hẹp bộ lọc để xem phần còn lại.</p>
       )}
-      {dialog && <ReassignDialog ids={selected} onClose={() => setDialog(false)} onDone={() => { setDialog(false); setSelected([]); }} />}
+      {dialog && <ReassignDialog tickets={items.filter((t) => selected.includes(t.id))} onClose={() => setDialog(false)} onDone={() => { setDialog(false); setSelected([]); }} />}
     </>
   );
 }

@@ -846,3 +846,19 @@ Theo câu trả lời ở §16:
   (bỏ Be Vietnam Pro). Mọi cặp chữ/nền ≥ 4,5:1 và viền điều khiển/viền focus ≥ 3:1 ở cả hai giao diện (đã tính).
 - Ô KPI chỉ tô màu khi số lỗi/cần chú ý > 0.
 - axe-core: 0 lỗi trên 16 trang + trang đăng nhập, sáng và tối.
+
+---
+
+## 19. Sửa theo critique giao diện (23/11/2026)
+
+Critique (`/impeccable critique`, 25/40) → đã sửa toàn bộ:
+- **An toàn thao tác:** hộp thoại *Chuyển việc* liệt kê các request sẽ chuyển và người đang xử lý, nút ghi rõ
+  "Chuyển N task cho {tên}". Xác nhận bước tự lưu liên kết/ghi chú đang gõ dở (trước đây bị mất); lỗi hiện ngay
+  cạnh checklist và khung bằng chứng; *Huỷ Job* và *Buộc đóng Job* tách vào mục "Kết thúc Job sớm" kèm giải thích.
+- **Ngôn ngữ:** một tên cho trạng thái chờ ("Chờ Operator kiểm tra bước N"); tiêu đề/danh sách Job nói rõ đang chờ
+  gì; nhãn tiếng Việt cho mọi hành động trong Nhật ký kiểm tra; bỏ chữ hoa toàn bộ; lưu đồ định nghĩa dùng gạch
+  đầu dòng thay cho ô tick.
+- **Tổng quan theo vai trò:** widget *Công việc Helpdesk* (Operator: task của mình; Manager/Supervisor: quá hạn,
+  chưa giao) và *Cần xử lý tiếp* cho Job; lần đầu (chưa có kết nối) hiện 4 bước bắt đầu thay cho các ô số 0.
+  Màn trống Đối soát dẫn tới *Thêm kết nối* khi chưa có kết nối.
+- **Điện thoại:** bước hiện tại lên trước danh sách bước, hết tràn ngang, nút *Chụp ảnh* mở camera làm bằng chứng.

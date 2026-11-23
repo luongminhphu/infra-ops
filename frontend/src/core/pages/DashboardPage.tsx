@@ -34,10 +34,10 @@ const CONN_STATE: Record<ConnItem["state"], { status: Status; label: string }> =
 
 function Tile({ label, value, tone }: { label: string; value: number; tone?: "failed" | "waiting" }) {
   return (
-    // Only a non-zero problem count is highlighted (accent edge + colour), so zeros stay calm.
+    // Only a non-zero problem count is highlighted (tinted card + colour), so zeros stay calm.
     <div
-      className={`rounded-md border border-line bg-surface px-4 py-3 shadow-card ${tone && value > 0 ? "border-l-4" : ""}`}
-      style={tone && value > 0 ? { borderLeftColor: `var(--${tone})` } : undefined}
+      className="rounded-md border border-line bg-surface px-4 py-3 shadow-card"
+      style={tone && value > 0 ? { borderColor: `var(--${tone})`, background: `var(--${tone}-soft)` } : undefined}
     >
       <p className="text-sm text-muted">{label}</p>
       <p className={`tabular mt-1 text-2xl font-semibold ${value > 0 && tone === "failed" ? "text-failed" : value > 0 && tone === "waiting" ? "text-waiting" : ""}`}>
@@ -115,16 +115,47 @@ function ExpiringWidget({ data }: { data: { warn_days: number; items: ExpItem[] 
   );
 }
 
+/** First run: what an admin does before the dashboard has anything to show. */
+function GettingStarted() {
+  const steps = [
+    { to: "/settings/connections", title: "Thêm kết nối ServiceDesk Plus và BioStar", detail: "Nhập credential Read (đồng bộ) và Write (chạy Job), bấm Kiểm tra kết nối." },
+    { to: "/settings/access", title: "Tạo tài khoản và gán vai trò", detail: "Manager, Supervisor, Operator hoặc Chỉ xem cho từng người trong phòng IT." },
+    { to: "/lifecycle/settings", title: "Cấu hình module", detail: "Nhãn trường RTR, nhóm BioStar mặc định; liên kết Operator với technician ở Cấu hình công việc." },
+    { to: "/lifecycle/sync", title: "Đồng bộ dữ liệu lần đầu", detail: "Đọc request, user, tài sản và user BioStar để bắt đầu đối soát." },
+  ];
+  return (
+    <Panel title="Bắt đầu sử dụng" description="Chưa có kết nối hệ thống nào, nên các số liệu bên dưới đều trống." className="mb-4">
+      <ol className="grid gap-3 md:grid-cols-2">
+        {steps.map((s, i) => (
+          <li key={s.to}>
+            <Link to={s.to} className="flex h-full gap-3 rounded-sm border border-line p-3 hover:bg-surface-2">
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-soft text-sm font-semibold text-primary tabular">{i + 1}</span>
+              <span>
+                <span className="block font-medium">{s.title}</span>
+                <span className="block text-sm text-muted">{s.detail}</span>
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ol>
+    </Panel>
+  );
+}
+
 export function DashboardPage() {
+  const { can } = useAuth();
   const q = useQuery({ queryKey: ["dashboard"], queryFn: () => api<DashboardWidget[]>("/api/core/dashboard") });
   const conns = q.data?.find((w) => w.key === "core.connections")?.data as { items: ConnItem[] } | undefined;
   const exp = q.data?.find((w) => w.key === "core.expiring_secrets")?.data as { items: ExpItem[] } | undefined;
+  // Nothing connected yet: show the setup steps instead of empty connection panels.
+  const firstRun = !!conns && conns.items.length === 0 && can("core.connections.manage");
 
   return (
     <>
-      <PageHeader title="Tổng quan" description="Tình trạng kết nối hệ thống và các việc cần chú ý." />
+      <PageHeader title="Tổng quan" description="Việc cần làm tiếp theo và tình trạng các hệ thống kết nối." />
       {q.isError && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
-      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {firstRun && <GettingStarted />}
+      {(q.isLoading || (conns && conns.items.length > 0)) && <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {q.isLoading ? (
           Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-[78px]" />)
         ) : (
@@ -132,13 +163,13 @@ export function DashboardPage() {
             <Tile label="Kết nối hệ thống" value={conns?.items.length ?? 0} />
             <Tile label="Kết nối đang lỗi" value={conns?.items.filter((c) => c.state === "error").length ?? 0} tone="failed" />
             <Tile label="Cần cấu hình hoặc kiểm tra" value={conns?.items.filter((c) => c.state === "untested" || c.state === "incomplete").length ?? 0} tone="waiting" />
-            <Tile label="Secret sắp hết hạn" value={exp?.items.length ?? 0} tone="waiting" />
+            <Tile label="Mật khẩu / chứng chỉ sắp hết hạn" value={exp?.items.length ?? 0} tone="waiting" />
           </>
         )}
-      </div>
-      <div className="grid gap-4 xl:grid-cols-2">
-        {q.data?.map((w) => (
-          <Panel key={w.key} title={w.title} bodyClassName="py-1" className={["lifecycle_reconciliation", "lifecycle_jobs"].includes(w.kind) ? "xl:col-span-2" : undefined}>
+      </div>}
+      <div className="grid gap-4 xl:grid-cols-2 [&>*]:min-w-0">
+        {q.data?.filter((w) => !(firstRun && ["connections", "expiring_secrets"].includes(w.kind))).map((w) => (
+          <Panel key={w.key} title={w.title} bodyClassName="py-1" className={["lifecycle_reconciliation", "lifecycle_jobs", "workload_next"].includes(w.kind) ? "xl:col-span-2" : undefined}>
             {w.error ? (
               <ErrorState error={new Error(w.error)} />
             ) : w.kind === "connections" ? (

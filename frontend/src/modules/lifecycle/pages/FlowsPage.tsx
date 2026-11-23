@@ -145,7 +145,7 @@ export function FlowsPage() {
                 />
               )}
             </div>
-            <Panel title="Phiên bản checklist" bodyClassName="p-0">
+            <Panel title="Phiên bản checklist" bodyClassName="p-0" className="self-start xl:sticky xl:top-[calc(var(--topbar-h)+1.25rem)]">
               <ol className="divide-y divide-line text-sm">
                 {wf.history.map((h) => (
                   <li key={h.version} className="px-4 py-2">
