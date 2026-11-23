@@ -42,6 +42,19 @@ export interface JobStep {
   evidence: Evidence[];
 }
 
+export interface Assignment {
+  from_name: string | null;
+  to_name: string;
+  step_key: string | null;
+  source: "sdp" | "app";
+  actor: string;
+  reason: string;
+  at: string;
+}
+
+/** Onboard/offboard only (the reassignment workflow is an internal helper). */
+export const JOB_WORKFLOWS = "lifecycle.onboard,lifecycle.offboard";
+
 export interface Evidence {
   id: string;
   step_key: string;
@@ -84,6 +97,8 @@ export interface Job {
   progress: { done: number; total: number };
   /** Checklist version frozen at start; null = no step verification. */
   checklist_version: number | null;
+  assignee: { user_id: string | null; name: string } | null;
+  assignments: Assignment[];
   steps: JobStep[];
   events?: { at: string; step_key: string | null; level: "info" | "warn" | "error"; message: string; actor: string | null }[];
 }

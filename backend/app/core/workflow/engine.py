@@ -22,7 +22,7 @@ from app.core.logging import get_logger
 from app.core.modules.registry import get_registry
 from app.core.workflow.checklist import check_verification, snapshot, verifies
 from app.core.workflow.definitions import StepContext, StepDefinition, StepOutcome, WorkflowDefinition
-from app.core.workflow.models import Job, JobEvent, JobStep
+from app.core.workflow.models import Job, JobAssignment, JobEvent, JobStep
 
 log = get_logger(__name__)
 TZ = ZoneInfo("Asia/Ho_Chi_Minh")
@@ -101,6 +101,7 @@ async def create_job(
         created_by=actor.upn or "system",
         steps=[],
         evidence=[],
+        assignments=[],
     )
     seq = 0
     for s in wf.steps:
@@ -269,6 +270,58 @@ async def complete_manual(
         after=outcome.output or None,
     )
     return step
+
+
+async def set_assignee(
+    session: AsyncSession,
+    job: Job,
+    *,
+    user_id: Any,
+    name: str,
+    actor: str,
+    source: str,
+    reason: str = "",
+) -> bool:
+    """Record who is responsible now. No-op when unchanged. Returns whether it changed."""
+    if job.assignee_name == name and job.assignee_user_id == user_id:
+        return False
+    before = job.assignee_name
+    job.assignments.append(
+        JobAssignment(
+            from_name=before,
+            to_name=name[:256],
+            to_user_id=user_id,
+            step_key=job.current_step if job.status not in ("draft", "scheduled") else None,
+            source=source,
+            actor=actor[:320],
+            reason=reason[:500],
+        )
+    )
+    job.assignee_user_id, job.assignee_name = user_id, name[:256]
+    touch(job)
+    via = "trên SDP" if source == "sdp" else "trong infra-ops"
+    event(
+        session,
+        job,
+        f"Giao cho {name}"
+        if before is None
+        else f"Chuyển từ {before} sang {name} ({via})" + (f": {reason}" if reason else ""),
+        actor=actor,
+    )
+    await record(
+        session,
+        actor=Actor(None, actor),
+        module_id=job.module_id,
+        action="workflow.job_assigned",
+        target_type="job",
+        target_id=str(job.id),
+        target_label=job.subject_label,
+        before={"assignee": before},
+        after={"assignee": name, "source": source},
+        message=reason or None,
+    )
+    await session.flush()
+    return True
 
 
 async def verify_step(

@@ -93,6 +93,10 @@ Offboard: check request → find SDP user → collect assets + condition (manual
           → disable/delete BioStar user (retype employee ID) → return record until signed → attach + note + close
 ```
 
+Each job has an assignee (the RTR request's SDP technician, refreshed on sync). Reassigning runs the
+`lifecycle.assign` workflow in the worker, which writes the technician to SDP first; every change is a
+`core_job_assignment` row (from/to, step, source `sdp`|`app`, actor, reason) drawn as swimlanes in the UI.
+
 Writes use the Write credential of each connection; SDP writes send `input_data`; nothing is retried
 automatically except reads, and each step re-reads state so a manual retry never duplicates changes.
 

@@ -13,7 +13,7 @@ import respx
 
 from app.core.db import get_sessionmaker
 from app.core.workflow.engine import pump
-from app.modules.workload.rules import is_overdue, normalize_ticket, pick_bucket
+from app.modules.workload.rules import device_need, is_overdue, normalize_ticket, pick_bucket, ticket_phase
 from app.modules.workload.settings import WorkloadSettings
 
 SDP = "https://sdp-wl.test.local"
@@ -73,15 +73,15 @@ class FakeSdp:
             "505": req("505", "Canceled", "12", 3, None),
         }
         self.puts: list[str] = []
-
-    def install(self, r: respx.MockRouter) -> None:
-        techs = [
+        self.techs = [
             {"id": "11", "name": "Tech 11", "email_id": "wl-op1@test.local"},
             {"id": "12", "name": "Tech 12", "email_id": "wl-op2@test.local"},
         ]
+
+    def install(self, r: respx.MockRouter) -> None:
         r.get(f"{SDP}/api/v3/technicians").mock(
-            return_value=httpx.Response(
-                200, json={**OK, "list_info": {"has_more_rows": False}, "technicians": techs}
+            side_effect=lambda _: httpx.Response(
+                200, json={**OK, "list_info": {"has_more_rows": False}, "technicians": self.techs}
             )
         )
         r.get(f"{SDP}/api/v3/requests").mock(
@@ -295,3 +295,80 @@ async def test_operator_sees_only_own_tasks_supervisor_coordinates(admin, client
     assert (await client.get("/api/workload/settings")).status_code == 200
     assert (await client.get("/api/lifecycle/settings")).status_code == 200
     assert (await client.get("/api/core/users")).status_code == 403
+
+
+def test_phase_and_device_need_rules() -> None:
+    s = WorkloadSettings()
+    assert ticket_phase("In Progress", "open", s) == "in_progress"
+    assert ticket_phase("on hold", "open", s) == "on_hold"
+    assert ticket_phase("Open", "open", s) == "pending"
+    assert ticket_phase("Resolved", "done", s) is None
+    assert device_need("Thay thế laptop bị hỏng màn hình", s) == "replace"
+    assert device_need("Xin nâng cấp RAM", s) == "upgrade"
+    assert device_need("Máy in kẹt giấy – sửa chữa", s) == "repair"
+    assert device_need("Cấp quyền thư mục", s) is None
+
+
+@respx.mock(assert_all_called=False)
+async def test_portal_accounts_and_purchase_flow(admin, client, sdp) -> None:  # type: ignore[no-untyped-def]
+    from app.modules.workload.sync import run_sync
+
+    # A technician with no infra-ops account gets one (Operator) on the next sync.
+    sdp.techs.append({"id": "14", "name": "Tech Mới", "email_id": "wl-new@test.local"})
+    in_progress = req("506", "In Progress", "11", 15, ms(1, 1, 2099))
+    device = req("507", "Open", "11", 16, ms(1, 1, 2099))
+    device["subject"] = "Thay thế laptop hỏng bản lề"
+    for r in (in_progress, device):
+        r["last_updated_time"] = ms(11, 21)
+        sdp.requests[r["id"]] = r
+    async with get_sessionmaker()() as s:
+        await run_sync(s)
+    users = {u["upn"]: u for u in (await admin.get("/api/core/users")).json()}
+    assert "wl-new@test.local" in users
+    roles = {r["id"]: r["code"] for r in (await admin.get("/api/core/roles")).json()}
+    assert [roles[i] for i in users["wl-new@test.local"]["role_ids"]] == ["operator"]
+
+    await client.login("wl-op1@test.local")
+    work = (await client.get("/api/workload/my-work")).json()
+    assert work["linked"] and work["counts"]["in_progress"] >= 1
+    assert "507" in [t["id"] for t in work["suggestions"]]
+    assert {t["phase"] for t in work["open"]} <= {"pending", "in_progress", "on_hold"}
+    assert [
+        t["id"] for t in (await client.get("/api/workload/tickets?state=in_progress")).json()["items"]
+    ] == ["506"]
+
+    # Operator proposes; the suggestion disappears; operator cannot approve.
+    created = await client.post(
+        "/api/workload/purchases",
+        json={
+            "ticket_id": "507",
+            "kind": "replace",
+            "item": "Laptop Dell Latitude 5440",
+            "reason": "Bản lề gãy",
+        },
+    )
+    assert created.status_code == 201, created.text
+    pid = created.json()["id"]
+    assert created.json()["ticket_display_id"] == "D507" and created.json()["status"] == "proposed"
+    assert "507" not in [t["id"] for t in (await client.get("/api/workload/my-work")).json()["suggestions"]]
+    assert (
+        await client.patch(f"/api/workload/purchases/{pid}", json={"status": "approved"})
+    ).status_code == 403
+
+    await client.login("wl-mgr@test.local")
+    bad = await client.patch(f"/api/workload/purchases/{pid}", json={"status": "received"})
+    assert bad.json()["error"]["code"] == "invalid_transition"
+    for st in ("approved", "ordered", "received"):
+        r = await client.patch(f"/api/workload/purchases/{pid}", json={"status": st})
+        assert r.status_code == 200 and r.json()["status"] == st
+    listed = (await client.get("/api/workload/purchases")).json()
+    assert any(p["id"] == pid for p in listed["items"])
+    assert listed["counts"]["received"] == sum(p["status"] == "received" for p in listed["items"])
+    x = await client.get("/api/workload/purchases/export")
+    assert x.status_code == 200 and x.content[:2] == b"PK"
+
+    # Another operator only sees their own proposals; dismissing hides a suggestion.
+    await client.login("wl-op2@test.local")
+    mine = (await client.get("/api/workload/purchases")).json()["items"]
+    assert all(p["created_by"] == "wl-op2@test.local" for p in mine)
+    assert (await client.post("/api/workload/tickets/507/dismiss-purchase")).status_code == 204

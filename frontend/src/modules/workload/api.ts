@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
 
-export type TicketState = "open" | "overdue" | "done" | "cancelled" | "all";
+export type TicketState = "open" | "pending" | "in_progress" | "on_hold" | "overdue" | "done" | "cancelled" | "all";
+export type DeviceNeed = "replace" | "upgrade" | "repair";
 
 export interface Ticket {
   id: string;
@@ -14,6 +15,9 @@ export interface Ticket {
   group_name: string | null;
   status: string;
   state: "open" | "done" | "cancelled";
+  phase: "pending" | "in_progress" | "on_hold" | null;
+  device_need: DeviceNeed | null;
+  po_dismissed: boolean;
   priority: string | null;
   created_at: string | null;
   due_by: string | null;
@@ -81,3 +85,29 @@ export const useSyncStatus = () =>
     queryFn: () => api<{ last_synced_at: string | null; task: { running: boolean; last_error: string | null } | null }>("/api/workload/sync"),
     refetchInterval: 30_000,
   });
+
+export type PurchaseStatus = "proposed" | "approved" | "ordered" | "received" | "rejected";
+export interface Purchase {
+  id: string;
+  ticket_id: string | null;
+  ticket_display_id: string | null;
+  kind: DeviceNeed | "new";
+  item: string;
+  quantity: number;
+  reason: string;
+  status: PurchaseStatus;
+  note: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  next: PurchaseStatus[];
+}
+
+export interface MyWork {
+  linked: boolean;
+  technician?: string;
+  counts?: { pending: number; in_progress: number; on_hold: number; overdue: number; done_7d: number };
+  open?: Ticket[];
+  done?: Ticket[];
+  suggestions?: Ticket[];
+}

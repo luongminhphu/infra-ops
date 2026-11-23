@@ -10,7 +10,7 @@ interface DialogProps {
   description?: ReactNode;
   children?: ReactNode;
   footer?: ReactNode;
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "xl";
   /** Accessible name override for the close button. */
   closeLabel?: string;
 }
@@ -43,6 +43,7 @@ export function Dialog({ open, onClose, title, description, children, footer, si
         size === "sm" && "max-w-md",
         size === "md" && "max-w-xl",
         size === "lg" && "max-w-3xl",
+        size === "xl" && "max-w-6xl",
       )}
     >
       {open && (

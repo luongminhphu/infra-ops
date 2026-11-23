@@ -868,3 +868,22 @@ thành thanh tab ở đáy, thanh *Xác nhận / Báo không đạt* dính đáy
 "Bước N/T"; danh sách Job gộp cột tiến độ, chip lọc cùng kiểu trang Công việc (chip 0 làm mờ); nút *Huỷ Job* /
 *Buộc đóng Job* cùng kiểu nguy hiểm; số 0 không tô màu; ticket quá hạn ghi "Trễ N ngày" (đỏ từ 7 ngày), chỉ hiện
 trạng thái SDP khi khác thường; biểu đồ ghi "(0 trong kỳ)" cho chuỗi trống.
+
+## 20. Phase 8 – Việc của tôi, người phụ trách Job, đề xuất mua thiết bị (23/11/2026)
+
+Quyết định (theo trả lời của product owner):
+- **Người phụ trách Job = technician của request RTR trên SDP.** Sync đọc technician của request và cập nhật
+  `assignee` của Job (`source=sdp`). *Chuyển Job* trong app chạy workflow `lifecycle.assign` ở worker: tìm
+  technician theo e-mail, đọc request, chỉ PUT khi khác, rồi ghi `core_job_assignment` (`source=app`, người
+  chuyển, lý do, bước đang chạy). Quyền `lifecycle.job.assign` (manager, supervisor).
+- **Tài khoản Operator tự tạo** cho technician có e-mail chưa có tài khoản (`auto_create_users`, mặc định bật;
+  bỏ qua technician đã map tay hoặc trùng UPN/e-mail), ghi audit `workload.user_created` (actor `system`).
+- **Trạng thái task:** `phase` = `pending` / `in_progress` / `on_hold` từ trạng thái SDP (cấu hình được);
+  đổi cấu hình thì phân loại lại toàn bộ.
+- **Đề xuất mua thiết bị chỉ trong app** (`workload_purchase_request`): gợi ý theo từ khoá (thay thế / nâng cấp /
+  sửa chữa) trên tiêu đề + category; luồng `proposed → approved → ordered → received`, `rejected` (cần lý do) có
+  thể mở lại; xuất Excel. Không ghi gì lên SDP.
+- **Lưu đồ swimlane theo người** (core `Swimlane`): mỗi người phụ trách một làn, mũi tên nét đứt nhảy làn tại
+  điểm chuyển giao, bước hiện tại nhấp nháy (tắt khi giảm chuyển động); bản checklist cũ nằm trong mục mở rộng.
+- **Portal `/me/work`** là trang core; module khai báo `portal` section (lifecycle: Job của tôi; workload: task
+  và gợi ý mua). `GET /api/core/jobs?assignee=me&workflows=…` cho danh sách Job theo người.

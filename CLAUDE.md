@@ -8,7 +8,7 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 - `backend/app/core/*` – platform core. `backend/app/modules/<id>/` – modules (manifest.py required).
 - `frontend/src/core/*` – shell, design system (`ui/`), core pages. `frontend/src/modules/<id>/` – module UI.
 - `backend/migrations/<branch>/versions` – one Alembic branch per module (`core`, …).
-- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §19).
+- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §20).
 
 ## Conventions
 
@@ -27,6 +27,8 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 - Reconciliation rules are pure functions (`modules/lifecycle/reconcile.py`) – add a rule there with a
   unit test; never judge a system whose read failed.
 - Employee IDs are strings (keep leading zeros, e.g. `003551`).
+- Job ownership: `Job.assignee_*` + `core_job_assignment` history via `engine.set_assignee` (no-op when
+  unchanged). Personal pages are `portal` sections in the frontend module (rendered on `/me/work`).
 - Printable records: declare a `DocumentKind` in the manifest (pydantic data model + `build_context`);
   core handles templates (versioned DOCX, docxtpl autoescaped), numbering, PDF (LibreOffice), signed
   uploads (magic-byte checked) and audit. Never hard-code layout in code – it lives in the DOCX.

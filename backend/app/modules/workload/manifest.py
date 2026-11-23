@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.modules.manifest import DashboardWidget, ModuleManifest, NavItem, Permission, ScheduledTask
 from app.modules.workload.api import router
+from app.modules.workload.purchases_api import router as purchases_router
 from app.modules.workload.workflows import REASSIGN
 
 
@@ -48,16 +49,25 @@ manifest = ModuleManifest(
         Permission(
             "workload.stats.view", "Xem thống kê task", ("manager", "supervisor", "operator", "viewer")
         ),
+        Permission(
+            "workload.purchase.create",
+            "Lập đề xuất mua thiết bị từ request",
+            ("manager", "supervisor", "operator"),
+        ),
+        Permission(
+            "workload.purchase.manage", "Duyệt và cập nhật trạng thái đề xuất mua", ("manager", "supervisor")
+        ),
         Permission("workload.sync.run", "Đồng bộ task từ SDP ngay", ("manager", "supervisor", "operator")),
         Permission(
             "workload.settings.manage", "Cấu hình module và liên kết Operator ↔ technician", ("manager",)
         ),
     ],
-    routers=[router],
+    routers=[router, purchases_router],
     workflows=[REASSIGN],
     nav=[
         NavItem("Công việc", "/workload/tickets", "list-checks", "workload.tickets.view"),
         NavItem("Thống kê công việc", "/workload/stats", "chart-column", "workload.stats.view"),
+        NavItem("Đề xuất mua thiết bị", "/workload/purchases", "shopping-cart", "workload.tickets.view"),
         NavItem("Cấu hình công việc", "/workload/settings", "settings", "workload.settings.manage"),
     ],
     # The widget renders per-user data itself (operators see only their own tasks).

@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
 import { Button } from "@/core/ui/button";
 import { ErrorState, LoadingRows, PageHeader, Panel } from "@/core/ui/feedback";
-import { Field, Input, Select, Textarea } from "@/core/ui/field";
+import { Field, Input, Select, Switch, Textarea } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
 import { useTechnicians } from "../api";
 
@@ -14,6 +14,10 @@ interface Values {
   group_names: string[];
   done_statuses: string[];
   cancelled_statuses: string[];
+  in_progress_statuses: string[];
+  on_hold_statuses: string[];
+  auto_create_users: boolean;
+  device_keywords: Record<"replace" | "upgrade" | "repair", string[]>;
 }
 interface SettingsResponse {
   values: Values;
@@ -29,13 +33,26 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
     group_names: data.values.group_names.join("\n"),
     done_statuses: data.values.done_statuses.join("\n"),
     cancelled_statuses: data.values.cancelled_statuses.join("\n"),
+    in_progress_statuses: data.values.in_progress_statuses.join("\n"),
+    on_hold_statuses: data.values.on_hold_statuses.join("\n"),
+    kw_replace: data.values.device_keywords.replace.join("\n"),
+    kw_upgrade: data.values.device_keywords.upgrade.join("\n"),
+    kw_repair: data.values.device_keywords.repair.join("\n"),
   });
   const lookbackBad = !(v.lookback_days >= 30 && v.lookback_days <= 1100);
   const save = useMutation({
     mutationFn: () =>
       api("/api/workload/settings", {
         method: "PUT",
-        json: { ...v, group_names: lines(text.group_names), done_statuses: lines(text.done_statuses), cancelled_statuses: lines(text.cancelled_statuses) },
+        json: {
+          ...v,
+          group_names: lines(text.group_names),
+          done_statuses: lines(text.done_statuses),
+          cancelled_statuses: lines(text.cancelled_statuses),
+          in_progress_statuses: lines(text.in_progress_statuses),
+          on_hold_statuses: lines(text.on_hold_statuses),
+          device_keywords: { replace: lines(text.kw_replace), upgrade: lines(text.kw_upgrade), repair: lines(text.kw_repair) },
+        },
       }),
     onSuccess: () => {
       toast.success("Đã lưu cấu hình. Áp dụng từ lần đồng bộ tiếp theo.");
@@ -71,6 +88,26 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
         <Field label="Trạng thái được tính là đã huỷ" hint="Không tính vào hoàn tất hay quá hạn.">
           <Textarea rows={3} value={text.cancelled_statuses} onChange={(e) => setText({ ...text, cancelled_statuses: e.target.value })} />
         </Field>
+        <Field label="Trạng thái được tính là đang thực hiện" hint="Task đang mở có trạng thái SDP này hiện ở mục “Đang thực hiện”.">
+          <Textarea rows={2} value={text.in_progress_statuses} onChange={(e) => setText({ ...text, in_progress_statuses: e.target.value })} />
+        </Field>
+        <Field label="Trạng thái được tính là tạm dừng" hint="Các trạng thái mở khác được tính là “Chưa bắt đầu”.">
+          <Textarea rows={2} value={text.on_hold_statuses} onChange={(e) => setText({ ...text, on_hold_statuses: e.target.value })} />
+        </Field>
+        <div className="sm:col-span-2">
+          <Switch
+            label="Tự tạo tài khoản Operator cho technician chưa có tài khoản"
+            description="Mỗi lần đồng bộ: tạo tài khoản theo e-mail của technician (đăng nhập bằng SSO), vai trò Operator, liên kết luôn."
+            checked={v.auto_create_users}
+            onChange={(c) => setV({ ...v, auto_create_users: c })}
+          />
+        </div>
+        <fieldset className="grid gap-3 sm:col-span-2 sm:grid-cols-3">
+          <legend className="mb-1 text-sm font-medium">Từ khoá nhận diện yêu cầu thiết bị (gợi ý đề xuất mua)</legend>
+          <Field label="Thay thế"><Textarea rows={3} value={text.kw_replace} onChange={(e) => setText({ ...text, kw_replace: e.target.value })} /></Field>
+          <Field label="Nâng cấp"><Textarea rows={3} value={text.kw_upgrade} onChange={(e) => setText({ ...text, kw_upgrade: e.target.value })} /></Field>
+          <Field label="Sửa chữa"><Textarea rows={3} value={text.kw_repair} onChange={(e) => setText({ ...text, kw_repair: e.target.value })} /></Field>
+        </fieldset>
         <div className="sm:col-span-2">
           <Button type="submit" variant="primary" loading={save.isPending}>Lưu cấu hình</Button>
         </div>

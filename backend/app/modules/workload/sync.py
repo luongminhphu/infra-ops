@@ -18,10 +18,11 @@ from app.core.connections.service import open_connection
 from app.core.connectors.base import Purpose
 from app.core.connectors.sdp import SdpClient
 from app.core.logging import get_logger
+from app.core.rbac.service import grant_role
 from app.core.scheduler.service import get_task
 from app.core.settings.service import load_settings
 from app.modules.workload.models import Technician, Ticket
-from app.modules.workload.rules import normalize_ticket
+from app.modules.workload.rules import device_need, normalize_ticket, ticket_phase, ticket_state
 from app.modules.workload.settings import MODULE_ID, SETTINGS_KEY, WorkloadSettings
 
 log = get_logger(__name__)
@@ -31,7 +32,9 @@ OVERLAP_MS = 3_600_000
 MAX_ROWS = 50_000
 
 
-async def sync_technicians(session: AsyncSession, client: SdpClient) -> int:
+async def sync_technicians(
+    session: AsyncSession, client: SdpClient, settings: WorkloadSettings | None = None
+) -> int:
     rows = await client.list_all("/api/v3/technicians", "technicians")
     now = datetime.now(UTC)
     existing = {t.id: t for t in (await session.scalars(select(Technician))).all()}
@@ -53,7 +56,62 @@ async def sync_technicians(session: AsyncSession, client: SdpClient) -> int:
             tech.active = False
     await session.flush()
     await auto_link(session, list(existing.values()))
+    if settings is None or settings.auto_create_users:
+        await create_accounts(session, [t for t in existing.values() if t.active])
     return len(seen)
+
+
+async def create_accounts(session: AsyncSession, techs: list[Technician]) -> int:
+    """Give every active technician without a linked user an Operator account (SSO login by e-mail).
+
+    A link cleared by hand (mapped_manually without user) is left alone.
+    """
+    created = 0
+    for tech in techs:
+        if tech.user_id or tech.mapped_manually or not tech.email:
+            continue
+        # An account with this e-mail that auto_link did not use (linked elsewhere): never duplicate it.
+        taken = await session.scalar(
+            select(User.id).where(
+                (func.lower(User.upn) == tech.email) | (func.lower(User.email) == tech.email)
+            )
+        )
+        if taken is not None:
+            continue
+        user = User(upn=tech.email, display_name=tech.name or tech.email, email=tech.email)
+        session.add(user)
+        await session.flush()
+        await grant_role(session, user.id, "operator")
+        tech.user_id = user.id
+        created += 1
+        await record(
+            session,
+            actor=Actor(None, "system"),
+            module_id=MODULE_ID,
+            action="workload.user_created",
+            target_type="user",
+            target_id=str(user.id),
+            target_label=user.upn,
+            after={"technician": tech.name, "role": "operator"},
+        )
+    await session.flush()
+    return created
+
+
+async def reclassify(session: AsyncSession, settings: WorkloadSettings, only_missing: bool = True) -> int:
+    """Recompute state/phase/device need from stored status and subject (after a settings change or
+    an upgrade): the incremental sync only re-reads tickets that changed on SDP."""
+    stmt = select(Ticket)
+    if only_missing:
+        stmt = stmt.where(Ticket.state == "open", Ticket.phase.is_(None))
+    n = 0
+    for t in (await session.scalars(stmt)).all():
+        t.state = ticket_state(t.status, settings)
+        t.phase = ticket_phase(t.status, t.state, settings)
+        t.device_need = device_need(t.subject, settings)
+        n += 1
+    await session.flush()
+    return n
 
 
 async def auto_link(session: AsyncSession, techs: list[Technician]) -> None:
@@ -114,8 +172,9 @@ async def sync_tickets(session: AsyncSession, client: SdpClient, settings: Workl
 async def run_sync(session: AsyncSession, requested_by: str | None = None) -> dict[str, Any]:
     settings = await load_settings(session, MODULE_ID, SETTINGS_KEY, WorkloadSettings)
     _, ctx = await open_connection(session, "sdp", Purpose.READ, profile_id=settings.sdp_profile_id)
+    await reclassify(session, settings)
     async with SdpClient(ctx) as client:
-        technicians = await sync_technicians(session, client)
+        technicians = await sync_technicians(session, client, settings)
         tickets = await sync_tickets(session, client, settings)
     stats = {"technicians": technicians, "tickets": tickets}
     await record(

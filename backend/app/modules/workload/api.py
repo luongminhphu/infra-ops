@@ -25,7 +25,7 @@ from app.core.workflow.engine import create_job, start_job
 from app.modules.workload.models import Technician, Ticket
 from app.modules.workload.rules import pick_bucket
 from app.modules.workload.settings import MODULE_ID, SETTINGS_KEY, WorkloadSettings
-from app.modules.workload.sync import SYNC_TASK_KEY, auto_link
+from app.modules.workload.sync import SYNC_TASK_KEY, auto_link, reclassify
 
 router = APIRouter(tags=["workload"])
 TZ = ZoneInfo("Asia/Ho_Chi_Minh")
@@ -35,7 +35,7 @@ stats_perm = require("workload.stats.view")
 sync_perm = require("workload.sync.run")
 manage = require("workload.settings.manage")
 
-State = Literal["open", "overdue", "done", "cancelled", "all"]
+State = Literal["open", "pending", "in_progress", "on_hold", "overdue", "done", "cancelled", "all"]
 
 
 def _now() -> datetime:
@@ -57,6 +57,9 @@ def ticket_out(t: Ticket, now: datetime) -> dict[str, Any]:
         "group_name": t.group_name,
         "status": t.status,
         "state": t.state,
+        "phase": t.phase,
+        "device_need": t.device_need,
+        "po_dismissed": t.po_dismissed,
         "priority": t.priority,
         "created_at": t.created_at,
         "due_by": t.due_by,
@@ -211,6 +214,8 @@ async def tickets(
     stmt = select(Ticket)
     if state == "overdue":
         stmt = stmt.where(Ticket.state == "open", Ticket.due_by < now)
+    elif state in ("pending", "in_progress", "on_hold"):
+        stmt = stmt.where(Ticket.state == "open", Ticket.phase == state)
     elif state != "all":
         stmt = stmt.where(Ticket.state == state)
     technician_id = await _scope(session, user, technician_id)
@@ -410,6 +415,8 @@ async def put_settings(
     body: dict[str, Any], user: CurrentUser = Depends(manage), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
     settings = await save_settings(session, user.actor, MODULE_ID, SETTINGS_KEY, WorkloadSettings, body)
+    # Status lists and device keywords changed: apply them to every stored ticket now.
+    await reclassify(session, settings, only_missing=False)
     await session.commit()
     return {"values": settings.model_dump(mode="json")}
 

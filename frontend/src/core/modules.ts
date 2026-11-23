@@ -11,4 +11,6 @@ export interface FrontendModule {
   routes: RouteObject[];
   /** Renderers for dashboard widgets this module declares in its backend manifest, keyed by `kind`. */
   widgets?: Record<string, ComponentType<{ data: unknown }>>;
+  /** Sections of the "Việc của tôi" portal (each fetches the signed-in user's own work). */
+  portal?: { key: string; order: number; permission: string; component: ComponentType }[];
 }

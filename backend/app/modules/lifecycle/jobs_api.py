@@ -21,6 +21,7 @@ from app.core.settings.service import load_settings
 from app.core.workflow import engine
 from app.core.workflow.api import job_out
 from app.core.workflow.models import Job
+from app.modules.lifecycle.assignment import ASSIGN, JOB_WORKFLOWS, assign_from_request, assignment_params
 from app.modules.lifecycle.models import LifecycleRequest, ReconRow, Snapshot
 from app.modules.lifecycle.parsing import fold
 from app.modules.lifecycle.queries import latest_run
@@ -89,7 +90,7 @@ async def create_job_for_request(
     params["sdp_user_id"], params["sdp_user_name"] = await _sdp_user_guess(session, req.employee_id)
     if params["sdp_user_id"] is None:
         params["sdp_user_name"] = None
-    return await engine.create_job(
+    job, new = await engine.create_job(
         session,
         actor,
         wf.key,
@@ -99,6 +100,10 @@ async def create_job_for_request(
         external_ref=req.id,
         idempotency_key=f"lifecycle:{req.kind}:{req.id}",
     )
+    if new:
+        await session.flush()
+        await assign_from_request(session, job, req)
+    return job, new
 
 
 async def auto_create_jobs(session: AsyncSession) -> int:
@@ -275,3 +280,79 @@ async def biostar_groups(
         "user_groups": [{"id": str(g.get("id")), "name": g.get("name")} for g in ug],
         "access_groups": [{"id": str(g.get("id")), "name": g.get("name")} for g in ag],
     }
+
+
+# ---------------------------------------------------------------- assignment
+@router.get("/assignees")
+async def assignees(
+    _: CurrentUser = Depends(require(ASSIGN)), session: AsyncSession = Depends(get_session)
+) -> list[dict[str, Any]]:
+    """Active people who can run jobs (and have an e-mail to find them on SDP)."""
+    from app.core.auth.models import User
+    from app.core.modules.registry import get_registry
+    from app.core.rbac.service import permissions_for_user
+
+    users = (
+        await session.scalars(select(User).where(User.is_active.is_(True)).order_by(User.display_name))
+    ).all()
+    out = []
+    for u in users:
+        if (u.email or "@" in u.upn) and "lifecycle.job.execute" in await permissions_for_user(
+            session, u.id, get_registry()
+        ):
+            out.append({"id": str(u.id), "name": u.display_name, "upn": u.upn})
+    return out
+
+
+class AssignIn(BaseModel):
+    user_id: uuid.UUID
+    reason: str = Field("", max_length=500)
+
+
+@router.post("/jobs/{job_id}/assign", status_code=201)
+async def assign_job(
+    job_id: uuid.UUID,
+    body: AssignIn,
+    user: CurrentUser = Depends(require(ASSIGN)),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Hand a job to another operator: the worker sets the request's technician on SDP, then the job."""
+    from app.core.auth.models import User
+
+    job = await engine.get_job(session, job_id)
+    if job.workflow_key not in JOB_WORKFLOWS:
+        raise NotFound("Không tìm thấy Job onboard/offboard.")
+    if job.status in ("completed", "cancelled"):
+        raise Conflict("Job đã kết thúc.", code="job_finished")
+    req = await session.get(LifecycleRequest, job.external_ref)
+    target = await session.get(User, body.user_id)
+    if req is None or target is None or not target.is_active:
+        raise NotFound("Không tìm thấy request hoặc người nhận.")
+    if job.assignee_user_id == target.id:
+        raise AppError(f"Job đang do {target.display_name} phụ trách.", code="same_assignee")
+    assign_job_, _ = await engine.create_job(
+        session,
+        user.actor,
+        "lifecycle.assign",
+        params=assignment_params(job, req, target, user.upn, body.reason.strip()),
+        subject_key=job.subject_key,
+        subject_label=f"Chuyển {job.subject_label} cho {target.display_name}",
+        external_ref=str(job.id),
+        idempotency_key=f"lifecycle.assign:{uuid.uuid4()}",
+    )
+    await engine.start_job(session, user.actor, assign_job_, None)
+    await record(
+        session,
+        actor=user.actor,
+        module_id=MODULE_ID,
+        action="lifecycle.job_assign_requested",
+        system_type="sdp",
+        target_type="job",
+        target_id=str(job.id),
+        target_label=job.subject_label,
+        before={"assignee": job.assignee_name},
+        after={"assignee": target.display_name},
+        message=body.reason.strip() or None,
+    )
+    await session.commit()
+    return job_out(assign_job_)

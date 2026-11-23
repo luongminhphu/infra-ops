@@ -80,6 +80,7 @@ CORE_MANIFEST = ModuleManifest(
     ],
     nav=[
         NavItem("Tổng quan", "/", "layout-dashboard", DASHBOARD_VIEW),
+        NavItem("Việc của tôi", "/me/work", "user-check", DASHBOARD_VIEW),
         NavItem("Kết nối hệ thống", "/settings/connections", "plug", CONNECTIONS_VIEW),
         NavItem("Nhật ký kiểm tra", "/settings/audit", "scroll-text", AUDIT_VIEW),
         NavItem("Người dùng & quyền", "/settings/access", "shield-check", RBAC_MANAGE),

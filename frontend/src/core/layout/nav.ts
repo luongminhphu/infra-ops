@@ -21,8 +21,10 @@ export function railSections(nav: NavGroup[]): RailSection[] {
   for (const g of nav) {
     if (g.module === "core") {
       const home = g.items.find((i) => i.path === "/");
+      const mine = g.items.find((i) => i.path === "/me/work");
+      if (mine) out.unshift({ id: "mine", label: "Việc của tôi", title: "Việc của tôi", icon: mine.icon, items: [mine] });
       if (home) out.unshift({ id: "home", label: "Tổng quan", title: "Tổng quan", icon: home.icon, items: [home] });
-      system = g.items.filter((i) => i.path !== "/");
+      system = g.items.filter((i) => i.path !== "/" && i.path !== "/me/work");
     } else if (g.items.length) {
       out.push({ id: g.module, label: SHORT[g.module] ?? g.label, title: g.label, icon: ICON[g.module] ?? g.items[0]!.icon, items: g.items });
     }

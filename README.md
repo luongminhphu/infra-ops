@@ -24,7 +24,8 @@ Tài liệu: [kiến trúc](docs/architecture.md) · [thêm module](docs/adding-
 | 4 | Workflow Onboard / Offboard từ request SDP (gán/thu hồi tài sản, BioStar, biên bản, đóng request) | Xong |
 | 5 | Vai trò Manager / Supervisor / Operator / Viewer; module **Công việc Helpdesk**: task SDP theo Operator, chuyển việc (ghi sang SDP), thống kê theo kỳ | Xong |
 | 6 | Lưu đồ Onboard/Offboard, checklist từng bước, Operator xác nhận kèm bằng chứng | Xong |
-| 7 | Giao diện “Phòng điều khiển”: rail phân hệ + menu con, màu cobalt, font Inter, cho toàn app | **Xong** |
+| 7 | Giao diện “Phòng điều khiển”: rail phân hệ + menu con, màu cobalt, font Inter, cho toàn app | Xong |
+| 8 | **Việc của tôi** cho Operator (task SDP theo trạng thái, Job onboard/offboard, việc cần chuẩn bị), tự tạo tài khoản Operator, Job theo technician request RTR + chuyển Job (ghi sang SDP), lưu đồ swimlane theo người, đề xuất mua thiết bị | **Xong** |
 | sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
 
 ## Chạy local
@@ -190,6 +191,27 @@ Kết nối hệ thống và người dùng/phân quyền chỉ Quản trị tha
    trên trang kèm nút **Thử lại**.
 4. **Thống kê công việc**: tuần / tháng / quý / 6 tháng / 1 năm hoặc khoảng ngày tuỳ chọn; tiếp nhận, hoàn tất,
    đúng hạn / trễ hạn, thời gian xử lý trung bình, đang chờ và quá hạn theo Operator.
+
+5. **Trạng thái task:** request đang mở được chia *Chưa bắt đầu* / *Đang thực hiện* / *Tạm dừng* theo trạng thái SDP
+   (cấu hình ở **Cấu hình công việc**, mặc định `In Progress`, `On Hold`/`Pending`). Bật **Tự tạo tài khoản
+   Operator** để mỗi technician có e-mail mà chưa có tài khoản được tạo tài khoản vai trò Operator (đăng nhập SSO
+   bằng e-mail đó) và liên kết sẵn.
+6. **Đề xuất mua thiết bị:** request có từ khoá thay thế / nâng cấp / sửa chữa (sửa được trong cấu hình) hiện thành
+   gợi ý ở **Việc của tôi**; Operator **Lập đề xuất** (thiết bị, số lượng, lý do) hoặc **Không cần**. Manager /
+   Supervisor duyệt → đặt mua → nhận hàng (hoặc từ chối kèm lý do) ở **Đề xuất mua thiết bị** và **Xuất Excel** gửi
+   bộ phận mua hàng. Đề xuất chỉ lưu trong infra-ops, không ghi lên SDP.
+
+### Việc của tôi (Operator)
+Trang **Việc của tôi** (rail trái / thanh tab trên điện thoại) gom mọi việc của người đang đăng nhập:
+- **Onboard / Offboard:** Job có request RTR giao cho bạn trên SDP, chia *Cần bạn xử lý ngay* (bước chờ xác nhận,
+  lỗi), *Đang chạy*, *Sắp tới – cần chuẩn bị* (kèm danh sách việc chuẩn bị: chọn tài sản, kiểm tra user SDP…) và
+  *Đã xong gần đây*.
+- **Task Helpdesk:** đang thực hiện / chưa bắt đầu / tạm dừng / quá hạn / xong 7 ngày qua, và gợi ý đề xuất mua thiết bị.
+
+Người phụ trách Job lấy theo **technician của request RTR** trên SDP (đồng bộ lại mỗi lần sync). Manager /
+Supervisor bấm **Chuyển Job** trên trang Job: worker đổi technician của request trên SDP rồi ghi lịch sử phụ trách.
+**Lưu đồ** của Job vẽ mỗi người phụ trách một làn; mũi tên nhảy làn đánh dấu lúc chuyển giao (giờ, trên SDP hay
+trong infra-ops).
 
 ### Suprema BioStar 2
 1. Tạo tài khoản BioStar riêng: Read = quyền xem User/Access Group; Write = Operator/Administrator có quyền quản lý User.

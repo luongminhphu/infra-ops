@@ -93,6 +93,21 @@
   }
 }
 
+/* Swimlane: the connector into the current step flows (the one moving element; off with reduced motion). */
+@keyframes swimlane-flow {
+  to {
+    stroke-dashoffset: -22;
+  }
+}
+.swimlane-flow {
+  animation: swimlane-flow 1.1s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .swimlane-flow {
+    animation: none;
+  }
+}
+
 /* Field errors appear only after the user interacts (see ui/field.tsx). */
 @layer components {
   .field-error {

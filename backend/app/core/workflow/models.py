@@ -47,12 +47,20 @@ class Job(UUIDPk, Timestamps, Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     # Checklist version snapshotted at start; None = no step verification (older jobs, other workflows).
     checklist_version: Mapped[int | None] = mapped_column(Integer)
+    # Person responsible (set by the module, e.g. the SDP technician of the request); history below.
+    assignee_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("core_user.id", ondelete="SET NULL"), index=True
+    )
+    assignee_name: Mapped[str | None] = mapped_column(String(256))
 
     steps: Mapped[list[JobStep]] = relationship(
         back_populates="job", cascade="all, delete-orphan", order_by="JobStep.seq", lazy="selectin"
     )
     evidence: Mapped[list[JobEvidence]] = relationship(
         cascade="all, delete-orphan", order_by="JobEvidence.created_at", lazy="selectin"
+    )
+    assignments: Mapped[list[JobAssignment]] = relationship(
+        cascade="all, delete-orphan", order_by="JobAssignment.at", lazy="selectin"
     )
 
 
@@ -146,3 +154,24 @@ class WorkflowChecklist(UUIDPk, Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class JobAssignment(UUIDPk, Base):
+    """A hand-over of a job from one person to another (who, when, at which step, why)."""
+
+    __tablename__ = "core_job_assignment"
+
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("core_job.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    from_name: Mapped[str | None] = mapped_column(String(256))
+    to_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    to_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("core_user.id", ondelete="SET NULL")
+    )
+    # Step the job was at when it changed hands (None = before start).
+    step_key: Mapped[str | None] = mapped_column(String(64))
+    source: Mapped[str] = mapped_column(String(16), nullable=False)  # sdp | app
+    actor: Mapped[str] = mapped_column(String(320), nullable=False)
+    reason: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

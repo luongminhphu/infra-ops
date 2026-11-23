@@ -18,7 +18,10 @@ import { useSyncNow, useSyncStatus, useTechnicians, type Ticket, type TicketStat
 import { USUAL_SDP_STATUS, ticketBadge } from "../labels";
 
 const STATES: { key: TicketState; label: string }[] = [
-  { key: "open", label: "Đang chờ thực hiện" },
+  { key: "open", label: "Tất cả đang mở" },
+  { key: "in_progress", label: "Đang thực hiện" },
+  { key: "pending", label: "Chưa bắt đầu" },
+  { key: "on_hold", label: "Tạm dừng" },
   { key: "overdue", label: "Quá hạn" },
   { key: "done", label: "Đã thực hiện" },
   { key: "cancelled", label: "Đã huỷ" },
