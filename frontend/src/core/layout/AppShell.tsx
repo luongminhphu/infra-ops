@@ -6,16 +6,17 @@ import { cn } from "@/core/lib/cn";
 import { activeFor, railSections, type RailSection } from "./nav";
 import { Topbar } from "./Topbar";
 
-function RailLink({ s, active }: { s: RailSection; active: boolean }) {
+function RailLink({ s, active, tab = false }: { s: RailSection; active: boolean; tab?: boolean }) {
   const Icon = iconFor(s.icon);
   return (
-    <li>
+    <li className={tab ? "flex-1" : undefined}>
       <Link
         to={s.items[0]!.path}
         aria-current={active ? "page" : undefined}
         title={s.title}
         className={cn(
-          "flex w-16 flex-col items-center gap-0.5 rounded-sm px-1 py-1.5 text-center text-[11px] leading-tight font-medium transition-colors duration-150",
+          "flex flex-col items-center gap-0.5 rounded-sm px-1 py-1.5 text-center text-[11px] leading-tight font-medium transition-colors duration-150",
+          tab ? "w-full" : "w-16",
           active ? "bg-primary-soft text-primary" : "text-muted hover:bg-surface-2 hover:text-ink",
         )}
       >
@@ -72,7 +73,7 @@ export function AppShell() {
       >
         Bỏ qua điều hướng
       </a>
-      <nav aria-label="Phân hệ" className="sticky top-0 flex h-dvh w-[var(--rail-w)] shrink-0 flex-col items-center border-r border-line bg-rail py-2">
+      <nav aria-label="Phân hệ" className="sticky top-0 hidden h-dvh w-[var(--rail-w)] shrink-0 flex-col items-center border-r border-line bg-rail py-2 sm:flex">
         <Link to="/" className="mb-2 flex h-10 items-center rounded-sm px-2" aria-label="infra-ops – Tổng quan">
           <img src="/favicon.svg" alt="" className="size-7" />
         </Link>
@@ -96,9 +97,15 @@ export function AppShell() {
             <ul className="flex gap-1 overflow-x-auto px-3 py-1.5">{subLinks(true)}</ul>
           </nav>
         )}
-        <main id="main" className="mx-auto w-full max-w-[1600px] flex-1 px-5 py-5 [&_h1]:outline-none" tabIndex={-1}>
+        <main id="main" className="mx-auto w-full max-w-[1600px] flex-1 px-4 pt-5 pb-24 sm:px-5 sm:pb-5 [&_h1]:outline-none" tabIndex={-1}>
           <Outlet />
         </main>
+        {/* Phones: the module rail becomes a bottom tab bar so content gets the full width. */}
+        <nav aria-label="Phân hệ" className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-rail pb-[env(safe-area-inset-bottom)] sm:hidden">
+          <ul className="flex h-[var(--tabbar-h)] items-center gap-1 px-2">
+            {sections.map((s) => <RailLink key={s.id} s={s} active={s.id === section?.id} tab />)}
+          </ul>
+        </nav>
       </div>
     </div>
   );

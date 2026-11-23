@@ -107,3 +107,16 @@ describe("DateInput helpers", () => {
     expect(toVnDate("2026-11-01")).toBe("01/11/2026");
   });
 });
+
+
+describe("Dialog focus", () => {
+  it("focuses the field marked data-autofocus, not the close button", async () => {
+    const { Dialog } = await import("./dialog");
+    render(
+      <Dialog open onClose={() => {}} title="Đi tới">
+        <input aria-label="Tìm trang" data-autofocus />
+      </Dialog>,
+    );
+    expect(document.activeElement).toBe(screen.getByLabelText("Tìm trang"));
+  });
+});

@@ -11,10 +11,11 @@ import { DataTable } from "@/core/ui/data-table";
 import { Dialog } from "@/core/ui/dialog";
 import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input, Select, Textarea } from "@/core/ui/field";
-import { StatusBadge, type Status } from "@/core/ui/status";
+import { StatusBadge } from "@/core/ui/status";
 import { formatDateTime, formatRelative } from "@/core/lib/format";
 import { cn } from "@/core/lib/cn";
 import { useSyncNow, useSyncStatus, useTechnicians, type Ticket, type TicketState } from "../api";
+import { USUAL_SDP_STATUS, ticketBadge } from "../labels";
 
 const STATES: { key: TicketState; label: string }[] = [
   { key: "open", label: "Đang chờ thực hiện" },
@@ -24,11 +25,6 @@ const STATES: { key: TicketState; label: string }[] = [
   { key: "all", label: "Tất cả" },
 ];
 
-function stateBadge(t: Ticket): { status: Status; label: string } {
-  if (t.state === "done") return t.overdue ? { status: "warning", label: "Xong, trễ hạn" } : { status: "done", label: "Xong đúng hạn" };
-  if (t.state === "cancelled") return { status: "skipped", label: "Đã huỷ" };
-  return t.overdue ? { status: "failed", label: "Quá hạn" } : { status: "waiting", label: "Đang chờ" };
-}
 
 function ReassignDialog({ tickets, onClose, onDone }: { tickets: Ticket[]; onClose: () => void; onDone: () => void }) {
   const techs = useTechnicians();
@@ -209,8 +205,10 @@ export function TicketsPage() {
         header: "Tiến độ",
         cell: (c) => (
           <span className="block whitespace-nowrap">
-            <StatusBadge {...stateBadge(c.row.original)} />
-            <span className="mt-0.5 block text-xs text-muted">SDP: {c.row.original.status || "—"}</span>
+            <StatusBadge {...ticketBadge(c.row.original)} />
+            {!USUAL_SDP_STATUS.has(c.row.original.status.toLowerCase()) && (
+              <span className="mt-0.5 block text-xs text-muted">SDP: {c.row.original.status || "—"}</span>
+            )}
           </span>
         ),
       },

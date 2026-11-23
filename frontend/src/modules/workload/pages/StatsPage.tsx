@@ -44,6 +44,8 @@ function Chart({ data }: { data: Stats }) {
             <span key={s.key} className="inline-flex items-center gap-1.5 text-muted">
               <span className="size-2.5 rounded-xs" style={{ background: s.color }} />
               {s.label}
+              {/* An all-zero series draws nothing; say so instead of looking like a broken chart. */}
+              {data.series.every((p) => p[s.key] === 0) && " (0 trong kỳ)"}
             </span>
           ))}
         </span>
@@ -52,7 +54,7 @@ function Chart({ data }: { data: Stats }) {
         <div className="flex h-48 flex-col justify-between pb-5 text-right text-xs text-muted tabular" aria-hidden="true">
           {ticks.map((t, i) => <span key={i}>{t}</span>)}
         </div>
-        <div className="relative min-w-0 flex-1 overflow-x-auto">
+        <div className="relative min-w-0 flex-1 overflow-x-auto" tabIndex={0} aria-label="Biểu đồ theo kỳ (cuộn ngang)">
           <div className="pointer-events-none absolute inset-x-0 top-0 h-43 border-t border-b border-line" aria-hidden="true">
             <div className="absolute inset-x-0 top-1/2 border-t border-dashed border-line" />
           </div>
@@ -187,7 +189,7 @@ export function StatsPage() {
             <EmptyState icon={ChartColumn} title="Không có task trong kỳ này">Chọn kỳ khác hoặc kiểm tra lần đồng bộ gần nhất.</EmptyState>
           )}
           <Panel title="Theo Operator" bodyClassName="p-0">
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto" tabIndex={0} aria-label="Bảng theo Operator (cuộn ngang)">
               <table className="w-full text-left text-sm">
                 <caption className="sr-only">Thống kê theo Operator</caption>
                 <thead className="bg-surface-2 text-muted">

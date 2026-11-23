@@ -25,7 +25,12 @@ export function Dialog({ open, onClose, title, description, children, footer, si
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (open && !el.open) el.showModal();
+    if (open && !el.open) {
+      el.showModal();
+      // showModal() focuses the first focusable element (the close button); React's autoFocus
+      // ran before that, so hand focus to the field marked data-autofocus.
+      el.querySelector<HTMLElement>("[data-autofocus]")?.focus();
+    }
     if (!open && el.open) el.close();
   }, [open]);
   return (
@@ -42,7 +47,8 @@ export function Dialog({ open, onClose, title, description, children, footer, si
     >
       {open && (
         <div className="flex max-h-[85dvh] flex-col">
-          <header className="flex items-start justify-between gap-4 border-b border-line px-5 py-3.5">
+          {/* Not <header>/<footer>: a dialog opened from the topbar would nest a banner landmark. */}
+          <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-3.5">
             <div>
               <h2 id={titleId} className="text-lg font-semibold">
                 {title}
@@ -52,10 +58,10 @@ export function Dialog({ open, onClose, title, description, children, footer, si
             <Button variant="ghost" size="icon" aria-label={closeLabel ?? "Đóng"} onClick={onClose}>
               <X className="size-4" aria-hidden="true" />
             </Button>
-          </header>
+          </div>
           {/* Scrollable region must be keyboard-focusable (WCAG 2.1.1). */}
           <div className="overflow-y-auto px-5 py-4" tabIndex={0} aria-label={title}>{children}</div>
-          {footer && <footer className="flex justify-end gap-2 border-t border-line px-5 py-3">{footer}</footer>}
+          {footer && <div className="flex justify-end gap-2 border-t border-line px-5 py-3">{footer}</div>}
         </div>
       )}
     </dialog>

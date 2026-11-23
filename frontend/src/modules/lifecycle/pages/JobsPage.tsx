@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Workflow } from "lucide-react";
 import { api } from "@/core/api/client";
+import { Button } from "@/core/ui/button";
 import { DataTable } from "@/core/ui/data-table";
 import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input, Select } from "@/core/ui/field";
@@ -64,27 +65,22 @@ export function JobsPage() {
       { accessorKey: "external_ref", header: "Request", cell: (c) => <Mono>#{c.row.original.params.request_display_id ?? c.row.original.external_ref}</Mono> },
       { id: "effective", header: "Ngày hiệu lực", accessorFn: (j) => j.params.effective_date, cell: (c) => <span className="tabular">{formatDate(c.row.original.params.effective_date)}</span> },
       {
-        id: "current",
-        header: "Bước hiện tại",
-        enableSorting: false,
-        cell: (c) => {
-          const j = c.row.original;
-          const st = j.steps.find((s) => s.key === j.current_step);
-          return <span className="block max-w-64 truncate text-muted">{st ? st.title : j.status === "draft" ? "Chưa bắt đầu" : "—"}</span>;
-        },
-      },
-      {
         id: "progress",
         header: "Tiến độ",
         accessorFn: (j) => j.progress.done / Math.max(1, j.progress.total),
         cell: (c) => {
-          const p = c.row.original.progress;
+          const j = c.row.original;
+          const p = j.progress;
+          const st = j.steps.find((s) => s.key === j.current_step);
           return (
-            <span className="flex items-center gap-2">
-              <span className="block h-1.5 w-16 rounded-full bg-surface-2" aria-hidden="true">
-                <span className="block h-1.5 rounded-full bg-primary" style={{ width: `${(p.done / Math.max(1, p.total)) * 100}%` }} />
+            <span className="block">
+              <span className="flex items-center gap-2">
+                <span className="block h-1.5 w-16 rounded-full bg-surface-2" aria-hidden="true">
+                  <span className="block h-1.5 rounded-full bg-primary" style={{ width: `${(p.done / Math.max(1, p.total)) * 100}%` }} />
+                </span>
+                <span className="tabular text-sm">{p.done}/{p.total}</span>
               </span>
-              <span className="tabular text-sm">{p.done}/{p.total}</span>
+              <span className="block max-w-56 truncate text-xs text-muted">{st ? st.title : j.status === "draft" ? "Chưa bắt đầu" : ""}</span>
             </span>
           );
         },
@@ -99,23 +95,26 @@ export function JobsPage() {
     <>
       <PageHeader
         title="Job onboard / offboard"
-        description="Mỗi request RTR (nhân viên mới / nghỉ việc) có một Job. Job nháp được tạo tự động sau mỗi lần đồng bộ; Helpdesk kiểm tra, chọn tài sản rồi bắt đầu."
+        description="Mỗi request RTR (nhân viên mới / nghỉ việc) có một Job. Job nháp được tạo tự động sau mỗi lần đồng bộ; Operator kiểm tra, chọn tài sản rồi bắt đầu."
       />
-      <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="Lọc theo trạng thái">
-        {CHIPS.map((c) => (
-          <button
-            key={c.value || "all"}
-            type="button"
-            aria-pressed={status === c.value}
-            onClick={() => set("status", c.value)}
-            className={cn(
-              "h-7 cursor-pointer rounded-full border px-3 text-sm transition-colors duration-150",
-              status === c.value ? "border-primary bg-primary-soft font-medium text-primary" : "border-line-strong bg-surface hover:bg-surface-2",
-            )}
-          >
-            {c.label} ({countOf(c.value)})
-          </button>
-        ))}
+      {/* Same filter control as the Helpdesk pages; empty states are dimmed, not hidden. */}
+      <div className="mb-3 flex flex-wrap gap-1.5" role="group" aria-label="Lọc theo trạng thái">
+        {CHIPS.map((c) => {
+          const n = countOf(c.value);
+          const on = status === c.value;
+          return (
+            <Button
+              key={c.value || "all"}
+              size="sm"
+              variant={on ? "primary" : "secondary"}
+              aria-pressed={on}
+              onClick={() => set("status", c.value)}
+              className={cn(!on && n === 0 && "text-muted")}
+            >
+              {c.label} <span className="tabular">{n}</span>
+            </Button>
+          );
+        })}
       </div>
       <form role="search" aria-label="Lọc Job" className="mb-3 grid gap-3 sm:grid-cols-[2fr_1fr]" onSubmit={(e) => e.preventDefault()}>
         <Field label="Tìm kiếm">

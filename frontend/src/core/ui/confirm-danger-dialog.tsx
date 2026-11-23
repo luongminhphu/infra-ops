@@ -62,7 +62,7 @@ export function ConfirmDangerDialog({
         }}
       >
         <Field label={inputLabel ?? <>Nhập <strong className="font-mono">{confirmText}</strong> để xác nhận</>}>
-          <Input value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" spellCheck={false} />
+          <Input value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" spellCheck={false} data-autofocus />
         </Field>
       </form>
     </Dialog>

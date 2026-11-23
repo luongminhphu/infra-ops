@@ -43,7 +43,7 @@ export function AssetPicker({ open, onClose, selected, onPick }: { open: boolean
       description={list.data?.as_of ? `Theo lần đồng bộ lúc ${formatDateTime(list.data.as_of)}. Trạng thái được kiểm tra lại trên SDP khi chạy bước gán.` : undefined}>
       <div className="mb-3 grid gap-3 sm:grid-cols-[2fr_1fr]">
         <Field label="Tìm tài sản">
-          <Input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tên, asset tag, serial, model" autoFocus />
+          <Input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tên, asset tag, serial, model" data-autofocus />
         </Field>
         <Field label="Loại">
           <Select value={type} onChange={(e) => setType(e.target.value)}>

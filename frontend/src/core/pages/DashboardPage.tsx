@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarClock, Plug } from "lucide-react";
+import { CalendarClock, ChevronRight, Plug } from "lucide-react";
 import { api } from "@/core/api/client";
 import type { DashboardWidget } from "@/core/api/types";
 import { useAuth } from "@/core/auth/AuthProvider";
@@ -130,10 +130,11 @@ function GettingStarted() {
           <li key={s.to}>
             <Link to={s.to} className="flex h-full gap-3 rounded-sm border border-line p-3 hover:bg-surface-2">
               <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary-soft text-sm font-semibold text-primary tabular">{i + 1}</span>
-              <span>
-                <span className="block font-medium">{s.title}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium text-primary">{s.title}</span>
                 <span className="block text-sm text-muted">{s.detail}</span>
               </span>
+              <ChevronRight className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden="true" />
             </Link>
           </li>
         ))}

@@ -38,7 +38,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   return (
     <Dialog open={open} onClose={onClose} title="Đi tới" size="sm">
       <Input
-        autoFocus
+        data-autofocus
         role="combobox"
         aria-expanded="true"
         aria-controls="palette-list"

@@ -862,3 +862,9 @@ Critique (`/impeccable critique`, 25/40) → đã sửa toàn bộ:
   chưa giao) và *Cần xử lý tiếp* cho Job; lần đầu (chưa có kết nối) hiện 4 bước bắt đầu thay cho các ô số 0.
   Màn trống Đối soát dẫn tới *Thêm kết nối* khi chưa có kết nối.
 - **Điện thoại:** bước hiện tại lên trước danh sách bước, hết tràn ngang, nút *Chụp ảnh* mở camera làm bằng chứng.
+
+**Critique lần 2 (28/40) → đã sửa:** Ctrl K (và mọi hộp thoại có ô nhập) focus đúng ô nhập; trên điện thoại rail
+thành thanh tab ở đáy, thanh *Xác nhận / Báo không đạt* dính đáy, dòng checklist cao 44px, đầu trang Job có
+"Bước N/T"; danh sách Job gộp cột tiến độ, chip lọc cùng kiểu trang Công việc (chip 0 làm mờ); nút *Huỷ Job* /
+*Buộc đóng Job* cùng kiểu nguy hiểm; số 0 không tô màu; ticket quá hạn ghi "Trễ N ngày" (đỏ từ 7 ngày), chỉ hiện
+trạng thái SDP khi khác thường; biểu đồ ghi "(0 trong kỳ)" cho chuỗi trống.

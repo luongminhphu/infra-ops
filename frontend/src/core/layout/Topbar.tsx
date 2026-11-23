@@ -92,7 +92,7 @@ export function Topbar() {
               <span className="flex size-6 items-center justify-center rounded-full bg-primary-soft text-primary">
                 <UserRound className="size-3.5" aria-hidden="true" />
               </span>
-              <span className="hidden max-w-40 truncate sm:inline">{me?.display_name}</span>
+              <span className="sr-only max-w-40 truncate sm:not-sr-only">{me?.display_name}</span>
             </Button>
           )}
         >
