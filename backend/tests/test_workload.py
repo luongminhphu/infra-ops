@@ -139,6 +139,7 @@ async def sdp(admin, respx_mock):  # type: ignore[no-untyped-def]
     await _user(admin, "operator", "wl-op1@test.local")
     await _user(admin, "operator", "wl-op2@test.local")
     await _user(admin, "viewer", "wl-view@test.local")
+    await _user(admin, "supervisor", "wl-sup@test.local")
     from app.modules.workload.sync import run_sync
 
     async with get_sessionmaker()() as s:
@@ -161,16 +162,22 @@ async def test_sync_operator_scope_and_stats(admin, client, sdp) -> None:  # typ
     overdue = (await client.get("/api/workload/tickets?state=overdue")).json()
     assert [t["id"] for t in overdue["items"]] == ["501"]
 
-    st = (await client.get("/api/workload/stats?from=2026-11-01&to=2026-11-30")).json()
+    own = (await client.get("/api/workload/stats?from=2026-11-01&to=2026-11-30")).json()
+    assert own["totals"]["received"] == 2  # operators see only their own figures
+    viewer = await type(client)(transport=client._transport, base_url="http://test").login(
+        "wl-view@test.local"
+    )
+    st = (await viewer.get("/api/workload/stats?from=2026-11-01&to=2026-11-30")).json()
     assert st["bucket"] == "day"
     assert st["totals"]["received"] == 5
     assert (st["totals"]["completed"], st["totals"]["completed_late"], st["totals"]["open"]) == (2, 1, 2)
     t11 = next(t for t in st["technicians"] if t["technician_id"] == "11")
     assert (t11["received"], t11["completed"], t11["on_time_rate"], t11["overdue"]) == (2, 1, 1.0, 1)
     assert sum(p["received"] for p in st["series"]) == 5
-    only12 = (await client.get("/api/workload/stats?from=2026-11-01&to=2026-11-30&technician_id=12")).json()
+    only12 = (await viewer.get("/api/workload/stats?from=2026-11-01&to=2026-11-30&technician_id=12")).json()
     assert only12["totals"]["received"] == 2
     assert (await client.get("/api/workload/stats?from=2026-11-30&to=2026-11-01")).status_code == 400
+    await viewer.aclose()
 
     # Operators can sync but not reassign or change settings.
     assert (await client.post("/api/workload/sync")).status_code == 200
@@ -245,3 +252,44 @@ async def test_manual_link_and_first_sso_login_is_viewer(admin, settings, sdp) -
     assert (await admin.delete(f"/api/workload/technicians/{tid}/user")).status_code == 204
     relinked = {t["id"]: t for t in (await admin.get("/api/workload/technicians")).json()["items"]}[tid]
     assert relinked["user"]["upn"] == "wl-op1@test.local" and not relinked["mapped_manually"]
+
+
+@respx.mock(assert_all_called=False)
+async def test_operator_sees_only_own_tasks_supervisor_coordinates(admin, client, sdp) -> None:  # type: ignore[no-untyped-def]
+    await client.login("wl-op1@test.local")
+    # Asking for someone else's tasks still returns only the operator's own.
+    other = (await client.get("/api/workload/tickets?technician_id=12&state=all")).json()
+    assert {t["technician_id"] for t in other["items"]} == {"11"}
+    unassigned = (await client.get("/api/workload/tickets?technician_id=none&state=all")).json()
+    assert {t["technician_id"] for t in unassigned["items"]} <= {"11"}
+    techs = (await client.get("/api/workload/technicians")).json()
+    assert [t["id"] for t in techs["items"]] == ["11"] and not techs["view_all"]
+    assert techs["unassigned"] == {"open": 0, "overdue": 0}
+    st = (await client.get("/api/workload/stats?from=2026-11-01&to=2026-11-30&technician_id=12")).json()
+    assert [t["technician_id"] for t in st["technicians"]] == ["11"]
+
+    await client.login("wl-sup@test.local")
+    techs = (await client.get("/api/workload/technicians")).json()
+    assert techs["view_all"] and {"11", "12"} <= {t["id"] for t in techs["items"]}
+    resp = await client.post(
+        "/api/workload/tickets/reassign", json={"ticket_ids": ["504"], "to_technician_id": "11"}
+    )
+    assert resp.status_code == 201, resp.text
+    job_id = resp.json()["id"]
+    # No system or module settings, no user management.
+    assert (await client.get("/api/workload/settings")).status_code == 403
+    assert (await client.get("/api/lifecycle/settings")).status_code == 403
+    assert (await client.get("/api/core/users")).status_code == 403
+    assert (await client.post("/api/core/connections", json={})).status_code == 403
+    assert (
+        await client.post(f"/api/core/jobs/{job_id}/cancel", json={"reason": "không cần nữa"})
+    ).status_code == 200
+
+    # Operators cannot see reassignment jobs (they name other operators).
+    await client.login("wl-op1@test.local")
+    assert (await client.get(f"/api/core/jobs/{job_id}")).status_code == 403
+
+    await client.login("wl-mgr@test.local")
+    assert (await client.get("/api/workload/settings")).status_code == 200
+    assert (await client.get("/api/lifecycle/settings")).status_code == 200
+    assert (await client.get("/api/core/users")).status_code == 403

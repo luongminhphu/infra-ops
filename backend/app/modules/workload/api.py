@@ -65,8 +65,20 @@ def ticket_out(t: Ticket, now: datetime) -> dict[str, Any]:
     }
 
 
+VIEW_ALL = "workload.tickets.view_all"
+NO_TECHNICIAN = "__none__"  # matches no ticket
+
+
 async def _my_technician(session: AsyncSession, user: CurrentUser) -> Technician | None:
     return await session.scalar(select(Technician).where(Technician.user_id == user.id))
+
+
+async def _scope(session: AsyncSession, user: CurrentUser, requested: str) -> str:
+    """Technician filter the user may use: operators without view_all only ever see their own tasks."""
+    if requested == "me" or not user.has(VIEW_ALL):
+        me = await _my_technician(session, user)
+        return me.id if me else NO_TECHNICIAN
+    return requested
 
 
 # ---------------------------------------------------------------- technicians (operators)
@@ -95,6 +107,8 @@ async def technicians(
         )
     ).all()
     me = await _my_technician(session, user)
+    if not user.has(VIEW_ALL):
+        rows = [(t, u) for t, u in rows if me is not None and t.id == me.id]
     items = [
         {
             "id": t.id,
@@ -108,11 +122,12 @@ async def technicians(
         }
         for t, u in rows
     ]
-    unassigned = counts.get(None, (0, 0))
+    unassigned = counts.get(None, (0, 0)) if user.has(VIEW_ALL) else (0, 0)
     return {
         "items": items,
         "unassigned": {"open": unassigned[0], "overdue": unassigned[1]},
         "me": me.id if me else None,
+        "view_all": user.has(VIEW_ALL),
     }
 
 
@@ -198,10 +213,8 @@ async def tickets(
         stmt = stmt.where(Ticket.state == "open", Ticket.due_by < now)
     elif state != "all":
         stmt = stmt.where(Ticket.state == state)
-    if technician_id == "me":
-        me = await _my_technician(session, user)
-        stmt = stmt.where(Ticket.technician_id == (me.id if me else "__none__"))
-    elif technician_id == "none":
+    technician_id = await _scope(session, user, technician_id)
+    if technician_id == "none":
         stmt = stmt.where(Ticket.technician_id.is_(None))
     elif technician_id:
         stmt = stmt.where(Ticket.technician_id == technician_id)
@@ -276,7 +289,7 @@ async def reassign(
 # ---------------------------------------------------------------- statistics
 @router.get("/stats")
 async def stats(
-    _: CurrentUser = Depends(stats_perm),
+    user: CurrentUser = Depends(stats_perm),
     session: AsyncSession = Depends(get_session),
     date_from: date = Query(alias="from"),
     date_to: date = Query(alias="to"),
@@ -288,6 +301,7 @@ async def stats(
     end = datetime.combine(date_to + timedelta(days=1), time.min, TZ)
     now = _now()
     bucket = pick_bucket((date_to - date_from).days + 1)
+    technician_id = await _scope(session, user, technician_id)
     scope = [Ticket.technician_id == technician_id] if technician_id else []
 
     created_in = and_(Ticket.created_at >= start, Ticket.created_at < end)

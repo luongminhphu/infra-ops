@@ -12,7 +12,6 @@ from app.core.workflow.definitions import StepContext, StepDefinition, StepOutco
 from app.modules.workload.models import Ticket
 from app.modules.workload.settings import MODULE_ID, SETTINGS_KEY, WorkloadSettings
 
-VIEW = "workload.tickets.view"
 ASSIGN = "workload.tickets.assign"
 
 
@@ -71,7 +70,8 @@ REASSIGN = WorkflowDefinition(
             writes=("sdp",),
         )
     ],
-    view_permission=VIEW,
+    # Reassignments are visible to coordinators only (labels name other operators).
+    view_permission=ASSIGN,
     execute_permission=ASSIGN,
     override_permission=ASSIGN,
 )

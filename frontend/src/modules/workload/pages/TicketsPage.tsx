@@ -246,7 +246,12 @@ export function TicketsPage() {
         }
       />
 
-      {t && (
+      {t && !t.view_all && !t.me && (
+        <p role="status" className="mb-4 rounded-md border border-waiting bg-waiting-soft px-3 py-2 text-sm">
+          Tài khoản của bạn chưa liên kết với technician trên ServiceDesk Plus nên chưa có task nào. Liên hệ Manager để liên kết.
+        </p>
+      )}
+      {t?.view_all && (
         <nav aria-label="Lọc theo Operator" className="mb-4 grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(210px,1fr))]">
           {[
             ...(t.me ? [{ key: "me", name: "Việc của tôi", open: t.items.find((x) => x.id === t.me)?.open ?? 0, overdue: t.items.find((x) => x.id === t.me)?.overdue ?? 0 }] : []),

@@ -39,10 +39,10 @@ CORE_MANIFEST = ModuleManifest(
     name="Hệ thống",
     description="Nền tảng dùng chung: kết nối, phân quyền, nhật ký.",
     permissions=[
-        Permission(DASHBOARD_VIEW, "Xem trang tổng quan", ("manager", "operator", "viewer")),
-        Permission(CONNECTIONS_VIEW, "Xem danh sách kết nối hệ thống", ("manager", "operator")),
+        Permission(DASHBOARD_VIEW, "Xem trang tổng quan", ("manager", "supervisor", "operator", "viewer")),
+        Permission(CONNECTIONS_VIEW, "Xem danh sách kết nối hệ thống", ("manager", "supervisor", "operator")),
         Permission(CONNECTIONS_MANAGE, "Thêm, sửa, xoá kết nối và nhập secret"),
-        Permission(CONNECTIONS_TEST, "Kiểm tra kết nối", ("manager", "operator")),
+        Permission(CONNECTIONS_TEST, "Kiểm tra kết nối", ("manager", "supervisor", "operator")),
         Permission(AUDIT_VIEW, "Xem nhật ký kiểm tra", ("manager",)),
         Permission(RBAC_MANAGE, "Quản lý người dùng và phân quyền"),
     ],
