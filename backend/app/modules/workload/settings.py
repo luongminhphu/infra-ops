@@ -4,10 +4,27 @@ from __future__ import annotations
 
 import uuid
 
-from pydantic import BaseModel, Field
+from jinja2 import TemplateSyntaxError
+from jinja2.sandbox import SandboxedEnvironment
+from pydantic import BaseModel, Field, field_validator
 
 MODULE_ID = "workload"
 SETTINGS_KEY = "main"
+
+
+DEFAULT_PO_SUBJECT = "[IT] Đề nghị mua thiết bị {{ po_number }} – {{ total }}"
+DEFAULT_PO_BODY = """Kính gửi Phòng Mua hàng,
+
+Bộ phận IT đề nghị mua thiết bị theo {{ po_number }} ngày {{ date }}, gồm {{ item_count }} hạng mục, \
+tổng giá trị dự kiến {{ total }} (hạn mức mỗi PO: {{ limit }}).
+
+Chi tiết:
+{{ items_text }}
+
+Bảng chi tiết và bằng chứng phê duyệt của Function Head được đính kèm email này.
+
+Trân trọng,
+{{ closed_by }}"""
 
 
 class WorkloadSettings(BaseModel):
@@ -33,3 +50,19 @@ class WorkloadSettings(BaseModel):
             "repair": ["sửa chữa", "sửa máy", "bảo hành", "hỏng", "repair"],
         }
     )
+    # Purchase orders: approved proposals are packed into POs whose value stays within this limit (VND).
+    po_limit_vnd: int = Field(200_000_000, ge=1_000_000, le=100_000_000_000)
+    # Draft e-mail generated when a PO is closed (.eml, opens in Outlook as an unsent draft).
+    po_email_to: list[str] = Field(default_factory=list)
+    po_email_cc: list[str] = Field(default_factory=list)
+    po_email_subject: str = Field(DEFAULT_PO_SUBJECT, min_length=3, max_length=300)
+    po_email_body: str = Field(DEFAULT_PO_BODY, min_length=10, max_length=10000)
+
+    @field_validator("po_email_subject", "po_email_body")
+    @classmethod
+    def _template(cls, value: str) -> str:
+        try:
+            SandboxedEnvironment().parse(value)
+        except TemplateSyntaxError as exc:
+            raise ValueError(f"Mẫu email sai cú pháp (dòng {exc.lineno}): {exc.message}") from exc
+        return value

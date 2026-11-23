@@ -195,3 +195,41 @@ def test_reconcile_duplicate_and_name_fallback() -> None:
     assert any(n["rule"] == "sdp_no_employee_ids" for n in result.notes)
     row = result.rows[0]
     assert row.asset_ids == ["z"] and "nối theo họ tên" in row.cells["assets"]["detail"]
+
+
+def test_allocation_reuses_stock_by_date_and_band() -> None:
+    from datetime import date
+
+    from app.modules.lifecycle.allocation import Need, allocate, items_for
+    from app.modules.lifecycle.settings import StandardItem
+
+    std = [
+        StandardItem(label="Laptop", product_types=["Laptop"]),
+        StandardItem(
+            label="Laptop cao cấp", bands=["B5", "b6"], product_types=["Laptop"], product_contains="XPS"
+        ),
+        StandardItem(label="Màn hình", product_types=["Monitor"], quantity=2),
+    ]
+    assert [i.label for i in items_for("b 6", std)] == ["Laptop", "Laptop cao cấp", "Màn hình"]
+    stock = [
+        {"id": "l1", "product_type": "Laptop", "product": "Dell Latitude"},
+        {"id": "l2", "product_type": "laptop", "product": "Dell XPS 13"},
+        {"id": "m1", "product_type": "Monitor", "product": "P2422H"},
+        {"id": "m2", "product_type": "Monitor", "product": "P2422H"},
+    ]
+    needs = [
+        Need("late", date(2026, 12, 20), "B3"),
+        Need("early", date(2026, 12, 1), "B5", picked=[{"id": "m2", "product_type": "Monitor"}]),
+        Need("noband", date(2026, 11, 30), None),
+    ]
+    plan = allocate(needs, std, stock)
+    early = {ln.label: ln for ln in plan["early"]}
+    # The earlier onboard is served first; its draft-picked monitor counts before free stock.
+    assert [a["id"] for a in early["Laptop"].reuse] == ["l1"]
+    assert [a["id"] for a in early["Laptop cao cấp"].reuse] == ["l2"]
+    assert [a["id"] for a in early["Màn hình"].picked] == ["m2"] and [
+        a["id"] for a in early["Màn hình"].reuse
+    ] == ["m1"]
+    late = {ln.label: ln for ln in plan["late"]}
+    assert late["Laptop"].buy == 1 and late["Màn hình"].buy == 2 and "Laptop cao cấp" not in late
+    assert plan["noband"] == []

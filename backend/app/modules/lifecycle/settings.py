@@ -26,6 +26,7 @@ DEFAULT_LABELS: dict[str, str] = {
     "phone": "Số điện thoại",
     "manager": "Quản lý trực tiếp",
     "indirect_manager": "Quản lý gián tiếp",
+    "band": "Band",
 }
 
 FIELD_TITLES: dict[str, str] = {
@@ -42,9 +43,29 @@ FIELD_TITLES: dict[str, str] = {
     "phone": "Số điện thoại",
     "manager": "Quản lý trực tiếp",
     "indirect_manager": "Quản lý gián tiếp",
+    "band": "Band",
 }
 
 REQUIRED_FIELDS = ("employee_id", "full_name", "change_type")
+
+
+class StandardItem(BaseModel):
+    """One line of the device allocation standard: what a new employee of these bands receives."""
+
+    label: str = Field(min_length=1, max_length=100)  # e.g. "Laptop tiêu chuẩn"
+    bands: list[str] = Field(default_factory=list)  # empty = every band
+    product_types: list[str] = Field(min_length=1)  # SDP product types that satisfy this line
+    product_contains: str = Field("", max_length=100)  # optional: model must contain this text
+    quantity: int = Field(1, ge=1, le=10)
+    catalog_name: str = Field("", max_length=300)  # price-list item to propose when buying new
+
+
+DEFAULT_STANDARD = [
+    StandardItem(label="Laptop", product_types=["Laptop"], catalog_name=""),
+    StandardItem(label="Màn hình", product_types=["Monitor"]),
+    StandardItem(label="Chuột", product_types=["Mouse"]),
+    StandardItem(label="Bàn phím", product_types=["Keyboard"]),
+]
 
 
 class LifecycleSettings(BaseModel):
@@ -72,6 +93,13 @@ class LifecycleSettings(BaseModel):
     onboard_grace_days: int = Field(3, ge=0, le=60)
     offboard_grace_days: int = Field(0, ge=0, le=60)
     snapshot_retention_days: int = Field(90, ge=7, le=730)
+
+    # Device allocation standard by band (inventory check for onboard requests)
+    allocation_standard: list[StandardItem] = Field(
+        default_factory=lambda: [i.model_copy() for i in DEFAULT_STANDARD]
+    )
+    # Onboard requests whose effective date is older than this are no longer planned.
+    allocation_past_days: int = Field(30, ge=0, le=365)
 
     # Documents (Phase 3)
     reviewer_name: str = Field("", max_length=200)

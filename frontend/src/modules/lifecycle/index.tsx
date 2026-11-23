@@ -3,6 +3,7 @@ import type { FrontendModule } from "@/core/modules";
 import { DocumentPage } from "./pages/DocumentPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { FlowsPage } from "./pages/FlowsPage";
+import { InventoryPage } from "./pages/InventoryPage";
 import { JobPage } from "./pages/JobPage";
 import { JobsPage } from "./pages/JobsPage";
 import { ReconciliationPage } from "./pages/ReconciliationPage";
@@ -19,6 +20,7 @@ export const lifecycleModule: FrontendModule = {
   routes: [
     { path: "lifecycle/jobs", element: <RequirePermission permission="lifecycle.job.view"><JobsPage /></RequirePermission> },
     { path: "lifecycle/flows", element: <RequirePermission permission="lifecycle.job.view"><FlowsPage /></RequirePermission> },
+    { path: "lifecycle/inventory", element: <RequirePermission permission="lifecycle.job.view"><InventoryPage /></RequirePermission> },
     { path: "lifecycle/jobs/:id", element: <RequirePermission permission="lifecycle.job.view"><JobPage /></RequirePermission> },
     { path: "lifecycle/reconciliation", element: <RequirePermission permission="lifecycle.reconciliation.view"><ReconciliationPage /></RequirePermission> },
     { path: "lifecycle/requests", element: <RequirePermission permission="lifecycle.reconciliation.view"><RequestsPage /></RequirePermission> },

@@ -1,163 +1,75 @@
-import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ColumnDef } from "@tanstack/react-table";
-import { Download, Plus, ShoppingCart } from "lucide-react";
-import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
+import { useSearchParams } from "react-router-dom";
+import { Download, Plus } from "lucide-react";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { Button } from "@/core/ui/button";
-import { DataTable } from "@/core/ui/data-table";
-import { Dialog } from "@/core/ui/dialog";
-import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
-import { Field, Textarea } from "@/core/ui/field";
-import { StatusBadge } from "@/core/ui/status";
-import { formatDate } from "@/core/lib/format";
-import { cn } from "@/core/lib/cn";
-import type { Purchase, PurchaseStatus } from "../api";
-import { KIND_LABEL, PURCHASE_STATUS } from "../labels";
-import { PurchaseDialog } from "../PurchaseDialog";
+import { PageHeader } from "@/core/ui/feedback";
+import { Tabs } from "@/core/ui/tabs";
+import type { DeviceNeed } from "../api";
+import { PurchaseDialog, type PurchasePrefill } from "../PurchaseDialog";
+import { CatalogTab } from "../purchases/CatalogTab";
+import { PoTab } from "../purchases/PoTab";
+import { ProposalsTab } from "../purchases/ProposalsTab";
 
-const ACTION_LABEL: Record<PurchaseStatus, string> = {
-  approved: "Duyệt",
-  ordered: "Đã đặt mua",
-  received: "Đã nhận hàng",
-  rejected: "Từ chối",
-  proposed: "Mở lại",
-};
+const TABS = [
+  { key: "proposals", label: "Đề xuất" },
+  { key: "pos", label: "PO tổng" },
+  { key: "catalog", label: "Bảng giá" },
+];
+
+/** Prefill from a link (e.g. Kho & cấp phát → “Lập đề xuất mua”): ?new=1&source=onboard&ref=…&item=… */
+function prefillFrom(params: URLSearchParams): PurchasePrefill | null {
+  if (params.get("new") !== "1") return null;
+  const qty = Number(params.get("qty"));
+  return {
+    kind: (params.get("kind") as DeviceNeed | "new" | null) ?? "new",
+    item: params.get("item") ?? "",
+    catalogName: params.get("catalog") ?? "",
+    quantity: qty > 0 ? qty : 1,
+    source: params.get("source") === "onboard" ? "onboard" : "manual",
+    sourceRef: params.get("ref") ?? undefined,
+    employee: params.get("employee") ?? "",
+    reason: params.get("reason") ?? "",
+  };
+}
 
 export function PurchasesPage() {
   const { can } = useAuth();
-  const qc = useQueryClient();
-  const [status, setStatus] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [rejecting, setRejecting] = useState<Purchase | null>(null);
-  const [note, setNote] = useState("");
-  const q = useQuery({
-    queryKey: ["workload", "purchases", status],
-    queryFn: () => api<{ items: Purchase[]; counts: Record<string, number> }>(`/api/workload/purchases?${new URLSearchParams({ status })}`),
-  });
-  const move = useMutation({
-    mutationFn: ({ id, to, note }: { id: string; to: PurchaseStatus; note?: string }) =>
-      api<Purchase>(`/api/workload/purchases/${id}`, { method: "PATCH", json: { status: to, note: note ?? "" } }),
-    onSuccess: (p) => {
-      toast.success(`“${p.item}”: ${PURCHASE_STATUS[p.status]!.label}.`);
-      setRejecting(null);
-      void qc.invalidateQueries({ queryKey: ["workload", "purchases"] });
-    },
-    onError: (e) => toast.error(errorMessage(e)),
-  });
-  const counts = q.data?.counts ?? {};
-  const total = Object.values(counts).reduce((a, b) => a + b, 0);
-  const manage = can("workload.purchase.manage");
-
-  const columns = useMemo<ColumnDef<Purchase, unknown>[]>(
-    () => [
-      { accessorKey: "created_at", header: "Ngày", cell: (c) => <span className="tabular whitespace-nowrap">{formatDate(c.row.original.created_at)}</span> },
-      {
-        accessorKey: "item",
-        header: "Thiết bị",
-        cell: (c) => (
-          <span className="block max-w-80">
-            <span className="block font-medium">{c.row.original.item} × {c.row.original.quantity}</span>
-            {c.row.original.reason && <span className="block truncate text-xs text-muted" title={c.row.original.reason}>{c.row.original.reason}</span>}
-          </span>
-        ),
+  const [params, setParams] = useSearchParams();
+  const tab = TABS.some((t) => t.key === params.get("tab")) ? params.get("tab")! : "proposals";
+  const prefill = prefillFrom(params);
+  const update = (patch: Record<string, string | null>) =>
+    setParams(
+      (cur) => {
+        const next = new URLSearchParams(cur);
+        for (const [k, v] of Object.entries(patch)) v === null ? next.delete(k) : next.set(k, v);
+        return next;
       },
-      { accessorKey: "kind", header: "Loại", cell: (c) => KIND_LABEL[c.row.original.kind] },
-      { accessorKey: "ticket_display_id", header: "Request", cell: (c) => (c.row.original.ticket_display_id ? <Mono>#{c.row.original.ticket_display_id}</Mono> : "—") },
-      { accessorKey: "created_by", header: "Người đề xuất", cell: (c) => <span className="whitespace-nowrap">{c.row.original.created_by}</span> },
-      {
-        accessorKey: "status",
-        header: "Trạng thái",
-        cell: (c) => (
-          <span className="block">
-            <StatusBadge {...PURCHASE_STATUS[c.row.original.status]!} />
-            {c.row.original.note && <span className="mt-0.5 block max-w-48 truncate text-xs text-muted" title={c.row.original.note}>{c.row.original.note}</span>}
-          </span>
-        ),
-      },
-      ...(manage
-        ? [
-            {
-              id: "actions",
-              header: "Cập nhật",
-              enableSorting: false,
-              cell: (c: { row: { original: Purchase } }) => (
-                <span className="flex flex-wrap gap-1.5">
-                  {c.row.original.next.map((to) => (
-                    <Button
-                      key={to}
-                      size="sm"
-                      variant={to === "rejected" ? "ghost" : "secondary"}
-                      className={cn(to === "rejected" && "text-failed")}
-                      loading={move.isPending && move.variables?.id === c.row.original.id && move.variables?.to === to}
-                      onClick={() => (to === "rejected" ? (setNote(""), setRejecting(c.row.original)) : move.mutate({ id: c.row.original.id, to }))}
-                    >
-                      {ACTION_LABEL[to]}
-                    </Button>
-                  ))}
-                </span>
-              ),
-            } as ColumnDef<Purchase, unknown>,
-          ]
-        : []),
-    ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [manage, move.isPending, move.variables],
-  );
+      { replace: true },
+    );
+  const closeNew = () => update({ new: null, source: null, ref: null, item: null, catalog: null, qty: null, kind: null, employee: null, reason: null });
 
   return (
     <>
       <PageHeader
         title="Đề xuất mua thiết bị"
-        description="Đề xuất từ request thay thế, nâng cấp hoặc sửa chữa thiết bị. Lưu trong infra-ops và xuất Excel gửi bộ phận mua hàng – không ghi lên ServiceDesk Plus."
+        description="Operator đề xuất kèm bằng chứng Function Head duyệt → Supervisor duyệt → hệ thống gom PO tổng theo hạn mức → Supervisor chốt PO và gửi email cho Phòng Mua hàng. Không ghi lên ServiceDesk Plus."
         actions={
           <>
             <a className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-line-strong bg-surface px-3 font-medium hover:bg-surface-2" href="/api/workload/purchases/export">
               <Download className="size-4" aria-hidden="true" />Xuất Excel
             </a>
             {can("workload.purchase.create") && (
-              <Button variant="primary" onClick={() => setCreating(true)}><Plus className="size-4" aria-hidden="true" />Đề xuất mới</Button>
+              <Button variant="primary" onClick={() => update({ new: "1" })}><Plus className="size-4" aria-hidden="true" />Đề xuất mới</Button>
             )}
           </>
         }
       />
-      <div role="group" aria-label="Lọc theo trạng thái" className="mb-3 flex flex-wrap gap-1.5">
-        {[["", "Tất cả", total] as const, ...Object.entries(PURCHASE_STATUS).map(([k, v]) => [k, v.label, counts[k] ?? 0] as const)].map(([k, label, n]) => (
-          <Button key={k || "all"} size="sm" variant={status === k ? "primary" : "secondary"} aria-pressed={status === k} className={cn(status !== k && n === 0 && "text-muted")} onClick={() => setStatus(k)}>
-            {label} <span className="tabular">{n}</span>
-          </Button>
-        ))}
-      </div>
-      {q.isError && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
-      {q.isLoading ? (
-        <div className="rounded-md border border-line bg-surface"><LoadingRows rows={6} /></div>
-      ) : (
-        <DataTable
-          data={q.data?.items ?? []}
-          columns={columns}
-          caption="Đề xuất mua thiết bị"
-          getRowId={(p) => p.id}
-          empty={<EmptyState icon={ShoppingCart} title="Chưa có đề xuất">Operator lập đề xuất từ gợi ý ở trang Việc của tôi, hoặc bấm “Đề xuất mới”.</EmptyState>}
-        />
-      )}
-      {creating && <PurchaseDialog onClose={() => setCreating(false)} />}
-      <Dialog
-        open={rejecting !== null}
-        onClose={() => setRejecting(null)}
-        title={`Từ chối “${rejecting?.item ?? ""}”?`}
-        size="sm"
-        footer={
-          <>
-            <Button onClick={() => setRejecting(null)}>Huỷ</Button>
-            <Button variant="danger" disabled={note.trim().length < 3} loading={move.isPending} onClick={() => rejecting && move.mutate({ id: rejecting.id, to: "rejected", note })}>Từ chối</Button>
-          </>
-        }
-      >
-        <Field label="Lý do từ chối" required hint="Người đề xuất thấy lý do này trong danh sách.">
-          <Textarea data-autofocus rows={2} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} />
-        </Field>
-      </Dialog>
+      <Tabs label="Mua thiết bị" tabs={TABS} value={tab} onChange={(k) => update({ tab: k === "proposals" ? null : k })}>
+        {tab === "proposals" && <ProposalsTab />}
+        {tab === "pos" && <PoTab />}
+        {tab === "catalog" && <CatalogTab />}
+      </Tabs>
+      {prefill && can("workload.purchase.create") && <PurchaseDialog prefill={prefill} onClose={closeNew} />}
     </>
   );
 }

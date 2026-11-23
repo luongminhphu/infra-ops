@@ -887,3 +887,24 @@ Quyết định (theo trả lời của product owner):
   điểm chuyển giao, bước hiện tại nhấp nháy (tắt khi giảm chuyển động); bản checklist cũ nằm trong mục mở rộng.
 - **Portal `/me/work`** là trang core; module khai báo `portal` section (lifecycle: Job của tôi; workload: task
   và gợi ý mua). `GET /api/core/jobs?assignee=me&workflows=…` cho danh sách Job theo người.
+
+## 21. Phase 9 – PO tổng, bảng giá, engine kho & cấp phát (23/11/2026)
+
+Quyết định (theo trả lời của product owner):
+- **Band lấy từ request RTR** (nhãn cấu hình được, mặc định “Band”); nhập tay trên app khi thiếu/sai
+  (`lifecycle_request.band_override`, audit `lifecycle.band_set`).
+- **Đơn giá từ bảng giá** (`workload_catalog_item`) do Supervisor/Manager cập nhật sau khi đối tác báo giá
+  (`workload.catalog.manage`). Giá đổi → PO nháp được gom lại; PO đã chốt giữ giá lúc chốt (`unit_price` đóng băng).
+- **Gom PO**: chỉ đề xuất **đã duyệt**; duyệt cần ≥1 bằng chứng Function Head (`workload_purchase_evidence`, file
+  qua core storage, magic-byte) và thiết bị có giá. Thuật toán first-fit theo thời điểm duyệt (`po.pack`, có unit
+  test); hạng mục đơn lẻ vượt hạn mức nằm riêng một PO và được cảnh báo. `repack` chạy sau duyệt/từ chối, đổi giá,
+  đổi hạn mức, dưới advisory lock. PO nháp chưa có số; số `PO-<năm>-<STT>` cấp khi chốt.
+- **Chốt PO** (`workload.po.close`, Supervisor/Manager): kiểm tra tổng tiền người dùng đã thấy (`po_changed` nếu
+  vừa đổi), chuyển đề xuất sang `ordered`, audit `workload.po_closed`. **Email nháp = file .eml** (`X-Unsent: 1`,
+  mở bằng Outlook), mẫu tiêu đề/nội dung Jinja sandbox trong cấu hình (kiểm tra cú pháp khi lưu), đính kèm Excel
+  chi tiết và bằng chứng. Không dùng Exchange (tích hợp Microsoft vẫn tạm hoãn).
+- **Engine kho & cấp phát** (`lifecycle/allocation.py`, hàm thuần có test): band → tiêu chuẩn → tài sản In Store
+  từ snapshot đồng bộ gần nhất; ưu tiên ngày hiệu lực sớm; tài sản đã chọn trên Job nháp được giữ. Thiếu → gợi ý
+  lập đề xuất mua (liên kết sang module workload qua URL, không import chéo module).
+- **Tooltip hướng dẫn**: core `HelpTip` (nút “?” mở ghi chú, chạm/bàn phím được, Esc đóng) trên các phần mới.
+

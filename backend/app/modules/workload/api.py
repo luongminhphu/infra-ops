@@ -23,6 +23,7 @@ from app.core.settings.service import load_settings, save_settings
 from app.core.workflow.api import job_out
 from app.core.workflow.engine import create_job, start_job
 from app.modules.workload.models import Technician, Ticket
+from app.modules.workload.po import repack
 from app.modules.workload.rules import pick_bucket
 from app.modules.workload.settings import MODULE_ID, SETTINGS_KEY, WorkloadSettings
 from app.modules.workload.sync import SYNC_TASK_KEY, auto_link, reclassify
@@ -417,6 +418,7 @@ async def put_settings(
     settings = await save_settings(session, user.actor, MODULE_ID, SETTINGS_KEY, WorkloadSettings, body)
     # Status lists and device keywords changed: apply them to every stored ticket now.
     await reclassify(session, settings, only_missing=False)
+    await repack(session, settings)  # the PO limit may have changed
     await session.commit()
     return {"values": settings.model_dump(mode="json")}
 

@@ -64,6 +64,8 @@ class LifecycleRequest(Base):
     technician_id: Mapped[str | None] = mapped_column(String(32))
     technician_name: Mapped[str | None] = mapped_column(String(256))
     technician_email: Mapped[str | None] = mapped_column(String(320))
+    # Band entered in infra-ops when the RTR request has none (or a wrong one); wins over the parsed value.
+    band_override: Mapped[str | None] = mapped_column(String(32))
     last_synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
