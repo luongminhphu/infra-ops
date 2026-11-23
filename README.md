@@ -21,7 +21,10 @@ Tài liệu: [kiến trúc](docs/architecture.md) · [thêm module](docs/adding-
 | 1 | Platform Core: module, đăng nhập, RBAC, kết nối hệ thống (SDP, BioStar), audit, design system | Xong |
 | 2 | SDP + BioStar: đọc request RTR, user, tài sản, user BioStar; đối soát theo Mã NV; export; bộ lập lịch nền | Xong |
 | 3 | Biên bản Bàn giao / Thu hồi theo mẫu thật: mẫu có phiên bản, số tự sinh, PDF, tải bản ký, đính kèm SDP | Xong |
-| 4 | Workflow Onboard / Offboard từ request SDP (gán/thu hồi tài sản, BioStar, biên bản, đóng request) | **Xong** |
+| 4 | Workflow Onboard / Offboard từ request SDP (gán/thu hồi tài sản, BioStar, biên bản, đóng request) | Xong |
+| 5 | Vai trò Manager / Operator / Viewer; module **Công việc Helpdesk**: task SDP theo Operator, chuyển việc (ghi sang SDP), thống kê theo kỳ | **Xong** |
+| 6 | Lưu đồ Onboard/Offboard, checklist từng bước, Operator xác nhận kèm bằng chứng | Kế tiếp |
+| 7 | Áp dụng giao diện hướng B “Phòng điều khiển” cho toàn app | Kế tiếp |
 | sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
 
 ## Chạy local
@@ -108,7 +111,14 @@ Mở http://<máy-chủ>:8080 và đăng nhập bằng tài khoản vừa tạo.
 | `oidc` | SSO Microsoft Entra ID (khi đã có App Registration): đặt `INFRAOPS_OIDC_TENANT_ID`, `INFRAOPS_OIDC_CLIENT_ID`, `INFRAOPS_OIDC_CLIENT_SECRET`; redirect URI `https://<host>/api/core/auth/oidc/callback` |
 | `dev` | Chỉ để phát triển |
 
-Vai trò được gán hoàn toàn trong app (Người dùng & quyền).
+Vai trò được gán hoàn toàn trong app (Người dùng & quyền). Người đăng nhập SSO lần đầu là **Chỉ xem**.
+
+| Vai trò | Quyền chính |
+|---|---|
+| Quản trị | Toàn quyền, cấu hình kết nối hệ thống và phân quyền |
+| Manager | Mọi quyền của Operator + giao/chuyển task giữa các Operator (ghi sang SDP), cấu hình module Công việc, đóng Job bắt buộc, xem nhật ký |
+| Operator | Thực hiện các task trên app (Job onboard/offboard, biên bản, đồng bộ) |
+| Chỉ xem | Chỉ đọc |
 
 ## Kết nối hệ thống (Admin)
 
@@ -153,6 +163,18 @@ Vai trò được gán hoàn toàn trong app (Người dùng & quyền).
    Job tự đính kèm biên bản, ghi chú và đóng request SDP.
 5. Bước lỗi có thể **Chạy lại** (an toàn: bước đọc trạng thái hiện tại trước khi ghi); trạng thái trước khi thay
    đổi được lưu ở từng bước để khôi phục thủ công. Admin có thể **Đóng Job bắt buộc** kèm lý do.
+
+### Module Công việc Helpdesk
+1. **Cấu hình công việc**: chọn kết nối SDP (dùng credential Read để đọc, Write để chuyển việc), nhóm hỗ trợ cần
+   lấy (để trống = tất cả) và các trạng thái được tính là *đã thực hiện* / *đã huỷ*.
+2. Worker đọc technician và request mỗi 10 phút (lần đầu đọc 400 ngày gần nhất, sau đó chỉ đọc request mới cập nhật).
+   Technician tự liên kết với tài khoản infra-ops khi e-mail trên SDP trùng tên đăng nhập; chọn tay ở bảng
+   **Operator ↔ Technician SDP** nếu khác.
+3. **Công việc**: task đang chờ / quá hạn / đã thực hiện theo từng Operator, “Việc của tôi”. Manager chọn task →
+   **Chuyển việc** (vd. khi nghỉ phép): infra-ops đổi Technician trên SDP qua worker, ghi nhật ký; lỗi hiện ngay
+   trên trang kèm nút **Thử lại**.
+4. **Thống kê công việc**: tuần / tháng / quý / 6 tháng / 1 năm hoặc khoảng ngày tuỳ chọn; tiếp nhận, hoàn tất,
+   đúng hạn / trễ hạn, thời gian xử lý trung bình, đang chờ và quá hạn theo Operator.
 
 ### Suprema BioStar 2
 1. Tạo tài khoản BioStar riêng: Read = quyền xem User/Access Group; Write = Operator/Administrator có quyền quản lý User.

@@ -40,9 +40,9 @@ async def test_logout_invalidates_session(client) -> None:  # type: ignore[no-un
     assert (await client.get("/api/core/me")).status_code == 401
 
 
-async def test_helpdesk_defaults(admin, client) -> None:  # type: ignore[no-untyped-def]
+async def test_operator_defaults(admin, client) -> None:  # type: ignore[no-untyped-def]
     roles = {r["code"]: r for r in (await admin.get("/api/core/roles")).json()}
-    hd = roles["helpdesk"]
+    hd = roles["operator"]
     assert "lifecycle.job.execute" in hd["permissions"]
     assert "core.connections.manage" not in hd["permissions"]
     created = await admin.post(

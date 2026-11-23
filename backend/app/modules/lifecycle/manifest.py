@@ -50,15 +50,21 @@ manifest = ModuleManifest(
     name="Vòng đời nhân sự",
     description="Onboard/Offboard nhân sự và đối soát tài khoản, tài sản, ra vào.",
     permissions=[
-        Permission("lifecycle.job.view", "Xem Job onboard/offboard", ("helpdesk", "viewer")),
-        Permission("lifecycle.job.execute", "Thực thi Job onboard/offboard", ("helpdesk",)),
-        Permission("lifecycle.job.override_close", "Đóng Job khi chưa có biên bản đã ký"),
-        Permission("lifecycle.reconciliation.view", "Xem đối soát", ("helpdesk", "viewer")),
+        Permission("lifecycle.job.view", "Xem Job onboard/offboard", ("manager", "operator", "viewer")),
+        Permission("lifecycle.job.execute", "Thực thi Job onboard/offboard", ("manager", "operator")),
+        Permission("lifecycle.job.override_close", "Đóng Job khi chưa có biên bản đã ký", ("manager",)),
+        Permission("lifecycle.reconciliation.view", "Xem đối soát", ("manager", "operator", "viewer")),
         Permission(
-            "lifecycle.reconciliation.sync", "Đồng bộ dữ liệu và đánh dấu lệch đã biết", ("helpdesk",)
+            "lifecycle.reconciliation.sync",
+            "Đồng bộ dữ liệu và đánh dấu lệch đã biết",
+            ("manager", "operator"),
         ),
-        Permission("lifecycle.documents.view", "Xem biên bản bàn giao/thu hồi", ("helpdesk", "viewer")),
-        Permission("lifecycle.documents.create", "Lập, chốt biên bản và tải bản đã ký", ("helpdesk",)),
+        Permission(
+            "lifecycle.documents.view", "Xem biên bản bàn giao/thu hồi", ("manager", "operator", "viewer")
+        ),
+        Permission(
+            "lifecycle.documents.create", "Lập, chốt biên bản và tải bản đã ký", ("manager", "operator")
+        ),
         Permission("lifecycle.templates.manage", "Quản lý mẫu biên bản và huỷ biên bản đã chốt"),
         Permission("lifecycle.settings.manage", "Cấu hình mapping của module"),
     ],

@@ -38,6 +38,10 @@
   --mismatch: light-dark(#a3245a, #ee8ab4);
   --mismatch-soft: light-dark(#f9e5ee, #41202f);
 
+  /* Chart series (categorical, validated with the dataviz validator; never status colours) */
+  --series-1: light-dark(#2a78d6, #3987e5);
+  --series-2: light-dark(#eb6834, #d95926);
+
   /* Type */
   --font-sans: "Be Vietnam Pro", "Noto Sans", system-ui, sans-serif;
   --font-mono: "JetBrains Mono Variable", ui-monospace, "Cascadia Mono", monospace;
