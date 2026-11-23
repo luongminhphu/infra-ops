@@ -16,6 +16,7 @@ import {
   Workflow,
   ListChecks,
   ChartColumn,
+  Route,
 } from "lucide-react";
 
 /** Icon names used by backend manifests (nav items, connectors) → components. */
@@ -35,6 +36,7 @@ const ICONS: Record<string, LucideIcon> = {
   "file-cog": FileCog,
   "list-checks": ListChecks,
   "chart-column": ChartColumn,
+  route: Route,
 };
 
 export function iconFor(name: string): LucideIcon {

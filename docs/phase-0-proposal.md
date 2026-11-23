@@ -832,3 +832,17 @@ Theo câu trả lời ở §16:
 - **Lưu đồ:** trang *Lưu đồ quy trình* và nút *Lưu đồ* trên Job (trạng thái từng bước + checklist đã tick).
 - Checklist mặc định: bước ghi SDP/BioStar và bước thu hồi/đăng ký vân tay **bắt buộc bằng chứng**; kiểm tra
   request, xác định user SDP, biên bản, đóng request chỉ cần tick checklist. Manager chỉnh lại được.
+
+---
+
+## 18. Phase 7 – Giao diện “Phòng điều khiển” (23/11/2026)
+
+- Áp dụng hướng **B** đã chọn (mockup `docs/design/redesign-mockup.html`) cho toàn app; chi tiết trong
+  `docs/design-system.md`.
+- Khung mới: **rail phân hệ** (Tổng quan · Vòng đời · Công việc · Hệ thống ở dưới cùng) + **menu con** của phân hệ
+  đang mở; màn hình hẹp hiện menu con thành thanh cuộn ngang. Thêm mục *Job onboard / offboard* vào menu
+  (trước đây chỉ vào được từ request/dashboard).
+- Token: slate + cobalt, `rail`, `shadow-card`, bo góc 10px cho panel, badge trạng thái dạng viên thuốc; font Inter
+  (bỏ Be Vietnam Pro). Mọi cặp chữ/nền ≥ 4,5:1 và viền điều khiển/viền focus ≥ 3:1 ở cả hai giao diện (đã tính).
+- Ô KPI chỉ tô màu khi số lỗi/cần chú ý > 0.
+- axe-core: 0 lỗi trên 16 trang + trang đăng nhập, sáng và tối.
