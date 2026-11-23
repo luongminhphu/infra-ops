@@ -76,16 +76,20 @@ Test không bao giờ gọi hệ thống thật: SDP/BioStar được mock bằn
 
 ## Triển khai
 
-### docker-compose (1 máy chủ)
+### docker-compose (1 máy chủ Ubuntu)
+
+Hướng dẫn đầy đủ (cài Docker, `.env`, HTTPS bằng nginx, SSO, CA nội bộ, sao lưu/khôi phục, nâng cấp, sự cố):
+**[docs/install-ubuntu-docker.md](docs/install-ubuntu-docker.md)**. Tóm tắt:
 
 ```bash
-cp .env.example .env     # điền INFRAOPS_MASTER_KEYS, INFRAOPS_SIGNING_SECRET, POSTGRES_PASSWORD
+cp .env.example .env     # điền INFRAOPS_MASTER_KEYS, INFRAOPS_SIGNING_SECRET, POSTGRES_PASSWORD, INFRAOPS_PUBLIC_BASE_URL
 docker compose up -d --build
-docker compose run --rm api python -m app.cli create-admin --username admin --name "Quản trị"
+docker compose exec api python -m app.cli create-admin --username admin --name "Quản trị"
 ```
 
-Mở http://<máy-chủ>:8080 và đăng nhập bằng tài khoản vừa tạo. Compose chạy 4 dịch vụ: `db`, `api`,
-`worker` (tác vụ nền: đồng bộ SDP/BioStar) và `web`.
+Compose chạy `db`, `migrate` (một lần), `api`, `worker` (đồng bộ SDP/BioStar, chạy Job) và `web` (cổng 8080,
+đặt `INFRAOPS_HTTP_BIND=127.0.0.1:8080` khi đứng sau nginx HTTPS trên máy chủ). Đăng nhập cần HTTPS vì cookie
+phiên có cờ `Secure`.
 
 ### Kubernetes (Rancher)
 

@@ -24,7 +24,7 @@ from app.core.logging import CorrelationIdMiddleware, configure_logging, get_log
 from app.core.modules.registry import ModuleRegistry, build_registry, set_registry
 from app.core.rbac.api import router as rbac_router
 from app.core.rbac.service import sync_permissions
-from app.core.scheduler.service import sync_tasks
+from app.core.scheduler.service import startup_lock, sync_tasks
 from app.core.secrets.crypto import get_keyring
 from app.core.workflow.api import router as workflow_router
 
@@ -33,6 +33,7 @@ log = get_logger(__name__)
 
 async def startup(registry: ModuleRegistry) -> None:
     async with get_sessionmaker()() as session:
+        await startup_lock(session)
         new = await sync_permissions(session, registry)
         await sync_tasks(session, registry)
         await ensure_default_templates(session, registry)

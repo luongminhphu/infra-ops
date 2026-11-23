@@ -77,3 +77,30 @@ def test_scheduled_task_must_be_prefixed() -> None:
 
     with pytest.raises(ValueError):
         ModuleManifest(id="a", name="A", scheduled_tasks=[ScheduledTask("b.sync", "x", noop)])
+
+
+async def test_concurrent_startup_does_not_collide(app) -> None:  # type: ignore[no-untyped-def]
+    """api and worker start together on a fresh database: both register tasks and permissions."""
+    import asyncio
+
+    from sqlalchemy import delete, func, select
+
+    from app.core.db import get_sessionmaker
+    from app.core.modules.registry import get_registry
+    from app.core.scheduler.models import ScheduledTaskRow
+    from app.core.scheduler.service import sync_tasks
+    from app.main import startup
+
+    async with get_sessionmaker()() as s:
+        await s.execute(delete(ScheduledTaskRow))
+        await s.commit()
+
+    async def worker_start() -> None:
+        async with get_sessionmaker()() as s:
+            await sync_tasks(s, get_registry())
+            await s.commit()
+
+    await asyncio.gather(startup(get_registry()), worker_start(), startup(get_registry()), worker_start())
+    async with get_sessionmaker()() as s:
+        n = await s.scalar(select(func.count()).select_from(ScheduledTaskRow))
+    assert n == len(get_registry().scheduled_tasks())

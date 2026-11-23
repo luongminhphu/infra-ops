@@ -12,7 +12,7 @@ import traceback
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.errors import NotFound
@@ -28,8 +28,18 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+# api and worker (and their replicas) start together: startup writes are serialised with this lock.
+STARTUP_LOCK_KEY = 0x1F0A_5717
+
+
+async def startup_lock(session: AsyncSession) -> None:
+    """Transaction-scoped; re-entrant within the same transaction."""
+    await session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": STARTUP_LOCK_KEY})
+
+
 async def sync_tasks(session: AsyncSession, registry: ModuleRegistry) -> None:
     """Insert rows for newly declared tasks. Existing rows keep admin-edited interval/enabled."""
+    await startup_lock(session)
     existing = set((await session.scalars(select(ScheduledTaskRow.key))).all())
     for module_id, task in registry.scheduled_tasks():
         if task.key not in existing:
