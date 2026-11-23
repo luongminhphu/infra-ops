@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/core/api/client";
 import { jobStatusLabel, WORKFLOW_LABEL, type Job } from "./jobs";
-import { GitCompareArrows } from "lucide-react";
+import { ChevronRight, GitCompareArrows } from "lucide-react";
 import { EmptyState } from "@/core/ui/feedback";
 import { StatusBadge } from "@/core/ui/status";
 import { formatRelative } from "@/core/lib/format";
@@ -34,7 +34,7 @@ export function JobsWidget({ data }: { data: unknown }) {
         <li key={t.to}>
           <Link to={`/lifecycle/jobs?status=${t.to}`} className="block rounded-sm border border-line px-3 py-2 hover:bg-surface-2">
             <span className="block text-sm text-muted">{t.label}</span>
-            <span className={`block tabular text-2xl font-semibold ${t.tone}`}>{t.value}</span>
+            <span className={`block tabular text-2xl font-semibold ${t.value > 0 ? t.tone : ""}`}>{t.value}</span>
           </Link>
         </li>
       ))}
@@ -55,12 +55,15 @@ function WaitingJobs() {
   return (
     <div className="mb-3">
       <h3 className="mb-1 text-sm font-semibold">Cần xử lý tiếp</h3>
-      <ul className="divide-y divide-line rounded-sm border border-line text-sm">
+      <ul className="divide-y divide-line border-y border-line text-sm">
         {jobs.map((j) => (
           <li key={j.id}>
-            <Link to={`/lifecycle/jobs/${j.id}`} className="flex flex-wrap items-baseline gap-x-3 px-3 py-2 hover:bg-surface-2">
-              <span className="font-medium">{WORKFLOW_LABEL[j.workflow_key] ?? j.workflow_title} · {j.subject_label}</span>
-              <span className="text-waiting">{jobStatusLabel(j)}</span>
+            <Link to={`/lifecycle/jobs/${j.id}`} className="flex items-center gap-3 px-1 py-2 hover:bg-surface-2">
+              <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3">
+                <span className="font-medium">{WORKFLOW_LABEL[j.workflow_key] ?? j.workflow_title} · {j.subject_label}</span>
+                <span className="text-waiting">{jobStatusLabel(j)}</span>
+              </span>
+              <ChevronRight className="size-4 shrink-0 text-muted" aria-hidden="true" />
             </Link>
           </li>
         ))}

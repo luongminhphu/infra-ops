@@ -158,10 +158,11 @@ export function StepVerification({ job, step, canRun }: { job: Job; step: JobSte
           <ul className="space-y-1">
             {items.map((i) => (
               <li key={i.id}>
-                <label className="flex cursor-pointer items-start gap-2 text-sm">
+                {/* Whole row is the hit target (44px tall on touch screens). */}
+                <label className="-mx-2 flex min-h-11 cursor-pointer items-center gap-2.5 rounded-sm px-2 text-sm hover:bg-surface-2 sm:min-h-8">
                   <input
                     type="checkbox"
-                    className="mt-0.5 size-4 accent-[var(--primary)]"
+                    className="size-5 shrink-0 accent-[var(--primary)] sm:size-4"
                     checked={checked.includes(i.id)}
                     disabled={!verifying}
                     aria-describedby={tried && missing.length ? ids.checklist : undefined}
@@ -270,15 +271,16 @@ export function StepVerification({ job, step, canRun }: { job: Job; step: JobSte
       </div>
 
       {verifying && (
-        <div className="mt-3 border-t border-line pt-3">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        // Phones: the decision stays in reach above the tab bar while scrolling the evidence.
+        <div className="mt-3 border-t border-line bg-surface pt-3 max-sm:sticky max-sm:bottom-[var(--tabbar-h)] max-sm:z-20 max-sm:-mx-4 max-sm:px-4 max-sm:pb-3 max-sm:shadow-card">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
             <Button variant="primary" loading={saving} onClick={() => void confirm()}>
               Xác nhận hoàn tất
             </Button>
-            <span className="text-sm text-muted tabular">
+            <Button onClick={() => { setReason(""); setRejectOpen(true); }}>Báo không đạt</Button>
+            <span className="text-sm text-muted tabular sm:ml-2">
               {items.length - missing.length}/{items.length} mục · {evidenceCount} bằng chứng
             </span>
-            <Button variant="ghost" className="ml-auto text-failed" onClick={() => { setReason(""); setRejectOpen(true); }}>Báo không đạt</Button>
           </div>
         </div>
       )}

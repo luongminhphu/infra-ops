@@ -55,7 +55,7 @@ function StepDetail({ job, step, act }: { job: Job; step: JobStep; act: ReturnTy
         <div className="flex flex-wrap gap-2 text-sm">
           <span className="rounded-xs bg-surface-2 px-1.5 py-0.5">{step.kind === "manual" ? "Thủ công" : "Tự động"}</span>
           {step.writes.map((w) => (
-            <span key={w} className="rounded-xs bg-waiting-soft px-1.5 py-0.5 text-waiting">Ghi vào {SYSTEM_WRITE_LABEL[w] ?? w}</span>
+            <span key={w} className="rounded-xs border border-line px-1.5 py-0.5">Ghi vào {SYSTEM_WRITE_LABEL[w] ?? w}</span>
           ))}
           {step.requires_confirm && <span className="rounded-xs bg-failed-soft px-1.5 py-0.5 text-failed">Cần nhập lại Mã NV</span>}
         </div>
@@ -253,11 +253,14 @@ export function JobPage() {
       <PageHeader
         title={`${WORKFLOW_LABEL[job.workflow_key] ?? job.workflow_title} – ${job.subject_label}`}
         description={
-          <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+          // Separate items (no leading "·" when the line wraps on a phone).
+          <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
             <StatusBadge status={js.status} label={jobStatusLabel(job)} />
-            Request <Mono>#{job.params.request_display_id ?? job.external_ref}</Mono> · hiệu lực {formatDate(eff)}
-            {job.scheduled_for && job.status === "scheduled" && ` · chạy ngày ${formatDate(job.scheduled_for)}`}
-            {job.started_by && ` · bắt đầu bởi ${job.started_by}`}
+            <span className="font-medium text-ink tabular">Bước {job.steps.find((s) => s.key === job.current_step)?.seq ?? job.progress.done}/{job.progress.total}</span>
+            <span>Request <Mono>#{job.params.request_display_id ?? job.external_ref}</Mono></span>
+            <span>Hiệu lực {formatDate(eff)}</span>
+            {job.scheduled_for && job.status === "scheduled" && <span>Chạy ngày {formatDate(job.scheduled_for)}</span>}
+            {job.started_by && <span>Bắt đầu bởi {job.started_by}</span>}
           </span>
         }
         actions={
@@ -324,13 +327,13 @@ export function JobPage() {
               <dl className="mt-3 grid gap-3 sm:grid-cols-2">
                 {can("lifecycle.job.override_close") && job.status !== "draft" && (
                   <div>
-                    <dt><Button size="sm" onClick={() => { setReason(""); setCloseMode("override"); }}>Buộc đóng Job</Button></dt>
+                    <dt><Button size="sm" variant="danger" onClick={() => { setReason(""); setCloseMode("override"); }}>Buộc đóng Job</Button></dt>
                     <dd className="mt-1 text-muted">Đánh dấu hoàn tất dù còn bước chưa xong, khi phần còn lại đã xử lý ngoài infra-ops.</dd>
                   </div>
                 )}
                 <div>
                   <dt>
-                    <Button size="sm" variant="ghost" className="text-failed" onClick={() => { setReason(""); setCloseMode("cancel"); }}>
+                    <Button size="sm" variant="danger" onClick={() => { setReason(""); setCloseMode("cancel"); }}>
                       <XCircle className="size-4" aria-hidden="true" />Huỷ Job
                     </Button>
                   </dt>
@@ -342,7 +345,7 @@ export function JobPage() {
         </div>
       </div>
 
-      <Dialog open={flowOpen} onClose={() => setFlowOpen(false)} title={`Lưu đồ ${job.workflow_title}`} description={job.checklist_version !== null ? `Checklist phiên bản ${job.checklist_version} (cố định từ lúc bắt đầu Job)` : undefined} size="lg">
+      <Dialog open={flowOpen} onClose={() => setFlowOpen(false)} title={`Lưu đồ ${job.workflow_title}`} description={job.checklist_version === null ? undefined : `${job.checklist_version === 0 ? "Checklist mặc định" : `Checklist phiên bản ${job.checklist_version}`} – cố định từ lúc bắt đầu Job`} size="lg">
         <Flowchart
           label={`Lưu đồ ${job.workflow_title} – ${job.subject_label}`}
           verify={job.checklist_version !== null}

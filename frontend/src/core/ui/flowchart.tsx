@@ -90,7 +90,7 @@ export function Flowchart({
                   {s.kind === "auto" ? "Tự động" : "Thủ công"}
                 </span>
                 {s.writes.map((w) => (
-                  <span key={w} className="rounded-xs bg-waiting-soft px-1.5 py-0.5 text-waiting">Ghi vào {systemLabel[w] ?? w}</span>
+                  <span key={w} className="rounded-xs border border-line px-1.5 py-0.5">Ghi vào {systemLabel[w] ?? w}</span>
                 ))}
                 {s.confirm && (
                   <span className="inline-flex items-center gap-1 rounded-xs bg-failed-soft px-1.5 py-0.5 text-failed">
