@@ -11,7 +11,7 @@ import { Field, Input, Select } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
 import { formatDate, formatRelative } from "@/core/lib/format";
 import { cn } from "@/core/lib/cn";
-import { JOB_STATUS, WORKFLOW_LABEL, jobStatusLabel, type Job, type JobStatus } from "../jobs";
+import { JOB_STATUS, JOB_WORKFLOWS, WORKFLOW_LABEL, jobStatusLabel, type Job, type JobStatus } from "../jobs";
 
 const CHIPS: { value: string; label: string }[] = [
   { value: "open", label: "Đang mở" },
@@ -42,7 +42,7 @@ export function JobsPage() {
   const list = useQuery({
     queryKey: ["jobs", status, workflow, debounced],
     queryFn: () => api<{ total: number; counts: Record<string, number>; items: Job[] }>(
-      `/api/core/jobs?${new URLSearchParams({ status, workflow, q: debounced, limit: "500" })}`),
+      `/api/core/jobs?${new URLSearchParams({ status, workflow, workflows: JOB_WORKFLOWS, q: debounced, limit: "500" })}`),
     refetchInterval: 10000,
   });
   const counts = list.data?.counts ?? {};
@@ -56,9 +56,12 @@ export function JobsPage() {
         accessorKey: "subject_label",
         header: "Nhân viên",
         cell: (c) => (
-          <button type="button" onClick={() => navigate(`/lifecycle/jobs/${c.row.original.id}`)} className="cursor-pointer text-left font-medium whitespace-nowrap hover:text-primary hover:underline">
-            {c.row.original.subject_label}
-          </button>
+          <span className="block">
+            <button type="button" onClick={() => navigate(`/lifecycle/jobs/${c.row.original.id}`)} className="cursor-pointer text-left font-medium whitespace-nowrap hover:text-primary hover:underline">
+              {c.row.original.subject_label}
+            </button>
+            <span className="block text-xs text-muted">{c.row.original.assignee ? `Phụ trách: ${c.row.original.assignee.name}` : "Chưa có người phụ trách"}</span>
+          </span>
         ),
       },
       { accessorKey: "workflow_key", header: "Quy trình", cell: (c) => WORKFLOW_LABEL[c.row.original.workflow_key] ?? c.row.original.workflow_title },

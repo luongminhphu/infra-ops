@@ -60,6 +60,10 @@ class LifecycleRequest(Base):
     fields: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     parse_errors: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     description_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # SDP technician of the request = person responsible for its onboard/offboard job.
+    technician_id: Mapped[str | None] = mapped_column(String(32))
+    technician_name: Mapped[str | None] = mapped_column(String(256))
+    technician_email: Mapped[str | None] = mapped_column(String(320))
     last_synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

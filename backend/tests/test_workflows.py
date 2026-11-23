@@ -16,6 +16,7 @@ from sqlalchemy import select
 from app.core.audit.models import AuditLog
 from app.core.db import get_sessionmaker
 from app.core.workflow.engine import pump, today_vn
+from app.core.workflow.models import Job
 from app.modules.lifecycle.models import LifecycleRequest
 
 SDP = "https://sdp-wf.test.local"
@@ -59,17 +60,31 @@ class FakeSystems:
             }
         }
         self.calls: list[str] = []
+        self.request_tech: dict[str, str] = {}
+        self.technicians = [{"id": "71", "name": "Tech 71", "email_id": "op-assign2@test.local"}]
 
     def install(self, r: respx.MockRouter) -> None:
         def req_detail(request: httpx.Request, rid: str) -> httpx.Response:
             if request.method == "PUT":
-                self.requests[rid] = json.loads(parse_qs(request.content.decode())["input_data"][0])[
-                    "request"
-                ]["status"]["name"]
+                body = json.loads(parse_qs(request.content.decode())["input_data"][0])["request"]
+                if "technician" in body:
+                    self.request_tech[rid] = body["technician"]["id"]
+                    self.calls.append(f"technician:{rid}:{body['technician']['id']}")
+                    return httpx.Response(200, json=OK)
+                self.requests[rid] = body["status"]["name"]
                 self.calls.append(f"status:{rid}:{self.requests[rid]}")
                 return httpx.Response(200, json=OK)
+            tech = self.request_tech.get(rid)
             return httpx.Response(
-                200, json={**OK, "request": {"id": rid, "status": {"name": self.requests[rid]}}}
+                200,
+                json={
+                    **OK,
+                    "request": {
+                        "id": rid,
+                        "status": {"name": self.requests[rid]},
+                        "technician": {"id": tech, "name": f"Tech {tech}"} if tech else None,
+                    },
+                },
             )
 
         r.route(url__regex=rf"{re.escape(SDP)}/api/v3/requests/(?P<rid>\d+)$").mock(side_effect=req_detail)
@@ -86,6 +101,15 @@ class FakeSystems:
             return httpx.Response(200, json={**OK, "list_info": {"has_more_rows": False}, "users": rows})
 
         r.get(f"{SDP}/api/v3/users").mock(side_effect=users)
+
+        def technicians(request: httpx.Request) -> httpx.Response:
+            crit = json.loads(request.url.params["input_data"])["list_info"]["search_criteria"]
+            rows = [t for t in self.technicians if t["email_id"] == crit["value"]]
+            return httpx.Response(
+                200, json={**OK, "list_info": {"has_more_rows": False}, "technicians": rows}
+            )
+
+        r.get(f"{SDP}/api/v3/technicians").mock(side_effect=technicians)
 
         def asset(request: httpx.Request, aid: str) -> httpx.Response:
             if request.method == "PUT":
@@ -532,7 +556,8 @@ async def test_auto_create_jobs_and_list(admin) -> None:  # type: ignore[no-unty
 
 async def test_checklist_versions_and_snapshot(admin, client) -> None:  # type: ignore[no-untyped-def]
     flows = {w["key"]: w for w in (await admin.get("/api/core/workflows?module=lifecycle")).json()}
-    assert set(flows) == {"lifecycle.onboard", "lifecycle.offboard"}
+    # Processes with operator checklists (the reassignment workflow has none and is not drawn).
+    assert {k for k, w in flows.items() if w["verify_steps"]} == {"lifecycle.onboard", "lifecycle.offboard"}
     onboard = flows["lifecycle.onboard"]
     assert onboard["verify_steps"] and onboard["checklist_version"] == 0
     steps = {s["key"]: s["checklist"] for s in onboard["steps"]}
@@ -591,3 +616,73 @@ async def test_checklist_versions_and_snapshot(admin, client) -> None:  # type: 
             await s.scalars(select(AuditLog.action).where(AuditLog.target_id == "lifecycle.onboard"))
         ).all()
     assert "workflow.checklist_saved" in actions
+
+
+@respx.mock(assert_all_called=False)
+async def test_job_assignee_follows_sdp_and_reassign_writes_back(admin, client, systems) -> None:  # type: ignore[no-untyped-def]
+    from app.modules.lifecycle.assignment import sync_assignees
+
+    roles = {r["code"]: r["id"] for r in (await admin.get("/api/core/roles")).json()}
+    for upn in ("op-assign1@test.local", "op-assign2@test.local"):
+        await admin.post(
+            "/api/core/users", json={"upn": upn, "display_name": upn, "role_ids": [roles["operator"]]}
+        )
+    await admin.post(
+        "/api/core/users",
+        json={"upn": "sup-assign@test.local", "display_name": "Sup", "role_ids": [roles["supervisor"]]},
+    )
+    async with get_sessionmaker()() as s:
+        req = await s.get(LifecycleRequest, "9102")
+        req.technician_id, req.technician_name, req.technician_email = (
+            "70",
+            "Tech 70",
+            "op-assign1@test.local",
+        )
+        old = await s.scalar(select(Job).where(Job.idempotency_key == "lifecycle:offboard:9102"))
+        if old is not None:
+            await s.delete(old)
+        await s.commit()
+    j = (await admin.post("/api/lifecycle/jobs", json={"request_id": "9102"})).json()
+    assert j["assignee"]["name"] == "Tech 70" and len(j["assignments"]) == 1
+
+    await client.login("op-assign1@test.local")
+    mine = (
+        await client.get("/api/core/jobs?assignee=me&workflows=lifecycle.onboard,lifecycle.offboard")
+    ).json()
+    assert [x["id"] for x in mine["items"]] == [j["id"]]
+    assert (
+        await client.post(f"/api/lifecycle/jobs/{j['id']}/assign", json={"user_id": j["id"]})
+    ).status_code == 403
+
+    # Reassigned on SDP → the job follows at the next sync.
+    async with get_sessionmaker()() as s:
+        req = await s.get(LifecycleRequest, "9102")
+        req.technician_name, req.technician_email = "Tech 72", "nobody@test.local"
+        await s.commit()
+        assert await sync_assignees(s) >= 1
+        await s.commit()
+    j = (await admin.get(f"/api/core/jobs/{j['id']}")).json()
+    assert j["assignee"]["name"] == "Tech 72" and j["assignments"][-1]["source"] == "sdp"
+
+    # A supervisor hands it to op-assign2: SDP is written by the worker, then the job changes hands.
+    await client.login("sup-assign@test.local")
+    people = {p["upn"]: p["id"] for p in (await client.get("/api/lifecycle/assignees")).json()}
+    assert "op-assign2@test.local" in people and "sup-assign@test.local" in people
+    r = await client.post(
+        f"/api/lifecycle/jobs/{j['id']}/assign",
+        json={"user_id": people["op-assign2@test.local"], "reason": "Nghỉ phép"},
+    )
+    assert r.status_code == 201, r.text
+    await run_worker()
+    assign_job = (await admin.get(f"/api/core/jobs/{r.json()['id']}")).json()
+    assert assign_job["status"] == "completed", assign_job
+    assert "technician:9102:71" in systems.calls
+    j = (await admin.get(f"/api/core/jobs/{j['id']}")).json()
+    last = j["assignments"][-1]
+    assert j["assignee"]["name"] == "Tech 71" and last["source"] == "app" and last["reason"] == "Nghỉ phép"
+    assert last["from_name"] == "Tech 72"
+    # The reassignment job never shows in the onboard/offboard list.
+    listed = (
+        await admin.get("/api/core/jobs?workflows=lifecycle.onboard,lifecycle.offboard&limit=500")
+    ).json()
+    assert all(x["workflow_key"] != "lifecycle.assign" for x in listed["items"])

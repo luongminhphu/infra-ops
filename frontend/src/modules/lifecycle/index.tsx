@@ -11,6 +11,7 @@ import { RequestsPage } from "./pages/RequestsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SyncPage } from "./pages/SyncPage";
 import { JobsWidget, ReconciliationWidget } from "./Widget";
+import { MyJobsSection } from "./MyJobs";
 
 /** Module 1 – IT Lifecycle: SDP + BioStar reconciliation, handover/return records. */
 export const lifecycleModule: FrontendModule = {
@@ -29,4 +30,5 @@ export const lifecycleModule: FrontendModule = {
     { path: "lifecycle/settings", element: <RequirePermission permission="lifecycle.settings.manage"><SettingsPage /></RequirePermission> },
   ],
   widgets: { lifecycle_reconciliation: ReconciliationWidget, lifecycle_jobs: JobsWidget },
+  portal: [{ key: "lifecycle.jobs", order: 1, permission: "lifecycle.job.view", component: MyJobsSection }],
 };

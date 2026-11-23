@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/core/api/client";
-import { jobStatusLabel, WORKFLOW_LABEL, type Job } from "./jobs";
+import { JOB_WORKFLOWS, jobStatusLabel, WORKFLOW_LABEL, type Job } from "./jobs";
 import { ChevronRight, GitCompareArrows } from "lucide-react";
 import { EmptyState } from "@/core/ui/feedback";
 import { StatusBadge } from "@/core/ui/status";
@@ -47,10 +47,10 @@ export function JobsWidget({ data }: { data: unknown }) {
 function WaitingJobs() {
   const q = useQuery({
     queryKey: ["jobs", "dashboard-waiting"],
-    queryFn: () => api<{ items: Job[] }>("/api/core/jobs?status=waiting&limit=6"),
+    queryFn: () => api<{ items: Job[] }>(`/api/core/jobs?status=waiting&limit=6&workflows=${JOB_WORKFLOWS}`),
     refetchInterval: 30_000,
   });
-  const jobs = (q.data?.items ?? []).filter((j) => j.workflow_key.startsWith("lifecycle."));
+  const jobs = q.data?.items ?? [];
   if (!jobs.length) return null;
   return (
     <div className="mb-3">

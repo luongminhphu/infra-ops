@@ -12,6 +12,8 @@ describe("ticketBadge", () => {
   });
   it("keeps the other states", () => {
     expect(ticketBadge({ state: "open", overdue: false, due_by: null }, now).label).toBe("Đang chờ");
+    expect(ticketBadge({ state: "open", phase: "in_progress", overdue: false, due_by: null }, now).label).toBe("Đang thực hiện");
+    expect(ticketBadge({ state: "open", phase: "on_hold", overdue: false, due_by: null }, now).label).toBe("Tạm dừng");
     expect(ticketBadge({ state: "done", overdue: true, due_by: "2026-11-01T00:00:00Z" }, now).label).toBe("Xong, trễ hạn");
     expect(ticketBadge({ state: "cancelled", overdue: false, due_by: null }, now).label).toBe("Đã huỷ");
   });

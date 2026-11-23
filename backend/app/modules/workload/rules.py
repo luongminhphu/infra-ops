@@ -26,9 +26,35 @@ def ticket_state(status: str, settings: WorkloadSettings) -> str:
     return "open"
 
 
+def ticket_phase(status: str, state: str, settings: WorkloadSettings) -> str | None:
+    """For open tasks only: in_progress | on_hold | pending."""
+    if state != "open":
+        return None
+    s = status.strip().casefold()
+    if s in {x.casefold() for x in settings.in_progress_statuses}:
+        return "in_progress"
+    if s in {x.casefold() for x in settings.on_hold_statuses}:
+        return "on_hold"
+    return "pending"
+
+
+def device_need(text: str, settings: WorkloadSettings) -> str | None:
+    """replace | upgrade | repair when the request text names a device need (first match wins)."""
+    t = text.casefold()
+    for kind in ("replace", "upgrade", "repair"):
+        if any(k.casefold() in t for k in settings.device_keywords.get(kind, [])):
+            return kind
+    return None
+
+
 def normalize_ticket(raw: dict[str, Any], settings: WorkloadSettings) -> dict[str, Any]:
     status = _name(raw.get("status")) or ""
     state = ticket_state(status, settings)
+    text = " ".join(
+        x
+        for x in (str(raw.get("subject") or ""), _name(raw.get("category")), _name(raw.get("subcategory")))
+        if x
+    )
     tech = raw.get("technician") or {}
     completed = ms_to_dt(raw.get("completed_time")) or ms_to_dt(raw.get("resolved_time"))
     updated = (raw.get("last_updated_time") or {}).get("value")
@@ -42,6 +68,8 @@ def normalize_ticket(raw: dict[str, Any], settings: WorkloadSettings) -> dict[st
         "group_name": _name(raw.get("group")),
         "status": status[:64],
         "state": state,
+        "phase": ticket_phase(status, state, settings),
+        "device_need": device_need(text, settings),
         "priority": _name(raw.get("priority")),
         "created_at": ms_to_dt(raw.get("created_time")),
         "due_by": ms_to_dt(raw.get("due_by_time")),

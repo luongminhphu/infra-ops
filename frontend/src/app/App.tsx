@@ -1,3 +1,4 @@
+import { MyWorkPage } from "@/core/pages/MyWorkPage";
 import { createBrowserRouter, RouterProvider, type RouteObject } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
@@ -26,6 +27,7 @@ const queryClient = new QueryClient({
 
 const coreRoutes: RouteObject[] = [
   { index: true, element: <RequirePermission permission="core.dashboard.view"><DashboardPage /></RequirePermission> },
+  { path: "me/work", element: <RequirePermission permission="core.dashboard.view"><MyWorkPage /></RequirePermission> },
   { path: "settings/connections", element: <RequirePermission permission="core.connections.view"><ConnectionsPage /></RequirePermission> },
   { path: "settings/connections/:id", element: <RequirePermission permission="core.connections.view"><ConnectionDetailPage /></RequirePermission> },
   { path: "settings/audit", element: <RequirePermission permission="core.audit.view"><AuditPage /></RequirePermission> },

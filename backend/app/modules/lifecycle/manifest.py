@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.modules.manifest import DashboardWidget, ModuleManifest, NavItem, Permission, ScheduledTask
 from app.modules.lifecycle.api import router
+from app.modules.lifecycle.assignment import REASSIGN_JOB
 from app.modules.lifecycle.documents import HANDOVER, RETURN
 from app.modules.lifecycle.documents_api import router as documents_router
 from app.modules.lifecycle.jobs_api import router as jobs_router
@@ -56,6 +57,11 @@ manifest = ModuleManifest(
         Permission(
             "lifecycle.job.execute", "Thực thi Job onboard/offboard", ("manager", "supervisor", "operator")
         ),
+        Permission(
+            "lifecycle.job.assign",
+            "Chuyển Job onboard/offboard cho Operator khác (đổi Technician trên SDP)",
+            ("manager", "supervisor"),
+        ),
         Permission("lifecycle.job.override_close", "Đóng Job khi chưa có biên bản đã ký", ("manager",)),
         Permission(
             "lifecycle.reconciliation.view", "Xem đối soát", ("manager", "supervisor", "operator", "viewer")
@@ -81,7 +87,7 @@ manifest = ModuleManifest(
         Permission("lifecycle.settings.manage", "Cấu hình mapping của module", ("manager",)),
     ],
     routers=[router, documents_router, jobs_router],
-    workflows=[ONBOARD, OFFBOARD],
+    workflows=[ONBOARD, OFFBOARD, REASSIGN_JOB],
     document_kinds=[HANDOVER, RETURN],
     nav=[
         NavItem(

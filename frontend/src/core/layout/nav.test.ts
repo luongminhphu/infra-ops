@@ -4,6 +4,7 @@ import { activeFor, railSections } from "./nav";
 const NAV = [
   { module: "core", label: "Hệ thống", items: [
     { label: "Tổng quan", path: "/", icon: "layout-dashboard", permission: "x" },
+    { label: "Việc của tôi", path: "/me/work", icon: "user-check", permission: "x" },
     { label: "Kết nối hệ thống", path: "/settings/connections", icon: "plug", permission: "x" },
   ] },
   { module: "lifecycle", label: "Vòng đời nhân sự", items: [
@@ -16,11 +17,12 @@ const NAV = [
 describe("rail navigation", () => {
   const sections = railSections(NAV);
   it("orders home, modules, then system at the bottom and drops empty modules", () => {
-    expect(sections.map((s) => [s.id, s.label])).toEqual([["home", "Tổng quan"], ["lifecycle", "Vòng đời"], ["system", "Hệ thống"]]);
+    expect(sections.map((s) => [s.id, s.label])).toEqual([["home", "Tổng quan"], ["mine", "Việc của tôi"], ["lifecycle", "Vòng đời"], ["system", "Hệ thống"]]);
     expect(sections.at(-1)!.bottom).toBe(true);
   });
   it("finds the active section and item", () => {
     expect(activeFor(sections, "/").section!.id).toBe("home");
+    expect(activeFor(sections, "/me/work").section!.id).toBe("mine");
     expect(activeFor(sections, "/lifecycle/flows").item!.label).toBe("Lưu đồ");
     expect(activeFor(sections, "/settings/connections").section!.id).toBe("system");
     // Detail pages without a nav entry still highlight their module.

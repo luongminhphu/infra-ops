@@ -63,6 +63,13 @@ def apply_parse(req: LifecycleRequest, description_html: str, settings: Lifecycl
     req.parse_errors = parsed.errors
 
 
+def set_technician(req: LifecycleRequest, raw: dict[str, Any]) -> None:
+    tech = raw.get("technician") or {}
+    req.technician_id = str(tech["id"]) if tech.get("id") else None
+    req.technician_name = (tech.get("name") or None) and str(tech["name"])[:256]
+    req.technician_email = (tech.get("email_id") or None) and str(tech["email_id"]).lower()[:320]
+
+
 async def sync_requests(
     session: AsyncSession, client: SdpClient, settings: LifecycleSettings
 ) -> dict[str, int]:
@@ -94,6 +101,11 @@ async def sync_requests(
         current = existing.get(rid)
         if current is None or current.sdp_updated_ms != updated or not current.description_text:
             to_fetch.append(raw)
+    # The technician comes with the list rows: keep it current for every request (cheap, no detail call).
+    for raw in rows:
+        known = existing.get(str(raw.get("id")))
+        if known is not None:
+            set_technician(known, raw)
     details = await asyncio.gather(*(detail(str(r["id"])) for r in to_fetch))
     for raw, full in zip(to_fetch, details, strict=True):
         rid = str(raw["id"])
@@ -106,6 +118,7 @@ async def sync_requests(
         req.status = (raw.get("status") or {}).get("name")
         req.created_at = _ms_to_dt(raw.get("created_time"))
         req.sdp_updated_ms = str((raw.get("last_updated_time") or {}).get("value") or "")
+        set_technician(req, {**raw, **{k: v for k, v in full.items() if k == "technician" and v}})
         description = full.get("description") or ""
         req.description_text = description
         apply_parse(req, description, settings)
@@ -255,6 +268,9 @@ async def run_sync(
         from app.modules.lifecycle.jobs_api import auto_create_jobs
 
         stats["jobs_created"] = await auto_create_jobs(session)
+        from app.modules.lifecycle.assignment import sync_assignees
+
+        stats["jobs_reassigned"] = await sync_assignees(session)
     run.stats = stats
     run.errors = errors
     run.notes = result.notes

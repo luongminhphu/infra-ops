@@ -20,6 +20,8 @@ import { cn } from "@/core/lib/cn";
 import { JOB_STATUS, STEP_STATUS, jobStatusLabel, SYSTEM_WRITE_LABEL, WORKFLOW_LABEL, useJob, type Job, type JobAsset, type JobStep } from "../jobs";
 import { CollectAssetsForm, DocumentLink, DraftConfig, EnrollForm } from "./JobStepPanels";
 import { StepVerification } from "./StepVerification";
+import { AssignJobButton, PendingAssignment } from "./AssignJob";
+import { Swimlane } from "@/core/ui/swimlane";
 
 interface PreviewStep {
   key: string;
@@ -257,6 +259,7 @@ export function JobPage() {
           <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
             <StatusBadge status={js.status} label={jobStatusLabel(job)} />
             <span className="font-medium text-ink tabular">Bước {job.steps.find((s) => s.key === job.current_step)?.seq ?? job.progress.done}/{job.progress.total}</span>
+            <span>Phụ trách: <strong className="font-medium text-ink">{job.assignee?.name ?? "chưa có"}</strong></span>
             <span>Request <Mono>#{job.params.request_display_id ?? job.external_ref}</Mono></span>
             <span>Hiệu lực {formatDate(eff)}</span>
             {job.scheduled_for && job.status === "scheduled" && <span>Chạy ngày {formatDate(job.scheduled_for)}</span>}
@@ -267,6 +270,7 @@ export function JobPage() {
           <>
             <Button onClick={() => setFlowOpen(true)}><Workflow className="size-4" aria-hidden="true" />Lưu đồ</Button>
             <Button onClick={() => setPreviewOpen(true)}><Eye className="size-4" aria-hidden="true" />Xem trước các bước</Button>
+            {can("lifecycle.job.assign") && !finished && <AssignJobButton job={job} />}
             {canRun && ["draft", "scheduled"].includes(job.status) && (
               <>
                 {job.status === "draft" && (
@@ -283,6 +287,7 @@ export function JobPage() {
         }
       />
 
+      <PendingAssignment job={job} />
       {job.close_reason && <p className="mb-3 rounded-sm bg-surface-2 px-3 py-2 text-sm">{job.status === "cancelled" ? "Đã huỷ" : "Ghi chú đóng"}: {job.close_reason}</p>}
 
       {job.status === "draft" && job.params.kind === "onboard" && canRun && (
@@ -345,7 +350,24 @@ export function JobPage() {
         </div>
       </div>
 
-      <Dialog open={flowOpen} onClose={() => setFlowOpen(false)} title={`Lưu đồ ${job.workflow_title}`} description={job.checklist_version === null ? undefined : `${job.checklist_version === 0 ? "Checklist mặc định" : `Checklist phiên bản ${job.checklist_version}`} – cố định từ lúc bắt đầu Job`} size="lg">
+      <Dialog open={flowOpen} onClose={() => setFlowOpen(false)} title={`Lưu đồ ${job.workflow_title}`} description="Mỗi làn là một người phụ trách; mũi tên nhảy làn là lúc Job được chuyển cho người khác." size="xl">
+        <Swimlane
+          label={`Lưu đồ ${job.workflow_title} – ${job.subject_label}`}
+          handoffs={job.assignments}
+          steps={job.steps.map((s) => ({
+            key: s.key,
+            title: s.title,
+            kind: s.kind,
+            status: STEP_STATUS[s.status].status,
+            statusLabel: STEP_STATUS[s.status].label,
+            current: s.key === job.current_step && !finished,
+          }))}
+        />
+        <details className="mt-4">
+          <summary className="cursor-pointer text-sm font-medium">
+            Checklist từng bước{job.checklist_version === null ? "" : ` (${job.checklist_version === 0 ? "checklist mặc định" : `phiên bản ${job.checklist_version}`}, cố định từ lúc bắt đầu Job)`}
+          </summary>
+          <div className="mt-3">
         <Flowchart
           label={`Lưu đồ ${job.workflow_title} – ${job.subject_label}`}
           verify={job.checklist_version !== null}
@@ -362,6 +384,8 @@ export function JobPage() {
             statusLabel: STEP_STATUS[s.status].label,
           }))}
         />
+          </div>
+        </details>
       </Dialog>
 
       <Dialog open={previewOpen} onClose={() => setPreviewOpen(false)} title="Xem trước các bước (không thay đổi dữ liệu)" size="lg">

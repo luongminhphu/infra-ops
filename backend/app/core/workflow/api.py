@@ -60,6 +60,24 @@ def job_out(
         "version": job.version,
         "progress": {"done": done, "total": len(job.steps)},
         "checklist_version": job.checklist_version,
+        "assignee": {
+            "user_id": str(job.assignee_user_id) if job.assignee_user_id else None,
+            "name": job.assignee_name,
+        }
+        if job.assignee_name
+        else None,
+        "assignments": [
+            {
+                "from_name": a.from_name,
+                "to_name": a.to_name,
+                "step_key": a.step_key,
+                "source": a.source,
+                "actor": a.actor,
+                "reason": a.reason,
+                "at": a.at,
+            }
+            for a in job.assignments
+        ],
         "steps": [
             {
                 "key": s.key,
@@ -139,6 +157,8 @@ async def list_jobs(
     user: CurrentUser = Depends(current_user),
     session: AsyncSession = Depends(get_session),
     workflow: str = "",
+    workflows: str = Query("", max_length=500, description="comma-separated workflow keys"),
+    assignee: Literal["", "me"] = "",
     status: str = "",
     subject_key: str = "",
     q: str = Query("", max_length=100),
@@ -148,7 +168,16 @@ async def list_jobs(
     allowed = [w.key for _, w in get_registry().workflows() if user.has(w.view_permission)]
     if workflow and workflow not in allowed:
         raise PermissionDenied("Bạn không có quyền xem quy trình này.")
-    stmt = select(Job).where(Job.workflow_key.in_([workflow] if workflow else allowed))
+    keys = (
+        [workflow]
+        if workflow
+        else [k for k in workflows.split(",") if k in allowed]
+        if workflows
+        else allowed
+    )
+    stmt = select(Job).where(Job.workflow_key.in_(keys))
+    if assignee == "me":
+        stmt = stmt.where(Job.assignee_user_id == user.id)
     if status == "open":
         stmt = stmt.where(Job.status.notin_(["completed", "cancelled"]))
     elif status:
@@ -168,7 +197,7 @@ async def list_jobs(
     counts = dict(
         (
             await session.execute(
-                select(Job.status, func.count()).where(Job.workflow_key.in_(allowed)).group_by(Job.status)
+                select(Job.status, func.count()).where(Job.workflow_key.in_(keys)).group_by(Job.status)
             )
         ).all()
     )
