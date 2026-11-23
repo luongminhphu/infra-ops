@@ -22,7 +22,8 @@ spec:
           imagePullPolicy: {{ .Values.image.web.pullPolicy }}
           ports: [{ name: http, containerPort: 8080 }]
           env:
-            - { name: API_UPSTREAM, value: "{{ include "infraops.name" . }}-api:8000" }
+            # Fully qualified: nginx's runtime resolver ignores the pod's DNS search domains.
+            - { name: API_UPSTREAM, value: "{{ include "infraops.name" . }}-api.{{ .Release.Namespace }}.svc.{{ .Values.clusterDomain }}:8000" }
           readinessProbe: { httpGet: { path: /, port: http }, periodSeconds: 10 }
           resources: {{- toYaml .Values.web.resources | nindent 12 }}
           {{- include "infraops.podSecurity" . | nindent 10 }}
