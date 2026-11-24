@@ -10,7 +10,15 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.modules.manifest import DashboardWidget, ModuleManifest, NavItem, Permission, ScheduledTask
+from app.core.modules.manifest import (
+    DashboardWidget,
+    ModuleManifest,
+    NavItem,
+    NextActionSource,
+    Permission,
+    ScheduledTask,
+)
+from app.modules.lifecycle import next_actions
 from app.modules.lifecycle.api import router
 from app.modules.lifecycle.assignment import REASSIGN_JOB
 from app.modules.lifecycle.documents import HANDOVER, RETURN
@@ -117,6 +125,7 @@ manifest = ModuleManifest(
             timeout_seconds=1800,
         ),
     ],
+    next_actions=[NextActionSource("lifecycle.jobs", "lifecycle.job.view", next_actions.load)],
     dashboard_widgets=[
         DashboardWidget(
             "lifecycle.jobs", "Job onboard / offboard", "lifecycle_jobs", "lifecycle.job.view", _jobs, order=2

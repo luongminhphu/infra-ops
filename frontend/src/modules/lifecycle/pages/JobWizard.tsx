@@ -80,9 +80,12 @@ export function JobWizard({ job, onFull }: { job: Job; onFull: () => void }) {
         </span>
       }
       actions={
+        <>
+        <Link to="/me/work" className="inline-flex h-8 items-center gap-1.5 rounded-sm px-3 font-medium text-primary hover:bg-surface-2">Việc tiếp theo</Link>
         <Button onClick={onFull}>
           <LayoutList className="size-4" aria-hidden="true" />Xem chi tiết đầy đủ
         </Button>
+        </>
       }
     />
   );

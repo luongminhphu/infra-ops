@@ -109,7 +109,7 @@ export function NewPurchasePage() {
             {sent.evidence.length === 0 && " Nhớ bổ sung bằng chứng Function Head – chưa có bằng chứng thì chưa duyệt được."}
           </EmptyState>
           <div className="mt-2 flex flex-wrap justify-center gap-2">
-            <Button onClick={() => navigate("/me/work")}>Về Việc của tôi</Button>
+            <Button onClick={() => navigate("/me/work")}>Việc tiếp theo</Button>
             <Button variant="primary" onClick={() => navigate("/workload/purchases")}>Xem danh sách đề xuất</Button>
           </div>
         </div>

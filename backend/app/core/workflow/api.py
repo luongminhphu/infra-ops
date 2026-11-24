@@ -36,7 +36,7 @@ def _wf(job: Job) -> WorkflowDefinition:
 STALLED_AFTER = timedelta(minutes=10)
 
 
-def _stalled_minutes(job: Job) -> int | None:
+def stalled_minutes(job: Job) -> int | None:
     if job.status != "running" or job.updated_at is None:
         return None
     idle = datetime.now(UTC) - job.updated_at
@@ -71,7 +71,7 @@ def job_out(
         "progress": {"done": done, "total": len(job.steps)},
         # A running job is advanced by the worker every few seconds; no change for this long = stalled
         # (worker down, or a step stuck). Surfaced in the UI instead of a silent "Đang chạy".
-        "stalled_minutes": _stalled_minutes(job),
+        "stalled_minutes": stalled_minutes(job),
         "checklist_version": job.checklist_version,
         "assignee": {
             "user_id": str(job.assignee_user_id) if job.assignee_user_id else None,
