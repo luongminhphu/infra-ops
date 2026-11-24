@@ -26,7 +26,8 @@ Tài liệu: [kiến trúc](docs/architecture.md) · [thêm module](docs/adding-
 | 6 | Lưu đồ Onboard/Offboard, checklist từng bước, Operator xác nhận kèm bằng chứng | Xong |
 | 7 | Giao diện “Phòng điều khiển”: rail phân hệ + menu con, màu cobalt, font Inter, cho toàn app | Xong |
 | 8 | **Việc của tôi** cho Operator (task SDP theo trạng thái, Job onboard/offboard, việc cần chuẩn bị), tự tạo tài khoản Operator, Job theo technician request RTR + chuyển Job (ghi sang SDP), lưu đồ swimlane theo người, đề xuất mua thiết bị | Xong |
-| 9 | **PO tổng** theo hạn mức (mặc định 200 triệu, tự mở PO tiếp theo), bảng giá do Supervisor cập nhật, bằng chứng Function Head, **Chốt PO** → email nháp .eml; **Kho & cấp phát**: band trong RTR × tiêu chuẩn cấp phát × tài sản In Store → tận dụng hoặc đề xuất mua; tooltip hướng dẫn | **Xong** |
+| 9 | **PO tổng** theo hạn mức (mặc định 200 triệu, tự mở PO tiếp theo), bảng giá do Supervisor cập nhật, bằng chứng Function Head, **Chốt PO** → email nháp .eml; **Kho & cấp phát**: band trong RTR × tiêu chuẩn cấp phát × tài sản In Store → tận dụng hoặc đề xuất mua; tooltip hướng dẫn | Xong |
+| 10 | **Nhận hàng → nhập kho SDP**: nhập serial/asset tag, worker tạo tài sản In Store trên SDP (không tạo trùng serial), Kho & cấp phát đồng bộ lại để gợi ý cho onboard | **Xong** |
 | sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
 
 ## Chạy local
@@ -207,7 +208,12 @@ Kết nối hệ thống và người dùng/phân quyền chỉ Quản trị tha
      tự mở PO tiếp theo. Đổi giá/hạn mức thì các PO nháp được gom lại.
    - **Chốt PO**: cấp số `PO-<năm>-<STT>`, khoá đơn giá, chuyển đề xuất sang *Đã đặt mua* và tải file **.eml** – mở
      bằng Outlook là email nháp theo mẫu (Cấu hình công việc), kèm Excel chi tiết và bằng chứng. Kiểm tra rồi gửi.
-   - Khi hàng về: **Đã nhận hàng**. **Xuất Excel** toàn bộ đề xuất (đơn giá, thành tiền, PO).
+   - Khi hàng về: Supervisor bấm **Nhận hàng**. Thiết bị có **Sản phẩm trên SDP** trong bảng giá: nhập serial (bắt
+     buộc) và asset tag từng chiếc → worker tạo tài sản *In Store* trên SDP bằng credential Write (serial đã có trên
+     SDP thì giữ nguyên, lỗi giữa chừng bấm **Thử lại** an toàn), xong đề xuất thành *Đã nhận hàng* và **Kho & cấp
+     phát** được đồng bộ lại để gợi ý tận dụng cho nhân viên sắp onboard. Linh kiện/sửa chữa (không có sản phẩm SDP)
+     chỉ đánh dấu đã nhận.
+   - **Xuất Excel** toàn bộ đề xuất (đơn giá, thành tiền, PO).
 
 ### Việc của tôi (Operator)
 Trang **Việc của tôi** (rail trái / thanh tab trên điện thoại) gom mọi việc của người đang đăng nhập:

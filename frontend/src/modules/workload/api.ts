@@ -117,6 +117,9 @@ export interface Purchase {
   evidence: Evidence[];
   po: { id: string; number: string | null; status: "open" | "closed" } | null;
   next: PurchaseStatus[];
+  sdp_product: string;
+  received_assets: { id: string; serial: string; asset_tag: string | null }[];
+  receive_job: { id: string; status: string; error: string | null } | null;
 }
 
 export interface CatalogItem {
@@ -125,6 +128,7 @@ export interface CatalogItem {
   category: string;
   spec: string;
   unit_price: number | null;
+  sdp_product: string;
   vendor: string;
   quoted_at: string | null;
   active: boolean;

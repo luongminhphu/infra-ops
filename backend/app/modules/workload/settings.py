@@ -50,6 +50,8 @@ class WorkloadSettings(BaseModel):
             "repair": ["sửa chữa", "sửa máy", "bảo hành", "hỏng", "repair"],
         }
     )
+    # SDP asset state given to devices created when purchased goods are received.
+    asset_state_in_store: str = Field("In Store", min_length=1, max_length=64)
     # Purchase orders: approved proposals are packed into POs whose value stays within this limit (VND).
     po_limit_vnd: int = Field(200_000_000, ge=1_000_000, le=100_000_000_000)
     # Draft e-mail generated when a PO is closed (.eml, opens in Outlook as an unsent draft).

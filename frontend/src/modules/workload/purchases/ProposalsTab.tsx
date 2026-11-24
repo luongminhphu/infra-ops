@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Paperclip, ShoppingCart, Trash2 } from "lucide-react";
+import { AlertTriangle, LoaderCircle, Paperclip, ShoppingCart, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
@@ -16,6 +16,7 @@ import { HelpTip } from "@/core/ui/help-tip";
 import { StatusBadge } from "@/core/ui/status";
 import { useCatalog, type Purchase, type PurchaseStatus } from "../api";
 import { KIND_LABEL, PURCHASE_STATUS } from "../labels";
+import { ReceiveDialog } from "./ReceiveDialog";
 import { EVIDENCE_ACCEPT, EvidenceHelp, pastedImage, uploadEvidence } from "../PurchaseDialog";
 
 const ACTION_LABEL: Partial<Record<PurchaseStatus, string>> = {
@@ -73,6 +74,25 @@ function EvidenceBlock({ p, onChange }: { p: Purchase; onChange: (p: Purchase) =
   );
 }
 
+/** Progress of the "nhập kho SDP" worker job; failed jobs can be retried (the step is idempotent). */
+function ReceiveState({ p, onRetried }: { p: Purchase; onRetried: () => void }) {
+  const retry = useMutation({
+    mutationFn: (id: string) => api(`/api/core/jobs/${id}/steps/receive/retry`, { method: "POST" }),
+    onSuccess: () => { toast.success("Đã yêu cầu nhập kho lại."); onRetried(); },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  const j = p.receive_job;
+  if (!j || p.status !== "ordered") return null;
+  if (j.status === "failed")
+    return (
+      <span className="mt-1 block max-w-56 text-xs text-failed">
+        <span className="flex items-center gap-1" title={j.error ?? ""}><AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" /><span className="truncate">Nhập kho SDP lỗi: {j.error}</span></span>
+        <Button size="sm" className="mt-1" loading={retry.isPending} onClick={() => retry.mutate(j.id)}>Thử lại</Button>
+      </span>
+    );
+  return <span className="mt-1 flex items-center gap-1 text-xs text-progress"><LoaderCircle className="size-3.5 motion-safe:animate-spin" aria-hidden="true" />Đang nhập kho SDP…</span>;
+}
+
 function DetailDialog({ p, onClose, onChange }: { p: Purchase; onClose: () => void; onChange: (p: Purchase) => void }) {
   return (
     <Dialog open onClose={onClose} title={p.catalog_item?.name ?? p.item} description={`${KIND_LABEL[p.kind]} × ${p.quantity} · ${sourceLabel(p)}${p.employee ? ` · ${p.employee}` : ""}`} footer={<Button onClick={onClose}>Đóng</Button>}>
@@ -85,6 +105,9 @@ function DetailDialog({ p, onClose, onChange }: { p: Purchase; onClose: () => vo
         {p.approved_by && (<><dt className="text-muted">Người duyệt</dt><dd>{p.approved_by}</dd></>)}
         {p.reason && (<><dt className="text-muted">Lý do</dt><dd className="whitespace-pre-line">{p.reason}</dd></>)}
         {p.note && (<><dt className="text-muted">Ghi chú</dt><dd>{p.note}</dd></>)}
+        {p.received_assets.length > 0 && (
+          <><dt className="text-muted">Tài sản SDP</dt><dd>{p.received_assets.map((a) => `${a.asset_tag || a.serial} (#${a.id})`).join(", ")}</dd></>
+        )}
       </dl>
       <EvidenceBlock p={p} onChange={onChange} />
     </Dialog>
@@ -156,6 +179,7 @@ export function ProposalsTab() {
   const [status, setStatus] = useState("");
   const [detail, setDetail] = useState<Purchase | null>(null);
   const [approving, setApproving] = useState<Purchase | null>(null);
+  const [receiving, setReceiving] = useState<Purchase | null>(null);
   const [rejecting, setRejecting] = useState<Purchase | null>(null);
   const [note, setNote] = useState("");
   const q = useQuery({
@@ -216,6 +240,7 @@ export function ProposalsTab() {
         cell: (c) => (
           <span className="block">
             <StatusBadge {...PURCHASE_STATUS[c.row.original.status]!} />
+            <ReceiveState p={c.row.original} onRetried={refresh} />
             {c.row.original.note && <span className="mt-0.5 block max-w-48 truncate text-xs text-muted" title={c.row.original.note}>{c.row.original.note}</span>}
           </span>
         ),
@@ -242,6 +267,9 @@ export function ProposalsTab() {
                       {ACTION_LABEL[to]}
                     </Button>
                   ))}
+                  {c.row.original.status === "ordered" && !c.row.original.receive_job && (
+                    <Button size="sm" variant="secondary" onClick={() => setReceiving(c.row.original)}>Nhận hàng</Button>
+                  )}
                 </span>
               ),
             } as ColumnDef<Purchase, unknown>,
@@ -282,6 +310,7 @@ export function ProposalsTab() {
         />
       )}
       {detail && <DetailDialog p={detail} onClose={() => setDetail(null)} onChange={(p) => { setDetail(p); refresh(); }} />}
+      {receiving && <ReceiveDialog p={receiving} onClose={() => setReceiving(null)} onDone={() => { setReceiving(null); refresh(); }} />}
       {approving && <ApproveDialog p={approving} onClose={() => setApproving(null)} onDone={() => { setApproving(null); refresh(); }} />}
       <Dialog
         open={rejecting !== null}

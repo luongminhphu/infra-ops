@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from typing import Any
 
 from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -84,6 +85,10 @@ class PurchaseRequest(Base):
     )
     approved_by: Mapped[str | None] = mapped_column(String(320))
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Assets created (or found) on SDP when the goods were received: [{id, serial, asset_tag}].
+    received_assets: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
     created_by: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -103,6 +108,8 @@ class CatalogItem(Base):
     category: Mapped[str] = mapped_column(String(100), nullable=False, default="")
     spec: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     unit_price: Mapped[int | None] = mapped_column(BigInteger)  # VND
+    # SDP product name used to create the asset on receipt; empty = not tracked as an SDP asset (e.g. RAM).
+    sdp_product: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
     vendor: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     quoted_at: Mapped[date | None] = mapped_column(Date)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

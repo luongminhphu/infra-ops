@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.modules.manifest import DashboardWidget, ModuleManifest, NavItem, Permission, ScheduledTask
 from app.modules.workload.api import router
 from app.modules.workload.purchases_api import router as purchases_router
-from app.modules.workload.workflows import REASSIGN
+from app.modules.workload.workflows import REASSIGN, RECEIVE
 
 
 async def _sync(session: AsyncSession) -> dict[str, Any]:
@@ -69,7 +69,7 @@ manifest = ModuleManifest(
         ),
     ],
     routers=[router, purchases_router],
-    workflows=[REASSIGN],
+    workflows=[REASSIGN, RECEIVE],
     nav=[
         NavItem("Công việc", "/workload/tickets", "list-checks", "workload.tickets.view"),
         NavItem("Thống kê công việc", "/workload/stats", "chart-column", "workload.stats.view"),

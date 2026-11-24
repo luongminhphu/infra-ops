@@ -167,6 +167,17 @@ class SdpClient:
             max_rows=200,
         )
 
+    async def find_assets(self, field: str, value: str) -> list[dict[str, Any]]:
+        return await self.list_all(
+            "/api/v3/assets",
+            "assets",
+            search_criteria={"field": field, "condition": "is", "value": value},
+            max_rows=20,
+        )
+
+    async def create_asset(self, asset: dict[str, Any]) -> dict[str, Any]:
+        return (await self.write("POST", "/api/v3/assets", {"asset": asset})).get("asset") or {}
+
     async def update_asset(self, asset_id: str, state: str, user_id: str | None) -> dict[str, Any]:
         asset: dict[str, Any] = {"state": {"name": state}, "user": {"id": user_id} if user_id else None}
         return (await self.write("PUT", f"/api/v3/assets/{asset_id}", {"asset": asset})).get("asset") or {}
