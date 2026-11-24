@@ -109,11 +109,43 @@ async def test_concurrent_startup_does_not_collide(app) -> None:  # type: ignore
 def test_running_job_without_progress_is_flagged_stalled() -> None:
     from datetime import UTC, datetime, timedelta
 
-    from app.core.workflow.api import _stalled_minutes
+    from app.core.workflow.api import stalled_minutes
     from app.core.workflow.models import Job
 
     now = datetime.now(UTC)
-    assert _stalled_minutes(Job(status="running", updated_at=now - timedelta(minutes=2))) is None
-    assert _stalled_minutes(Job(status="running", updated_at=now - timedelta(hours=15))) == 900
+    assert stalled_minutes(Job(status="running", updated_at=now - timedelta(minutes=2))) is None
+    assert stalled_minutes(Job(status="running", updated_at=now - timedelta(hours=15))) == 900
     # Waiting for a person is not "stalled": only running jobs are advanced by the worker.
-    assert _stalled_minutes(Job(status="waiting", updated_at=now - timedelta(hours=15))) is None
+    assert stalled_minutes(Job(status="waiting", updated_at=now - timedelta(hours=15))) is None
+
+
+def test_job_next_action_rules() -> None:
+    from datetime import UTC, date, datetime, timedelta
+
+    from app.core.workflow.models import Job, JobStep
+    from app.modules.lifecycle.next_actions import job_item
+
+    today = date(2026, 11, 24)
+
+    def job(status: str, step_status: str = "pending", kind: str = "auto", eff: str = "2026-11-25", **kw):  # type: ignore[no-untyped-def]
+        st = JobStep(
+            key="s1", seq=2, title="Gán tài sản", kind=kind, status=step_status, requires_confirm=False, **kw
+        )
+        return Job(
+            workflow_key="lifecycle.onboard", subject_label="Trần A (001)", status=status, current_step="s1",
+            params={"effective_date": eff}, steps=[st], updated_at=datetime.now(UTC),
+        )  # fmt: skip
+
+    verify = job_item(job("waiting", "verify"), today)
+    assert (
+        verify["priority"] == 0 and "Kiểm tra" in verify["title"] and verify["href"].endswith("?view=wizard")
+    )
+    assert job_item(job("waiting", "waiting", "manual"), today)["action"] == "Thực hiện"
+    assert job_item(job("waiting", "waiting", "auto"), today) is None  # a timer, nothing to do
+    assert job_item(job("failed", "failed"), today)["priority"] == 0
+    assert job_item(job("draft"), today)["priority"] == 1  # effective in 1 day
+    assert job_item(job("draft", eff="2026-12-20"), today)["priority"] == 2
+    assert job_item(job("running"), today) is None
+    stalled = job("running")
+    stalled.updated_at = datetime.now(UTC) - timedelta(hours=2)
+    assert job_item(stalled, today)["priority"] == 3

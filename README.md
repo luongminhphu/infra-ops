@@ -31,7 +31,8 @@ Tài liệu: [kiến trúc](docs/architecture.md) · [thêm module](docs/adding-
 | 11 | Operator chỉ đề xuất thiết bị (không thấy giá); PC/Laptop định giá theo **báo giá từng đề xuất** (trên 20 triệu cần 3 báo giá, lấy giá thấp nhất); thiết bị khác **cập nhật giá từ file báo giá PDF** | Xong |
 | 12 | **Nhận diện báo giá theo nhà cung cấp** (từ khoá + cột đơn giá của từng mẫu), xác nhận **không có hàng** kèm ảnh chụp website, **email trình phê duyệt PO** cho Head of IT và Finance (bảng so sánh báo giá) | Xong |
 | 13 | **Làm từng bước (wizard)**: khung Wizard dùng chung; Job Onboard/Offboard cho Operator mở thẳng dạng từng bước, dữ liệu biết trước được điền sẵn để chỉ cần xác nhận | Xong |
-| 14 | **Đề xuất mua từng bước**: Thiết bị → Người dùng & lý do → Bằng chứng Function Head → Xem lại & gửi, điền sẵn từ request/onboard | **Xong** |
+| 14 | **Đề xuất mua từng bước**: Thiết bị → Người dùng & lý do → Bằng chứng Function Head → Xem lại & gửi, điền sẵn từ request/onboard | Xong |
+| 15 | **Việc tiếp theo**: Việc của tôi thành một hàng chờ theo ưu tiên từ mọi module, nút *Làm việc tiếp theo* | **Xong** |
 | sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
 
 ## Chạy local
@@ -246,6 +247,13 @@ Người phụ trách Job lấy theo **technician của request RTR** trên SDP 
 Supervisor bấm **Chuyển Job** trên trang Job: worker đổi technician của request trên SDP rồi ghi lịch sử phụ trách.
 **Lưu đồ** của Job vẽ mỗi người phụ trách một làn; mũi tên nhảy làn đánh dấu lúc chuyển giao (giờ, trên SDP hay
 trong infra-ops).
+
+### Việc tiếp theo
+**Việc của tôi** là một hàng chờ duy nhất, việc gấp nhất ở trên cùng – bấm **Làm việc tiếp theo**, làm xong quay lại
+để sang việc kế. Thứ tự: *Cần bạn làm ngay* (bước Job chờ bạn xác nhận/thực hiện, bước lỗi) → *Quá hạn / gấp*
+(task SDP quá hạn, onboard/offboard hiệu lực trong 3 ngày cần chuẩn bị, đề xuất chờ duyệt với Supervisor) →
+*Sắp đến hạn* (task đến hạn trong ngày, Job cần chuẩn bị, đề xuất thiếu bằng chứng) → *Cần biết* (Job đứng yên) →
+*Gợi ý* (request có thể cần mua thiết bị). Các nhóm cũ vẫn xem được ở “Xem theo nhóm”.
 
 ### Làm từng bước (Operator)
 Operator mở một Job Onboard/Offboard là vào **chế độ từng bước** (Supervisor/Manager mặc định thấy màn chi tiết

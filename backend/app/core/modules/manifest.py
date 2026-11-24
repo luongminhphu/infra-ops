@@ -50,6 +50,19 @@ class DashboardWidget:
 
 
 @dataclass(frozen=True)
+class NextActionSource:
+    """Things the signed-in person should do next, for the "Việc tiếp theo" queue.
+
+    ``load(session, user)`` returns items ``{key, kind, priority, title, detail, due, href, action}``:
+    priority 0 = blocked on this person now, 1 = overdue / urgent, 2 = due soon, 3 = to know, 4 = suggestion.
+    """
+
+    key: str
+    permission: str
+    load: Callable[[AsyncSession, Any], Awaitable[list[dict[str, Any]]]]
+
+
+@dataclass(frozen=True)
 class ScheduledTask:
     """Periodic background job run by the worker (``python -m app.worker``).
 
@@ -108,6 +121,7 @@ class ModuleManifest:
     # Alembic branch label owning this module's tables (None when the module has no tables).
     migrations_branch: str | None = None
     dashboard_widgets: Sequence[DashboardWidget] = ()
+    next_actions: Sequence[NextActionSource] = ()
     scheduled_tasks: Sequence[ScheduledTask] = ()
     document_kinds: Sequence[DocumentKind] = ()
     workflows: Sequence[Any] = ()  # WorkflowDefinition (app.core.workflow.definitions)

@@ -37,3 +37,23 @@ async def dashboard(
             data, error = None, "Không tải được dữ liệu."
         out.append({"key": w.key, "title": w.title, "kind": w.kind, "data": data, "error": error})
     return out
+
+
+@router.get("/me/next")
+async def next_actions(
+    user: CurrentUser = Depends(require(DASHBOARD_VIEW)), session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """The signed-in person's queue across modules: most urgent first, then by due date."""
+    items: list[dict[str, Any]] = []
+    failed: list[str] = []
+    for m in get_registry().modules:
+        for src in m.next_actions:
+            if not user.has(src.permission):
+                continue
+            try:
+                items.extend(await src.load(session, user))
+            except Exception:
+                log.exception("next_action_source_failed", source=src.key)
+                failed.append(m.name)
+    items.sort(key=lambda i: (i["priority"], i.get("due") is None, str(i.get("due") or "")))
+    return {"items": items, "failed": failed}

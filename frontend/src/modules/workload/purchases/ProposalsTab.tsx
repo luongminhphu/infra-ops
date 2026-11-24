@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { AlertTriangle, Copy, LoaderCircle, Paperclip, ShoppingCart, Trash2 } from "lucide-react";
@@ -234,7 +235,7 @@ function ApproveDialog({ p: initial, dup, onClose, onDone }: { p: Purchase; dup:
 export function ProposalsTab() {
   const { can } = useAuth();
   const qc = useQueryClient();
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState(() => new URLSearchParams(window.location.search).get("status") ?? "");
   const [detail, setDetail] = useState<Purchase | null>(null);
   const [approving, setApproving] = useState<Purchase | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -257,6 +258,16 @@ export function ProposalsTab() {
     onError: (e) => toast.error(errorMessage(e)),
   });
   const items = q.data?.items ?? [];
+  // Deep link from "Việc tiếp theo": ?open=<id> opens that proposal.
+  const [params, setParams] = useSearchParams();
+  const openId = params.get("open");
+  useEffect(() => {
+    const p = openId && items.find((x) => x.id === openId);
+    if (p) {
+      setDetail(p);
+      setParams((cur) => { const n = new URLSearchParams(cur); n.delete("open"); return n; }, { replace: true });
+    }
+  }, [openId, items, setParams]);
   // Same device for the same person still pending or approved: probably requested twice.
   const dups = useMemo(() => {
     const m = new Map<string, number>();

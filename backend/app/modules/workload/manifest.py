@@ -10,7 +10,15 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.modules.manifest import DashboardWidget, ModuleManifest, NavItem, Permission, ScheduledTask
+from app.core.modules.manifest import (
+    DashboardWidget,
+    ModuleManifest,
+    NavItem,
+    NextActionSource,
+    Permission,
+    ScheduledTask,
+)
+from app.modules.workload import next_actions
 from app.modules.workload.api import router
 from app.modules.workload.purchases_api import router as purchases_router
 from app.modules.workload.workflows import REASSIGN, RECEIVE
@@ -74,6 +82,7 @@ manifest = ModuleManifest(
         ),
     ],
     routers=[router, purchases_router],
+    next_actions=[NextActionSource("workload.mine", "workload.tickets.view", next_actions.load)],
     workflows=[REASSIGN, RECEIVE],
     nav=[
         NavItem("Công việc", "/workload/tickets", "list-checks", "workload.tickets.view"),

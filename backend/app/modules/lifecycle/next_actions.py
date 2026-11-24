@@ -1,0 +1,69 @@
+"""Onboard/offboard items for the "Việc tiếp theo" queue of the job's assignee."""
+
+from __future__ import annotations
+
+from datetime import timedelta
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.workflow.api import stalled_minutes
+from app.core.workflow.engine import today_vn
+from app.core.workflow.models import Job
+from app.modules.lifecycle.assignment import JOB_WORKFLOWS
+
+KIND = {"lifecycle.onboard": "Onboard", "lifecycle.offboard": "Offboard"}
+
+
+def job_item(job: Job, today: Any) -> dict[str, Any] | None:
+    """What this job needs from its assignee now, or None when it needs nothing (running, scheduled)."""
+    name = f"{KIND.get(job.workflow_key, 'Job')} {job.subject_label}"
+    eff = job.params.get("effective_date")
+    href = f"/lifecycle/jobs/{job.id}?view=wizard"
+    base = {"key": f"job:{job.id}", "kind": "job", "href": href, "due": eff}
+    step = next((s for s in job.steps if s.key == job.current_step), None)
+    label = f"bước {step.seq}: {step.title}" if step else ""
+    if job.status == "failed" and step:
+        return {
+            **base,
+            "priority": 0,
+            "title": f"{name} – {label} bị lỗi",
+            "detail": step.message or "",
+            "action": "Xử lý",
+        }
+    if job.status == "waiting" and step:
+        if step.status == "verify":
+            what, action = f"Kiểm tra và xác nhận {label}", "Kiểm tra"
+        elif step.requires_confirm and not step.confirmed_at:
+            what, action = f"Nhập lại Mã NV để chạy {label}", "Xác nhận"
+        elif step.kind == "manual":
+            what, action = f"Thực hiện {label}", "Thực hiện"
+        else:
+            return None  # waiting on a timer / external system
+        return {**base, "priority": 0, "title": f"{name} – {what}", "detail": "", "action": action}
+    if job.status == "running":
+        idle = stalled_minutes(job)
+        if idle:
+            return {**base, "priority": 3, "title": f"{name} đứng yên ở {label}", "action": "Xem",
+                    "detail": "Bước tự động chưa chạy – báo quản trị kiểm tra worker."}  # fmt: skip
+        return None
+    if job.status == "draft":
+        soon = bool(eff) and str(eff) <= str(today + timedelta(days=3))
+        return {**base, "priority": 1 if soon else 2, "title": f"Chuẩn bị {name}", "action": "Chuẩn bị",
+                "detail": "Xác nhận thông tin, user SDP và thiết bị rồi bắt đầu."}  # fmt: skip
+    return None
+
+
+async def load(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
+    jobs = (
+        await session.scalars(
+            select(Job).where(
+                Job.assignee_user_id == user.id,
+                Job.workflow_key.in_(JOB_WORKFLOWS),
+                Job.status.not_in(["completed", "cancelled"]),
+            )
+        )
+    ).all()
+    today = today_vn()
+    return [i for j in jobs if (i := job_item(j, today))]

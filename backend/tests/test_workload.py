@@ -839,3 +839,33 @@ async def test_bulk_approve_applies_eligible_and_reports_the_rest(client) -> Non
     assert (
         await client.post("/api/workload/purchases/bulk", json={"ids": ids, "status": "approved"})
     ).status_code == 403
+
+
+@respx.mock(assert_all_called=False)
+async def test_next_actions_queue(client, sdp) -> None:  # type: ignore[no-untyped-def]
+    from app.modules.workload.sync import run_sync
+
+    async with get_sessionmaker()() as s:
+        await run_sync(s)
+    await client.login("wl-op1@test.local")
+    p = (
+        await client.post(
+            "/api/workload/purchases", json={"kind": "new", "item": "Chuột queue", "quantity": 1}
+        )
+    ).json()
+    q = (await client.get("/api/core/me/next")).json()
+    assert q["failed"] == []
+    keys = [i["key"] for i in q["items"]]
+    assert f"evidence:{p['id']}" in keys
+    overdue = [i for i in q["items"] if i["kind"] == "ticket" and i["priority"] == 1]
+    assert overdue and "trễ" in overdue[0]["title"]
+    assert [i["priority"] for i in q["items"]] == sorted(i["priority"] for i in q["items"])
+    assert not any(i["kind"] == "purchase_approval" for i in q["items"])  # operators do not approve
+
+    await client.post(
+        f"/api/workload/purchases/{p['id']}/evidence", files={"file": ("ok.png", PNG, "image/png")}
+    )
+    await client.login("wl-mgr@test.local")
+    q = (await client.get("/api/core/me/next")).json()
+    approval = [i for i in q["items"] if i["kind"] == "purchase_approval"]
+    assert approval and approval[0]["href"] == "/workload/purchases?status=proposed"

@@ -999,3 +999,15 @@ Quyết định:
   và màn xem lại/đã gửi nhắc bổ sung. Hàm hỗ trợ bằng chứng chuyển sang `workload/evidence.tsx`.
 - Sửa lỗi: danh sách file đọc sau khi đã xoá giá trị input (file chọn bị mất) – sao chép trước khi xoá.
 
+## 28. Phase 15 – Việc tiếp theo (24/11/2026)
+
+- Hook mới trong manifest `NextActionSource(key, permission, load(session, user))` – cùng kiểu dashboard widget,
+  core không import module. `GET /api/core/me/next` gộp mọi nguồn người dùng có quyền, sắp theo `priority`
+  (0 làm ngay · 1 quá hạn/gấp · 2 sắp đến hạn · 3 cần biết · 4 gợi ý) rồi theo hạn; nguồn lỗi được bỏ qua và báo tên.
+- Lifecycle (`next_actions.job_item`, hàm thuần có test): Job giao cho người đó – bước chờ kiểm tra / nhập Mã NV /
+  thủ công và bước lỗi (0), nháp cần chuẩn bị (1 nếu hiệu lực ≤ 3 ngày, 2 nếu xa hơn), đứng yên (3); link mở wizard.
+- Workload: task quá hạn (1) / đến hạn trong ngày (2), đề xuất của mình chưa có bằng chứng (2, mở thẳng đề xuất qua
+  `?open=`), gợi ý mua (4, mở wizard điền sẵn); Supervisor thấy một mục “N đề xuất chờ duyệt” (1).
+- Việc của tôi: thẻ “Việc tiếp theo” + nút *Làm việc tiếp theo*, danh sách theo nhóm ưu tiên, nhóm cũ trong
+  “Xem theo nhóm”; wizard Job và màn “Đã gửi” đề xuất có lối “Việc tiếp theo” quay lại hàng chờ.
+
