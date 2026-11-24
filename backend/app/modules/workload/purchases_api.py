@@ -29,6 +29,7 @@ from app.core.storage.models import StoredFile
 from app.core.storage.service import check_size, read_file, safe_filename, save_file, sniff
 from app.core.workflow.engine import create_job, start_job
 from app.core.workflow.models import Job
+from app.modules.workload import handover
 from app.modules.workload import po as pos
 from app.modules.workload.api import VIEW_ALL, _my_technician, ticket_out
 from app.modules.workload.models import (
@@ -47,6 +48,8 @@ router = APIRouter(tags=["workload"])
 view = require("workload.tickets.view")
 create = require("workload.purchase.create")
 manage = require("workload.purchase.manage")
+receiver = require("workload.purchase.receive")
+HANDOVER_MIME = {"application/pdf", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
 catalog_manage = require("workload.catalog.manage")
 po_close = require("workload.po.close")
 PRICE = "workload.price.view"
@@ -94,7 +97,7 @@ def out(
         "employee": p.employee,
         "kind": p.kind,
         "item": p.item,
-        "catalog_item": {"id": str(cat.id), "name": cat.name} if cat else None,
+        "catalog_item": {"id": str(cat.id), "name": cat.name, "category": cat.category} if cat else None,
         "quantity": p.quantity,
         "unit_price": price,
         "amount": None if price is None else price * p.quantity,
@@ -461,7 +464,7 @@ class ReceiveIn(BaseModel):
 
 @router.get("/purchases/receive-target")
 async def receive_target(
-    _: CurrentUser = Depends(manage), session: AsyncSession = Depends(get_session)
+    _: CurrentUser = Depends(receiver), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
     """Which SDP connection "Nhập kho SDP" will write to (shown before the user confirms)."""
     settings = await _settings(session)
@@ -476,14 +479,55 @@ async def receive_target(
         if prof
         else None,
         "state": settings.asset_state_in_store,
+        "asset_tag": {"prefix": settings.asset_tag_prefix, "codes": settings.asset_tag_codes},
     }
+
+
+@router.get("/purchases/receivable")
+async def receivable(
+    user: CurrentUser = Depends(receiver), session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """Closed POs with goods still to receive – without prices (operators unpack the boxes)."""
+    closed = (
+        await session.scalars(
+            select(PurchaseOrder)
+            .where(
+                PurchaseOrder.status == "closed",
+                exists().where(
+                    PurchaseRequest.po_id == PurchaseOrder.id, PurchaseRequest.status == "ordered"
+                ),
+            )
+            .order_by(PurchaseOrder.closed_at.desc())
+            .limit(50)
+        )
+    ).all()
+    out = []
+    for po in closed:
+        rows = await _full(session, [p for p, _ in await pos.po_items(session, po)], user)
+        out.append({"id": str(po.id), "number": po.number, "closed_at": po.closed_at, "items": rows})
+    return {"closed": out}
+
+
+@router.post("/purchases/receive/extract")
+async def extract_serials(file: UploadFile, _: CurrentUser = Depends(receiver)) -> dict[str, Any]:
+    """Serials (and asset tags) read from the vendor's handover document, to pre-fill the receive form.
+    Nothing is stored or written; the person reviews every value."""
+    data = await file.read()
+    check_size(data)
+    mime = sniff(data, HANDOVER_MIME)
+    rows = handover.read_handover(data, mime)
+    if not rows:
+        raise AppError(
+            "Không tìm thấy cột/nhãn Serial trong file – kiểm tra file hoặc nhập tay.", code="no_serials"
+        )
+    return {"rows": rows}
 
 
 @router.post("/purchases/{purchase_id}/receive")
 async def receive(
     purchase_id: uuid.UUID,
     body: ReceiveIn,
-    user: CurrentUser = Depends(manage),
+    user: CurrentUser = Depends(receiver),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     """Goods arrived. Devices tracked on SDP (catalog item has an SDP product) get one asset per unit,

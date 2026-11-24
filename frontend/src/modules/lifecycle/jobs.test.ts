@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { jobStatusLabel, type Job, type JobStep } from "./jobs";
+import { jobStatusLabel, operatorTask, type Job, type JobStep } from "./jobs";
 
 const step = (over: Partial<JobStep>): JobStep =>
   ({ key: "a", seq: 3, kind: "auto", status: "waiting", requires_confirm: false, confirmed_at: null, ...over }) as JobStep;
@@ -15,5 +15,15 @@ describe("jobStatusLabel", () => {
   it("falls back to the plain job status", () => {
     expect(jobStatusLabel(job(step({}), "failed"))).toBe("Lỗi");
     expect(jobStatusLabel({ status: "waiting", current_step: null, steps: [] })).toBe("Chờ xử lý");
+  });
+});
+
+describe("operatorTask", () => {
+  it("tells the operator what to do, or that nothing is needed", () => {
+    expect(operatorTask(job(step({ status: "verify", title: "Gán tài sản" })))).toEqual({ act: true, text: expect.stringMatching(/^Bạn cần: kiểm tra kết quả bước 3 “Gán tài sản”/) });
+    expect(operatorTask(job(step({ kind: "manual" }))).act).toBe(true);
+    expect(operatorTask(job(step({}), "failed")).text).toMatch(/Chạy lại bước/);
+    expect(operatorTask({ ...job(step({ status: "in_progress" }), "running"), stalled_minutes: 30 }).act).toBe(false);
+    expect(operatorTask(job(step({ status: "in_progress" }), "running"))).toEqual({ act: false, text: expect.stringMatching(/^Không cần làm gì/) });
   });
 });

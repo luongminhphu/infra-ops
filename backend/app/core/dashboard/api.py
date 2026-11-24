@@ -57,3 +57,22 @@ async def next_actions(
                 failed.append(m.name)
     items.sort(key=lambda i: (i["priority"], i.get("due") is None, str(i.get("due") or "")))
     return {"items": items, "failed": failed}
+
+
+@router.get("/me/summary")
+async def my_summary(
+    user: CurrentUser = Depends(require(DASHBOARD_VIEW)), session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """Counts per group (done in the last 7 days, late, due in 3 days, open) so the person can plan."""
+    items: list[dict[str, Any]] = []
+    failed: list[str] = []
+    for m in get_registry().modules:
+        for src in m.next_actions:
+            if src.summary is None or not user.has(src.permission):
+                continue
+            try:
+                items.extend(await src.summary(session, user))
+            except Exception:
+                log.exception("next_action_summary_failed", source=src.key)
+                failed.append(m.name)
+    return {"items": items, "failed": failed}

@@ -7,10 +7,12 @@ import { api, errorMessage } from "@/core/api/client";
 import { Button } from "@/core/ui/button";
 import { EmptyState, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input, Select, Textarea } from "@/core/ui/field";
+import { announce } from "@/core/ui/live-region";
 import { Wizard } from "@/core/ui/wizard";
 import { useCatalog, type DeviceNeed, type Purchase } from "../api";
 import { EVIDENCE_ACCEPT, EvidenceHelp, pastedImage, uploadEvidence } from "../evidence";
 import { KIND_LABEL } from "../labels";
+import { bestMatch } from "../text";
 
 const STEPS = [
   { key: "device", title: "Thiết bị" },
@@ -41,10 +43,13 @@ export function NewPurchasePage() {
   const qty = Number(params.get("qty"));
   const active = (catalog.data ?? []).filter((c) => c.active);
   const catalogName = (params.get("catalog") ?? "").toLowerCase();
+  // A helpdesk request gives its subject, not a device: show it as context and try the price list.
+  const subject = ticketId ? (params.get("item") ?? "") : "";
+  const back = params.get("back")?.startsWith("/") ? params.get("back")! : null;
 
   const [i, setI] = useState(0);
   const [catalogId, setCatalogId] = useState<string | null>(null);
-  const [item, setItem] = useState(params.get("item") ?? "");
+  const [item, setItem] = useState(ticketId ? "" : (params.get("item") ?? ""));
   const [kind, setKind] = useState<DeviceNeed | "new">((params.get("kind") as DeviceNeed | "new" | null) ?? (source === "onboard" ? "new" : "replace"));
   const [quantity, setQuantity] = useState(qty > 0 ? qty : 1);
   const [employee, setEmployee] = useState(params.get("employee") ?? "");
@@ -53,11 +58,13 @@ export function NewPurchasePage() {
   const [skipEvidence, setSkipEvidence] = useState(false);
   const [sent, setSent] = useState<Purchase | null>(null);
 
-  const catId = catalogId ?? active.find((c) => catalogName && c.name.toLowerCase() === catalogName)?.id ?? "";
+  const guess = active.find((c) => catalogName && c.name.toLowerCase() === catalogName) ?? (subject ? bestMatch(active, subject, (c) => c.name) : undefined);
+  const catId = catalogId ?? guess?.id ?? "";
+  const prefilled = !!guess && catId === guess.id;
   const cat = active.find((c) => c.id === catId);
   const itemText = item.trim() || cat?.name || "";
   const addFiles = (list: FileList | File[] | null) => list && setFiles((cur) => [...cur, ...Array.from(list)].slice(0, 10));
-  const back = i > 0 ? () => setI(i - 1) : undefined;
+  const prev = i > 0 ? () => setI(i - 1) : undefined;
 
   const send = useMutation({
     mutationFn: async () => {
@@ -80,6 +87,7 @@ export function NewPurchasePage() {
     },
     onSuccess: (p) => {
       setSent(p);
+      announce(`Đã gửi đề xuất ${p.catalog_item?.name ?? p.item}.`);
       void qc.invalidateQueries({ queryKey: ["workload"] });
     },
     onError: (e) => {
@@ -109,8 +117,9 @@ export function NewPurchasePage() {
             {sent.evidence.length === 0 && " Nhớ bổ sung bằng chứng Function Head – chưa có bằng chứng thì chưa duyệt được."}
           </EmptyState>
           <div className="mt-2 flex flex-wrap justify-center gap-2">
-            <Button onClick={() => navigate("/me/work")}>Việc tiếp theo</Button>
-            <Button variant="primary" onClick={() => navigate("/workload/purchases")}>Xem danh sách đề xuất</Button>
+            <Button onClick={() => navigate("/workload/purchases")}>Xem danh sách đề xuất</Button>
+            {back && <Button onClick={() => navigate(back)}>Quay lại Job</Button>}
+            <Button variant="primary" onClick={() => navigate("/me/work")}>Việc tiếp theo</Button>
           </div>
         </div>
       </>
@@ -127,11 +136,16 @@ export function NewPurchasePage() {
           steps={STEPS}
           current={i}
           title="Cần cấp thiết bị gì?"
-          description={fromLabel ? `Gợi ý ${fromLabel}. Sửa nếu chưa đúng.` : "Chọn trong danh sách thiết bị; không có thì mô tả ngắn."}
-          next={{ label: "Đúng – tiếp tục", onClick: () => setI(1), disabled: itemText.length < 2, reason: itemText.length < 2 ? "Chọn hoặc mô tả thiết bị." : null }}
+          description={prefilled ? `Gợi ý ${fromLabel}. Sửa nếu chưa đúng.` : subject ? "Request chưa nêu thiết bị cụ thể – chọn trong danh sách hoặc mô tả." : "Chọn trong danh sách thiết bị, không có thì mô tả."}
+          next={{ label: prefilled ? "Đúng – tiếp tục" : "Tiếp tục", onClick: () => setI(1), disabled: itemText.length < 2, reason: itemText.length < 2 ? "Chọn hoặc mô tả thiết bị." : null }}
         >
+          {subject && (
+            <p className="mb-3 rounded-sm bg-surface-2 px-3 py-2 text-sm">
+              <span className="text-muted">Nội dung request #{ref || ticketId}:</span> {subject}
+            </p>
+          )}
           <div className="grid gap-3 sm:grid-cols-[1fr_9rem_7rem]">
-            <Field label="Thiết bị" className="sm:col-span-3">
+            <Field label={<>Thiết bị{prefilled && <From>{catalogName ? fromLabel : "khớp nội dung request"}</From>}</>} className="sm:col-span-3">
               <Select data-autofocus value={catId} onChange={(e) => setCatalogId(e.target.value)}>
                 <option value="">— Không có trong danh sách —</option>
                 {active.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -164,7 +178,7 @@ export function NewPurchasePage() {
           current={i}
           title="Cho ai và vì sao?"
           description="Supervisor và Finance đọc phần này khi duyệt."
-          onBack={back}
+          onBack={prev}
           next={{ label: "Đúng – tiếp tục", onClick: () => setI(2), disabled: !employee.trim(), reason: employee.trim() ? null : "Nhập người dùng thiết bị." }}
         >
           <div className="space-y-3">
@@ -190,7 +204,7 @@ export function NewPurchasePage() {
           current={i}
           title="Function Head của người dùng đã đồng ý chưa?"
           description={<>Đính kèm ảnh chụp email / tin nhắn / phiếu duyệt. Supervisor chỉ duyệt được khi có bằng chứng. <EvidenceHelp /></>}
-          onBack={back}
+          onBack={prev}
           aside={files.length === 0 && <Button variant="ghost" onClick={() => { setSkipEvidence(true); setI(3); }}>Chưa có – bổ sung sau</Button>}
           next={{ label: files.length ? `Dùng ${files.length} file – tiếp tục` : "Tiếp tục", onClick: () => { setSkipEvidence(false); setI(3); }, disabled: files.length === 0, reason: files.length ? null : "Chưa có bằng chứng." }}
         >
@@ -228,7 +242,7 @@ export function NewPurchasePage() {
         current={i}
         title="Xem lại và gửi đề xuất"
         description="Sau khi gửi, đề xuất chờ Supervisor duyệt; bạn sửa bằng chứng được đến khi duyệt."
-        onBack={back}
+        onBack={prev}
         next={{ label: <><Send className="size-4" aria-hidden="true" />Gửi đề xuất</>, onClick: () => send.mutate(), loading: send.isPending }}
       >
         <dl className="grid grid-cols-[10rem_1fr] gap-x-4 gap-y-1.5 text-sm">

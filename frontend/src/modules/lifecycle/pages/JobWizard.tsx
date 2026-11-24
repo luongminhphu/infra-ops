@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarClock, CheckCircle2, LayoutList, Play, Plus, Recycle, ShoppingCart, Trash2, UserCheck } from "lucide-react";
+import { CalendarClock, CheckCircle2, Coffee, Hand, LayoutList, Play, Plus, Recycle, ShoppingCart, Trash2, UserCheck } from "lucide-react";
 import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { formatDate } from "@/core/lib/format";
@@ -10,8 +10,9 @@ import { EmptyState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
 import { Wizard, WizardProgress } from "@/core/ui/wizard";
-import { JOB_STATUS, WORKFLOW_LABEL, jobStatusLabel, type Job, type JobAsset } from "../jobs";
+import { JOB_STATUS, WORKFLOW_LABEL, jobStatusLabel, operatorTask, type Job, type JobAsset } from "../jobs";
 import { StepDetail, useJobActions } from "./JobPage";
+import { buyLink, proposedFor } from "../buy";
 import { AssetPicker } from "./JobStepPanels";
 
 interface Asset {
@@ -121,13 +122,17 @@ export function JobWizard({ job, onFull }: { job: Job; onFull: () => void }) {
   // Running / waiting / failed: one step at a time — the current one.
   const idx = Math.max(0, job.steps.findIndex((s) => s.key === job.current_step));
   const step = job.steps[idx]!;
+  const task = operatorTask(job);
   return (
     <>
       {header}
       <section aria-label={`Bước hiện tại của ${job.subject_label}`} className="mx-auto w-full max-w-3xl">
         <WizardProgress steps={job.steps.map((s) => ({ key: s.key, title: s.title }))} current={idx} />
-        <p className="mb-3 text-base font-medium">Việc bây giờ: {jobStatusLabel(job)}</p>
-        <StepDetail job={job} step={step} act={act} />
+        <p role="status" className={`mb-3 flex items-start gap-2 rounded-sm px-3 py-2 font-medium ${task.act ? "bg-primary-soft text-ink" : "bg-surface-2 text-muted"}`}>
+          {task.act ? <Hand className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" /> : <Coffee className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}
+          {task.text}
+        </p>
+        <StepDetail job={job} step={step} act={act} focus />
       </section>
     </>
   );
@@ -150,6 +155,12 @@ function PrepareWizard({ job, act, canRun }: { job: Job; act: ReturnType<typeof 
     queryKey: ["sdp-users", userQ],
     queryFn: () => api<{ id: string; name: string; email: string | null; employee_id: string | null }[]>(`/api/lifecycle/sdp-users?q=${encodeURIComponent(userQ)}`),
     enabled: userQ.trim().length >= 2,
+  });
+  const { can } = useAuth();
+  const purchases = useQuery({
+    queryKey: ["workload", "purchases", "onboard"],
+    queryFn: () => api<{ items: { source_ref: string | null; item: string; status: string }[] }>("/api/workload/purchases"),
+    enabled: steps[i]?.key === "devices" && can("workload.purchase.create"),
   });
   const preview = useQuery({
     queryKey: ["job-preview", job.id, job.version],
@@ -286,10 +297,29 @@ function PrepareWizard({ job, act, canRun }: { job: Job; act: ReturnType<typeof 
           </ul>
         )}
         {buys.length > 0 && (
-          <div className="mt-4 rounded-sm bg-waiting-soft px-3 py-2 text-sm text-waiting">
-            <p className="flex items-center gap-1.5 font-medium"><ShoppingCart className="size-4" aria-hidden="true" />Kho không còn đủ: {buys.map((l) => `${l.label} × ${l.buy}`).join(", ")}</p>
-            <p className="mt-0.5">Vẫn bắt đầu Job được; thiết bị thiếu cần đề xuất mua ở <Link className="underline" to="/lifecycle/inventory">Kho & cấp phát</Link>.</p>
-          </div>
+          <section aria-labelledby="buy-title" className="mt-4 rounded-sm border border-waiting/40 bg-waiting-soft px-3 py-2 text-sm">
+            <h3 id="buy-title" className="flex items-center gap-1.5 font-medium text-waiting"><ShoppingCart className="size-4" aria-hidden="true" />Kho không còn đủ – cần đề xuất mua</h3>
+            <p className="mt-0.5 text-ink">Vẫn bắt đầu Job được. Lập đề xuất ngay để không quên: thiết bị, số lượng và lý do đã điền sẵn.</p>
+            <ul className="mt-2 space-y-1.5">
+              {buys.map((l) => {
+                const done = proposedFor(purchases.data?.items, p.request, l);
+                return (
+                  <li key={l.label} className="flex flex-wrap items-center gap-2">
+                    <span className="min-w-0 flex-1 font-medium text-ink">{l.label} × {l.buy}</span>
+                    {done ? (
+                      <StatusBadge status="done" label="Đã đề xuất" />
+                    ) : can("workload.purchase.create") ? (
+                      <Link to={buyLink(p.request, l, `/lifecycle/jobs/${job.id}?view=wizard`)} className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-line bg-surface px-3 font-medium text-ink hover:bg-surface-2">
+                        <ShoppingCart className="size-4" aria-hidden="true" />Lập đề xuất mua
+                      </Link>
+                    ) : (
+                      <span className="text-muted">Báo Supervisor đề xuất mua</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
         )}
         <AssetPicker open={pickerOpen} onClose={() => setPickerOpen(false)} selected={chosen} onPick={(a) => setAssets([...chosen, a])} />
       </Wizard>

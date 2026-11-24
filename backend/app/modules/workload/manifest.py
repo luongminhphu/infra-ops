@@ -66,6 +66,11 @@ manifest = ModuleManifest(
             "workload.purchase.manage", "Duyệt và cập nhật trạng thái đề xuất mua", ("manager", "supervisor")
         ),
         Permission(
+            "workload.purchase.receive",
+            "Nhận hàng: nhập serial, mã tài sản và nhập kho SDP",
+            ("manager", "supervisor", "operator"),
+        ),
+        Permission(
             "workload.catalog.manage",
             "Cập nhật bảng giá thiết bị (sau khi đối tác báo giá)",
             ("manager", "supervisor"),
@@ -82,7 +87,9 @@ manifest = ModuleManifest(
         ),
     ],
     routers=[router, purchases_router],
-    next_actions=[NextActionSource("workload.mine", "workload.tickets.view", next_actions.load)],
+    next_actions=[
+        NextActionSource("workload.mine", "workload.tickets.view", next_actions.load, next_actions.summary)
+    ],
     workflows=[REASSIGN, RECEIVE],
     nav=[
         NavItem("Công việc", "/workload/tickets", "list-checks", "workload.tickets.view"),

@@ -1020,3 +1020,23 @@ Quyết định:
   Tab PO có nút *Nhận hàng* mở wizard đúng PO; dialog nhận hàng cũ giữ cho màn Supervisor.
 - Việc tiếp theo: “N hạng mục đã đặt mua chờ nhận hàng” (ưu tiên 3) cho người có quyền quản lý đề xuất.
 - Core `Field` giữ `id` do control tự đặt (để chuyển focus), chỉ sinh id khi không có.
+
+## 30. Phase 17 – Tổng quan, nhận hàng nhanh, critique luồng Operator (24/11/2026)
+
+- Critique luồng Operator (Việc của tôi, Job wizard, Đề xuất mua, Nhận hàng): 24/40. PO chọn sửa: hàng chờ ưu tiên
+  Job, thiếu máy → lập đề xuất, bước Job đang chạy, đề xuất điền sẵn; Operator được nhận hàng; mã tài sản năm 4 số.
+- **Tổng quan** đầu Việc của tôi: `NextActionSource.summary` (tuỳ chọn) trả `{key, group, label, count, href}`,
+  `GET /api/core/me/summary` gộp theo nhóm trễ hạn / đến hạn 3 ngày / đang mở / đã xong 7 ngày (task SDP + Job).
+- Hàng chờ: task SDP quá hạn / đến hạn trong ngày gộp thành **một** mục mỗi nhóm (không có hạn → xếp sau Job cùng mức).
+- Nhận hàng: quyền mới `workload.purchase.receive` (Operator, Supervisor, Manager); `GET /purchases/receivable` – PO đã
+  chốt còn hàng chờ nhận, **không có giá**. `POST /purchases/receive/extract` đọc serial từ biên bản bàn giao: Excel
+  (cột tiêu đề Serial/S/N/Số serial, kèm cột Asset tag/Mã tài sản), PDF có lớp chữ (nhãn “S/N:” hoặc bảng có cột
+  Serial – token lặp nhiều dòng là model, bị bỏ). File chỉ đọc, không lưu; serial điền vào ô trống, khớp theo tên thiết bị.
+- Mã tài sản gợi ý `<prefix>-<năm>-<mã loại>-<4 ký tự cuối serial>` (mặc định `HCM-2026-LT-1234`); prefix và bảng mã
+  theo nhóm bảng giá trong cấu hình (`asset_tag_prefix`, `asset_tag_codes`, nhóm khác lấy chữ cái đầu); sửa tay thì
+  không bị ghi đè; mã trùng trong PO bị chặn. Serial đang nhập được giữ khi tải lại trang (sessionStorage).
+- Job wizard: dòng “Bạn cần: …” / “Không cần làm gì …” thay trạng thái; bước chưa chạy không hiện checklist, đứng yên
+  không hiện “Bỏ qua bước”; thiếu thiết bị → nút *Lập đề xuất mua* điền sẵn (hiện “Đã đề xuất” khi có), gửi xong quay lại Job.
+- Đề xuất từ request: tiêu đề request hiện làm ngữ cảnh, thiết bị chỉ điền khi khớp rõ bảng giá; `Wizard` focus ô
+  `[data-autofocus]` của bước nếu có.
+

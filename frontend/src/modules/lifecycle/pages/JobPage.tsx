@@ -37,7 +37,11 @@ function msg(e: unknown): string {
   return errorMessage(e);
 }
 
-export function StepDetail({ job, step, act }: { job: Job; step: JobStep; act: ReturnType<typeof useJobActions> }) {
+/**
+ * One step of a job. `focus` (operator wizard): only what the person acts on now – verification once the
+ * step has run, no timing details or before-state.
+ */
+export function StepDetail({ job, step, act, focus = false }: { job: Job; step: JobStep; act: ReturnType<typeof useJobActions>; focus?: boolean }) {
   const { can } = useAuth();
   const canRun = can("lifecycle.job.execute");
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -68,7 +72,7 @@ export function StepDetail({ job, step, act }: { job: Job; step: JobStep; act: R
             {step.message}
           </p>
         )}
-        {isCurrent && job.status === "running" && step.kind === "auto" && ["pending", "in_progress"].includes(step.status) &&
+        {!focus && isCurrent && job.status === "running" && step.kind === "auto" && ["pending", "in_progress"].includes(step.status) &&
           (job.stalled_minutes ? (
             <div role="alert" className="flex items-start gap-2 rounded-sm bg-waiting-soft px-3 py-2 text-sm text-waiting">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
@@ -106,16 +110,16 @@ export function StepDetail({ job, step, act }: { job: Job; step: JobStep; act: R
           </>
         )}
         {isDoc && <DocumentLink step={step} />}
-        <StepVerification job={job} step={step} canRun={canRun} />
+        {(!focus || ["verify", "done"].includes(step.status)) && <StepVerification job={job} step={step} canRun={canRun} />}
 
-        {canRun && active && (step.status === "failed" || (step.skippable && !["done", "skipped", "verify"].includes(step.status))) && (
+        {canRun && active && (step.status === "failed" || (step.skippable && !job.stalled_minutes && !["done", "skipped", "verify"].includes(step.status))) && (
           <div className="flex flex-wrap gap-2 border-t border-line pt-3">
             {step.status === "failed" && (
               <Button onClick={() => act.retry.mutate(step.key)} loading={act.retry.isPending}>
                 <RotateCcw className="size-4" aria-hidden="true" />Chạy lại bước
               </Button>
             )}
-            {step.skippable && !["done", "skipped", "verify"].includes(step.status) && (
+            {step.skippable && !job.stalled_minutes && !["done", "skipped", "verify"].includes(step.status) && (
               <Button variant="ghost" onClick={() => { setReason(""); setSkipOpen(true); }}>
                 <SkipForward className="size-4" aria-hidden="true" />Bỏ qua bước
               </Button>
@@ -123,6 +127,7 @@ export function StepDetail({ job, step, act }: { job: Job; step: JobStep; act: R
           </div>
         )}
 
+        {!focus && (<>
         <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
           {step.attempts > 0 && (<><dt className="text-muted">Số lần chạy</dt><dd className="tabular">{step.attempts}</dd></>)}
           {step.started_at && (<><dt className="text-muted">Bắt đầu</dt><dd>{formatDateTime(step.started_at)}</dd></>)}
@@ -135,6 +140,7 @@ export function StepDetail({ job, step, act }: { job: Job; step: JobStep; act: R
             <pre className="mt-2 max-h-64 overflow-auto rounded-sm bg-surface-2 p-2 font-mono text-xs">{JSON.stringify(step.before_state, null, 2)}</pre>
           </details>
         )}
+        </>)}
       </div>
 
       <ConfirmDangerDialog

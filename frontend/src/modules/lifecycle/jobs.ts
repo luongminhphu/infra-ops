@@ -144,6 +144,21 @@ export function jobStatusLabel(job: Pick<Job, "status" | "current_step" | "steps
   return `Chờ hệ thống ở ${at}`;
 }
 
+/** What the operator has to do now on a running job – an instruction, or that nothing is needed. */
+export function operatorTask(job: Pick<Job, "status" | "current_step" | "steps"> & { stalled_minutes?: number | null }): { act: boolean; text: string } {
+  const s = job.steps.find((x) => x.key === job.current_step);
+  const at = s ? `bước ${s.seq} “${s.title}”` : "bước hiện tại";
+  if (job.status === "failed") return { act: true, text: `Bạn cần: đọc lỗi ở ${at}, sửa nguyên nhân rồi bấm Chạy lại bước (không rõ thì báo Supervisor).` };
+  if (job.stalled_minutes) return { act: false, text: `Không cần làm gì ở ${at}: hệ thống chưa chạy được bước tự động – báo Quản trị kiểm tra dịch vụ chạy nền, Job tự chạy tiếp sau đó.` };
+  if (job.status === "waiting" && s) {
+    if (s.status === "verify") return { act: true, text: `Bạn cần: kiểm tra kết quả ${at} theo danh sách bên dưới rồi xác nhận.` };
+    if (s.requires_confirm && !s.confirmed_at) return { act: true, text: `Bạn cần: nhập lại Mã NV để hệ thống chạy ${at}.` };
+    if (s.kind === "manual") return { act: true, text: `Bạn cần: thực hiện ${at} rồi xác nhận hoàn tất.` };
+    return { act: false, text: `Không cần làm gì: hệ thống đang chờ để tự kiểm tra lại ${at}.` };
+  }
+  return { act: false, text: `Không cần làm gì: hệ thống đang chạy ${at}, trang tự cập nhật.` };
+}
+
 export const WORKFLOW_LABEL: Record<string, string> = { "lifecycle.onboard": "Onboard", "lifecycle.offboard": "Offboard" };
 export const SYSTEM_WRITE_LABEL: Record<string, string> = { sdp: "ServiceDesk Plus", biostar: "BioStar" };
 

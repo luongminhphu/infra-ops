@@ -56,6 +56,17 @@ class WorkloadSettings(BaseModel):
     )
     # SDP asset state given to devices created when purchased goods are received.
     asset_state_in_store: str = Field("In Store", min_length=1, max_length=64)
+    # Suggested asset tag on receipt: <prefix>-<year>-<code of the price-list group>-<last 4 of serial>.
+    asset_tag_prefix: str = Field("HCM", min_length=1, max_length=20)
+    asset_tag_codes: dict[str, str] = Field(
+        default_factory=lambda: {
+            "Laptop": "LT",
+            "PC": "PC",
+            "Desktop": "PC",
+            "Workstation": "WS",
+            "Màn hình": "MN",
+        }
+    )
     # 3-quote process: items of these price-list groups are priced per proposal from vendor quotes;
     # when the lowest quote is above the threshold, this many quotes are required.
     quote_categories: list[str] = Field(default_factory=lambda: ["PC", "Laptop", "Desktop", "Workstation"])

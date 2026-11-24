@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -67,3 +67,40 @@ async def load(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
     ).all()
     today = today_vn()
     return [i for j in jobs if (i := job_item(j, today))]
+
+
+async def summary(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
+    """My onboard/offboard jobs: completed in 7 days, past the effective date, due within 3 days, open."""
+    jobs = (
+        await session.scalars(
+            select(Job).where(
+                Job.assignee_user_id == user.id,
+                Job.workflow_key.in_(JOB_WORKFLOWS),
+                Job.status != "cancelled",
+            )
+        )
+    ).all()
+    today = today_vn()
+    week_ago = datetime.now(UTC) - timedelta(days=7)
+    soon = str(today + timedelta(days=3))
+    active = [j for j in jobs if j.status != "completed"]
+
+    def eff(j: Job) -> str:
+        return str(j.params.get("effective_date") or "")
+
+    done = sum(1 for j in jobs if j.status == "completed" and j.finished_at and j.finished_at >= week_ago)
+    late = sum(1 for j in active if eff(j) and eff(j) < str(today))
+    near = sum(1 for j in active if eff(j) and str(today) <= eff(j) <= soon)
+    href = "/lifecycle/jobs"
+    return [
+        {"key": "jobs:done", "group": "done", "label": "Job", "count": done, "href": href},
+        {"key": "jobs:late", "group": "late", "label": "Job", "count": late, "href": href},
+        {"key": "jobs:soon", "group": "soon", "label": "Job", "count": near, "href": href},
+        {
+            "key": "jobs:open",
+            "group": "open",
+            "label": "Job",
+            "count": len(active),
+            "href": href,
+        },
+    ]
