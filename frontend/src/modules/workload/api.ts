@@ -128,7 +128,10 @@ export interface Purchase {
 export interface Quote {
   id: string;
   vendor: string;
-  unit_price: number;
+  /** null when the vendor had no stock (file = screenshot of its web store). */
+  unit_price: number | null;
+  out_of_stock: boolean;
+  mime: string;
   filename: string;
   lowest: boolean;
   created_by: string;
@@ -175,3 +178,17 @@ export interface MyWork {
   done?: Ticket[];
   suggestions?: Ticket[];
 }
+
+export interface Supplier {
+  id: string;
+  name: string;
+  keywords: string[];
+  price_position: number;
+  website: string;
+  active: boolean;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+export const useSuppliers = (enabled = true) =>
+  useQuery({ queryKey: ["workload", "suppliers"], queryFn: () => api<Supplier[]>("/api/workload/suppliers"), enabled });

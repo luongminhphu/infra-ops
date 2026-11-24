@@ -28,7 +28,8 @@ Tài liệu: [kiến trúc](docs/architecture.md) · [thêm module](docs/adding-
 | 8 | **Việc của tôi** cho Operator (task SDP theo trạng thái, Job onboard/offboard, việc cần chuẩn bị), tự tạo tài khoản Operator, Job theo technician request RTR + chuyển Job (ghi sang SDP), lưu đồ swimlane theo người, đề xuất mua thiết bị | Xong |
 | 9 | **PO tổng** theo hạn mức (mặc định 200 triệu, tự mở PO tiếp theo), bảng giá do Supervisor cập nhật, bằng chứng Function Head, **Chốt PO** → email nháp .eml; **Kho & cấp phát**: band trong RTR × tiêu chuẩn cấp phát × tài sản In Store → tận dụng hoặc đề xuất mua; tooltip hướng dẫn | Xong |
 | 10 | **Nhận hàng → nhập kho SDP**: nhập serial/asset tag, worker tạo tài sản In Store trên SDP (không tạo trùng serial), Kho & cấp phát đồng bộ lại để gợi ý cho onboard | Xong |
-| 11 | Operator chỉ đề xuất thiết bị (không thấy giá); PC/Laptop định giá theo **báo giá từng đề xuất** (trên 20 triệu cần 3 báo giá, lấy giá thấp nhất); thiết bị khác **cập nhật giá từ file báo giá PDF** | **Xong** |
+| 11 | Operator chỉ đề xuất thiết bị (không thấy giá); PC/Laptop định giá theo **báo giá từng đề xuất** (trên 20 triệu cần 3 báo giá, lấy giá thấp nhất); thiết bị khác **cập nhật giá từ file báo giá PDF** | Xong |
+| 12 | **Nhận diện báo giá theo nhà cung cấp** (từ khoá + cột đơn giá của từng mẫu), xác nhận **không có hàng** kèm ảnh chụp website, **email trình phê duyệt PO** cho Head of IT và Finance (bảng so sánh báo giá) | **Xong** |
 | sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
 
 ## Chạy local
@@ -211,11 +212,20 @@ Kết nối hệ thống và người dùng/phân quyền chỉ Quản trị tha
    - **Thiết bị khác**: Bảng giá → **Cập nhật giá từ PDF**: tải file báo giá của đối tác, hệ thống đọc chữ trong PDF,
      tìm thiết bị có trong Bảng giá và gợi ý đơn giá (số tiền nhỏ nhất trên dòng, tức đơn giá); Supervisor kiểm tra,
      sửa, bỏ chọn rồi **Cập nhật**. File PDF lưu kèm từng thiết bị. PDF bản scan (ảnh) không đọc được – nhập tay.
+   - **Nhà cung cấp** (thẻ cùng tên): khai báo 4–5 nhà cung cấp thường xuyên với **từ khoá nhận diện** (mã số thuế,
+     tên miền…) và **cột đơn giá** trên mẫu báo giá của họ (vd. mẫu “Giá niêm yết | Đơn giá | Thành tiền” → số tiền thứ
+     2). Tải PDF báo giá (Bảng giá hoặc báo giá PC/Laptop của đề xuất) → hệ thống tự nhận ra nhà cung cấp và đọc đơn giá
+     theo mẫu đó; Supervisor kiểm tra rồi thêm.
+   - **Không có hàng**: khi không đủ 3 báo giá, Supervisor chọn *Nhà cung cấp không có hàng*, đính kèm ảnh chụp
+     website (dán Ctrl+V được). Dòng này được tính vào số báo giá bắt buộc; vẫn cần ít nhất 1 báo giá có giá.
    - **Duyệt** (Supervisor/Manager) cần bằng chứng và thiết bị có giá; đề xuất đã duyệt tự vào **PO tổng** đang mở
      theo thứ tự duyệt, PO không đủ chỗ dưới **hạn mức** (Cấu hình công việc, mặc định 200.000.000 đ) thì hệ thống
      tự mở PO tiếp theo. Đổi giá/hạn mức thì các PO nháp được gom lại.
    - **Chốt PO**: cấp số `PO-<năm>-<STT>`, khoá đơn giá, chuyển đề xuất sang *Đã đặt mua* và tải file **.eml** – mở
-     bằng Outlook là email nháp theo mẫu (Cấu hình công việc), kèm Excel chi tiết và bằng chứng. Kiểm tra rồi gửi.
+     bằng Outlook là **email nháp trình phê duyệt PO** gửi Head of IT và Phòng Finance (người nhận + mẫu ở Cấu hình
+     công việc): bảng từng hạng mục với các báo giá so sánh, giá được chọn, nhà cung cấp không có hàng; đính kèm Excel
+     chi tiết, PDF báo giá, ảnh chụp không có hàng và bằng chứng Function Head. Kiểm tra rồi gửi. Hệ thống đã lưu mẫu
+     email cũ thì bấm Hoàn tác/sửa nội dung để dùng biến mới `{{ items_table }}` (mẫu cũ vẫn có bảng trong bản HTML).
    - Khi hàng về: Supervisor bấm **Nhận hàng**. Thiết bị có **Sản phẩm trên SDP** trong bảng giá: nhập serial (bắt
      buộc) và asset tag từng chiếc → worker tạo tài sản *In Store* trên SDP bằng credential Write (serial đã có trên
      SDP thì giữ nguyên, lỗi giữa chừng bấm **Thử lại** an toàn), xong đề xuất thành *Đã nhận hàng* và **Kho & cấp

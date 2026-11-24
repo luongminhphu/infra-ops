@@ -21,6 +21,7 @@ interface Suggestion {
 interface ReadResult {
   file_id: string;
   filename: string;
+  supplier: { id: string; name: string } | null;
   suggestions: Suggestion[];
 }
 
@@ -46,6 +47,7 @@ export function PdfImportDialog({ onClose }: { onClose: () => void }) {
     },
     onSuccess: (r) => {
       setResult(r);
+      if (r.supplier) setVendor(r.supplier.name);
       setRows(Object.fromEntries(r.suggestions.map((s) => [s.id, { on: true, price: String(s.price) }])));
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -107,6 +109,9 @@ export function PdfImportDialog({ onClose }: { onClose: () => void }) {
         <section aria-label="Giá đọc được" className="mt-4">
           <h3 className="mb-2 flex items-center gap-1 text-sm font-semibold">
             Giá đọc được từ {result.filename} ({result.suggestions.length})
+            <span className="font-normal text-muted">
+              · {result.supplier ? `nhận diện: ${result.supplier.name}` : "không nhận ra nhà cung cấp (đọc theo cách mặc định)"}
+            </span>
             <HelpTip title="Kiểm tra giá gợi ý">
               <span className="block">Mỗi dòng là một thiết bị trong Bảng giá tìm thấy trong PDF; giá gợi ý là số tiền nhỏ nhất trên dòng đó (đơn giá, không phải thành tiền).</span>
               <span className="block">Đối chiếu với “Dòng trong PDF”, sửa giá nếu sai, bỏ chọn dòng không đúng. File PDF được lưu kèm từng thiết bị.</span>

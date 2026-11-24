@@ -24,16 +24,36 @@ def needs_quotes(category: str, categories: list[str]) -> bool:
     return fold(category).strip() in {fold(c).strip() for c in categories}
 
 
-def quote_problem(prices: list[int], threshold: int, required: int) -> str | None:
-    """None when the quotes are enough to approve; otherwise what is missing (Vietnamese)."""
+def quote_problem(prices: list[int], out_of_stock: int, threshold: int, required: int) -> str | None:
+    """None when the quotes are enough to approve; otherwise what is missing (Vietnamese).
+
+    A vendor with no stock (screenshot of its store) counts towards the required number of quotes,
+    but at least one real price is always needed."""
     if not prices:
-        return "Chưa có báo giá – thêm báo giá của đối tác (kèm file PDF)."
-    if min(prices) > threshold and len(prices) < required:
-        return (
-            f"Giá thấp nhất vượt {threshold:,} đ".replace(",", ".")
-            + f" – cần đủ {required} báo giá (đang có {len(prices)})."
-        )
+        return "Chưa có báo giá có giá – thêm báo giá của đối tác (kèm file PDF)."
+    have = len(prices) + out_of_stock
+    if min(prices) > threshold and have < required:
+        limit = f"{threshold:,}".replace(",", ".")
+        return f"Giá thấp nhất vượt {limit} đ – cần đủ {required} báo giá hoặc xác nhận không có hàng (đang có {have})."
     return None
+
+
+def detect_supplier(text: str, suppliers: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The supplier whose keyword appears in the quote (first match, keywords compared without accents)."""
+    folded = fold(text)
+    for sup in suppliers:
+        if any(k.strip() and fold(k).strip() in folded for k in sup.get("keywords") or []):
+            return sup
+    return None
+
+
+def pick_price(amounts: list[int], position: int) -> int | None:
+    """0 = smallest amount (unit price < line total); N = the N-th amount from the left (vendor form)."""
+    if not amounts:
+        return None
+    if position <= 0:
+        return min(amounts)
+    return amounts[position - 1] if position <= len(amounts) else None
 
 
 def money_values(line: str) -> list[int]:
@@ -44,12 +64,15 @@ def _tokens(text: str) -> list[str]:
     return [t for t in re.split(r"[^0-9a-z]+", fold(text)) if len(t) >= 2]
 
 
-def match_prices(text: str, items: list[dict[str, Any]], min_price: int = 10_000) -> list[dict[str, Any]]:
+def match_prices(
+    text: str, items: list[dict[str, Any]], min_price: int = 10_000, position: int = 0
+) -> list[dict[str, Any]]:
     """Find each price-list item in the quote text and suggest a unit price.
 
-    A line matches when most of the item's name tokens appear in it; the price is the smallest amount
-    ≥ min_price on that line (or the next line, when the PDF wraps), i.e. the unit price rather than
-    the line total. Suggestions only: the supervisor confirms each one."""
+    A line matches when most of the item's name tokens appear in it; the price is picked among the
+    amounts ≥ min_price on that line (or the next line, when the PDF wraps) by the supplier's rule
+    (default: the smallest, i.e. the unit price rather than the line total). Suggestions only: the
+    supervisor confirms each one."""
     lines = [ln for ln in text.splitlines() if ln.strip()]
     out = []
     for item in items:
@@ -64,8 +87,9 @@ def match_prices(text: str, items: list[dict[str, Any]], min_price: int = 10_000
             amounts = [v for v in money_values(line) if v >= min_price] or [
                 v for v in money_values(lines[i + 1] if i + 1 < len(lines) else "") if v >= min_price
             ]
-            if amounts and (best is None or score > best[0]):
-                best = (score, min(amounts), line.strip())
+            price = pick_price(amounts, position)
+            if price and (best is None or score > best[0]):
+                best = (score, price, line.strip())
         if best:
             out.append({"id": item["id"], "name": item["name"], "current_price": item.get("unit_price"),
                         "price": best[1], "line": best[2][:300], "score": round(best[0], 2)})  # fmt: skip

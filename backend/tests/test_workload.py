@@ -600,10 +600,11 @@ def test_quote_rules_and_pdf_price_matching() -> None:
     from app.modules.workload.quotes import match_prices, needs_quotes, pdf_text, quote_problem
 
     assert needs_quotes("laptop ", ["PC", "Laptop"]) and not needs_quotes("Màn hình", ["PC", "Laptop"])
-    assert quote_problem([], 20_000_000, 3)
-    assert quote_problem([25_000_000, 21_000_000], 20_000_000, 3)  # above threshold: 3 needed
-    assert quote_problem([25_000_000, 21_000_000, 22_000_000], 20_000_000, 3) is None
-    assert quote_problem([19_500_000], 20_000_000, 3) is None  # one quote enough under the threshold
+    assert quote_problem([], 2, 20_000_000, 3)  # a real price is always needed
+    assert quote_problem([25_000_000, 21_000_000], 0, 20_000_000, 3)  # above threshold: 3 needed
+    assert quote_problem([25_000_000, 21_000_000, 22_000_000], 0, 20_000_000, 3) is None
+    assert quote_problem([25_000_000, 21_000_000], 1, 20_000_000, 3) is None  # a vendor out of stock counts
+    assert quote_problem([19_500_000], 0, 20_000_000, 3) is None  # one quote enough under the threshold
     text = pdf_text(make_pdf(["STT Ten hang SL Don gia Thanh tien", "1 Chuot Logitech M90 10 145,000 1,450,000",
                               "2 Man hinh Dell P2422H 2 4.150.000 8.300.000", "Tong cong 9.750.000"]))  # fmt: skip
     found = match_prices(
@@ -690,3 +691,115 @@ async def test_operator_sees_no_prices_and_3_quote_process(client) -> None:  # t
         x for x in (await client.get("/api/workload/purchases")).json()["items"] if x["id"] == p["id"]
     )
     assert mine["status"] == "approved" and mine["amount"] is None and mine["po"] is None
+
+
+def test_supplier_detection_and_price_position() -> None:
+    from app.modules.workload.quotes import detect_supplier, match_prices, pick_price
+
+    sups = [
+        {"name": "FPT", "keywords": ["0101248141", "FPT Shop"]},
+        {"name": "An Phát", "keywords": ["anphatpc.com.vn"]},
+    ]
+    assert detect_supplier("CÔNG TY ... MST: 0101248141", sups)["name"] == "FPT"
+    assert detect_supplier("www.AnPhatPC.com.vn", sups)["name"] == "An Phát"
+    assert detect_supplier("Công ty khác", sups) is None
+    assert (
+        pick_price([2, 25_900_000, 51_800_000], 0) == 2
+        and pick_price([2, 25_900_000, 51_800_000], 2) == 25_900_000
+    )
+    assert pick_price([1], 3) is None
+    # A vendor form "qty | list price | discounted unit price | total": the 3rd amount is the price.
+    line = "1 Laptop Dell Latitude 5440 2 27.000.000 25.900.000 51.800.000"
+    assert (
+        match_prices(line, [{"id": "x", "name": "Laptop Dell Latitude 5440"}], position=2)[0]["price"]
+        == 25_900_000
+    )
+    assert match_prices(line, [{"id": "x", "name": "Laptop Dell Latitude 5440"}])[0]["price"] == 25_900_000
+
+
+async def test_supplier_recognition_out_of_stock_and_approval_email(client) -> None:  # type: ignore[no-untyped-def]
+    import email
+    import email.policy
+
+    await client.login("wl-mgr@test.local")
+    sup = await client.post(
+        "/api/workload/suppliers",
+        json={
+            "name": "Hoàng Hà Test",
+            "keywords": ["0309999999"],
+            "price_position": 2,
+            "website": "https://hh.example",
+        },
+    )
+    assert sup.status_code == 201, sup.text
+    assert (await client.post("/api/workload/suppliers", json={"name": "No kw", "keywords": []})).json()[
+        "error"
+    ]["code"] == "keywords_required"
+    laptop = (
+        await client.post("/api/workload/catalog", json={"name": "Laptop ThinkPad E14", "category": "Laptop"})
+    ).json()
+    p = (
+        await client.post(
+            "/api/workload/purchases",
+            json={
+                "kind": "new",
+                "item": "Laptop",
+                "quantity": 1,
+                "catalog_item_id": laptop["id"],
+                "employee": "Nguyễn A",
+            },
+        )
+    ).json()
+    await client.post(
+        f"/api/workload/purchases/{p['id']}/evidence", files={"file": ("ok.png", PNG, "image/png")}
+    )
+    url = f"/api/workload/purchases/{p['id']}/quotes"
+
+    # Read a quote PDF: the vendor is recognised by its tax code, the price by its form's column.
+    pdf = make_pdf(
+        ["CONG TY HOANG HA - MST 0309999999", "1 Laptop ThinkPad E14 1 24.000.000 22.500.000 22.500.000"]
+    )
+    read = (await client.post(f"{url}/read", files={"file": ("hh.pdf", pdf, "application/pdf")})).json()
+    assert read["supplier"]["name"] == "Hoàng Hà Test" and read["unit_price"] == 22_500_000
+    r = await client.post(url, data={"vendor": "Hoàng Hà Test", "unit_price": str(read["unit_price"]),
+                                     "supplier_id": read["supplier"]["id"], "file_id": read["file_id"]})  # fmt: skip
+    assert r.status_code == 201, r.text
+    r = await client.post(url, data={"vendor": "FPT", "unit_price": "23000000"},
+                          files={"file": ("fpt.pdf", make_pdf(["FPT"]), "application/pdf")})  # fmt: skip
+    assert r.json()["quote_rule"]["problem"]  # 2 of 3
+
+    # The third vendor has no stock: screenshot of its web store instead of a price.
+    no_file = await client.post(url, data={"vendor": "An Phát", "out_of_stock": "true"})
+    assert no_file.json()["error"]["code"] == "file_required"
+    r = await client.post(url, data={"vendor": "An Phát", "out_of_stock": "true"},
+                          files={"file": ("store.png", PNG, "image/png")})  # fmt: skip
+    assert r.status_code == 201, r.text
+    oos = [q for q in r.json()["quotes"] if q["out_of_stock"]]
+    assert oos and oos[0]["unit_price"] is None and oos[0]["mime"] == "image/png"
+    assert r.json()["quote_rule"]["problem"] is None and r.json()["unit_price"] == 22_500_000
+    assert (await client.get(f"{url}/{oos[0]['id']}")).headers["content-type"] == "image/png"
+    assert (
+        await client.patch(f"/api/workload/purchases/{p['id']}", json={"status": "approved"})
+    ).status_code == 200
+
+    # The approval e-mail (Head of IT / Finance) shows the comparison and attaches every proof.
+    po = next(
+        o
+        for o in (await client.get("/api/workload/pos")).json()["open"]
+        if any(i["id"] == p["id"] for i in o["items"])
+    )
+    closed = await client.post(f"/api/workload/pos/{po['id']}/close", json={"version_total": po["total"]})
+    assert closed.status_code == 200, closed.text
+    msg = email.message_from_bytes(
+        (await client.get(f"/api/workload/pos/{po['id']}/email")).content, policy=email.policy.default
+    )
+    html = msg.get_body(("html",)).get_content()
+    assert (
+        "<table" in html
+        and "Hoàng Hà Test 22.500.000 đ (chọn – thấp nhất)" in html
+        and "An Phát: hết hàng" in html
+    )
+    assert "Trình phê duyệt" in msg["Subject"] or "Head of IT" in msg.get_body(("plain",)).get_content()
+    names = [a.get_filename() for a in msg.iter_attachments()]
+    assert any(n.startswith("het-hang-") and n.endswith("store.png") for n in names)
+    assert sum(n.startswith("bao-gia-") for n in names) == 2

@@ -12,16 +12,20 @@ MODULE_ID = "workload"
 SETTINGS_KEY = "main"
 
 
-DEFAULT_PO_SUBJECT = "[IT] Đề nghị mua thiết bị {{ po_number }} – {{ total }}"
-DEFAULT_PO_BODY = """Kính gửi Phòng Mua hàng,
+DEFAULT_PO_SUBJECT = "[IT] Trình phê duyệt PO {{ po_number }} – {{ total }}"
+DEFAULT_PO_BODY = """Kính gửi Anh/Chị Head of IT và Phòng Finance (bộ phận mua hàng),
 
-Bộ phận IT đề nghị mua thiết bị theo {{ po_number }} ngày {{ date }}, gồm {{ item_count }} hạng mục, \
-tổng giá trị dự kiến {{ total }} (hạn mức mỗi PO: {{ limit }}).
+Bộ phận IT trình phê duyệt {{ po_number }} ngày {{ date }}: {{ item_count }} hạng mục, \
+tổng giá trị {{ total }} (hạn mức mỗi PO: {{ limit }}).
 
-Chi tiết:
-{{ items_text }}
+{{ items_table }}
 
-Bảng chi tiết và bằng chứng phê duyệt của Function Head được đính kèm email này.
+Với PC/Laptop, đơn giá là báo giá thấp nhất trong các báo giá so sánh; nhà cung cấp không có hàng \
+có ảnh chụp website tại thời điểm hỏi giá.
+Đính kèm: bảng chi tiết Excel, file báo giá của nhà cung cấp, ảnh chụp không có hàng và bằng chứng \
+Function Head đã duyệt từng đề xuất.
+
+Kính đề nghị Anh/Chị xem xét phê duyệt.
 
 Trân trọng,
 {{ closed_by }}"""

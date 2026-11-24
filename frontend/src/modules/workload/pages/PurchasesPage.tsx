@@ -9,11 +9,13 @@ import { PurchaseDialog, type PurchasePrefill } from "../PurchaseDialog";
 import { CatalogTab } from "../purchases/CatalogTab";
 import { PoTab } from "../purchases/PoTab";
 import { ProposalsTab } from "../purchases/ProposalsTab";
+import { SuppliersTab } from "../purchases/SuppliersTab";
 
 const ALL_TABS = [
   { key: "proposals", label: "Đề xuất" },
   { key: "pos", label: "PO tổng" },
   { key: "catalog", label: "Bảng giá" },
+  { key: "suppliers", label: "Nhà cung cấp" },
 ];
 
 /** Prefill from a link (e.g. Kho & cấp phát → “Lập đề xuất mua”): ?new=1&source=onboard&ref=…&item=… */
@@ -70,6 +72,7 @@ export function PurchasesPage() {
         {tab === "proposals" && <ProposalsTab />}
         {tab === "pos" && <PoTab />}
         {tab === "catalog" && <CatalogTab />}
+        {tab === "suppliers" && <SuppliersTab />}
       </Tabs>
       {prefill && can("workload.purchase.create") && <PurchaseDialog prefill={prefill} onClose={closeNew} />}
     </>
