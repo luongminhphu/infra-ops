@@ -973,3 +973,18 @@ Critique 27/40 (sau phase 8–12) → đã sửa:
   mua rút gọn, thanh hạn mức PO ≥90% cho biết đề xuất nào sẽ sang PO mới.
 - (Phát hiện “Job chuyển giao không hiện ở Việc của tôi” là lỗi dữ liệu demo sửa tay bằng SQL, không phải lỗi.)
 
+## 26. Phase 13 – Hướng tối giản: làm từng bước (24/11/2026)
+
+Product owner chọn hướng **wizard tối giản cho Operator** (app cung cấp thông tin chính xác, Operator xác nhận thay vì
+nhập), triển khai lần lượt: Onboard/Offboard (phase 13) → đề xuất mua (14) → “Việc tiếp theo” (15) → nhận hàng (16).
+Quyết định:
+- Wizard cho Operator, màn đầy đủ cho Supervisor/Manager (giám sát, ngoại lệ); chuyển qua lại bằng `?view=`.
+  Mặc định theo quyền `lifecycle.job.assign` (người điều phối).
+- **Điền sẵn, Operator bấm xác nhận** – không bước ghi nào chạy mà chưa có người xem. Mỗi giá trị biết trước có
+  nhãn nguồn (“khớp Mã NV …”, “gợi ý từ kho”).
+- Core `Wizard` / `WizardProgress` (`core/ui/wizard.tsx`): một câu hỏi mỗi màn, một nút chính, focus vào tiêu đề
+  khi đổi bước, lý do nút bị khoá gắn `aria-describedby`, thanh hành động dính đáy trên điện thoại; quy trình > 5
+  bước hiển thị “Bước N/M · tiếp theo: …”.
+- `GET /api/lifecycle/jobs/{id}/prepare`: thông tin RTR, user SDP khớp Mã NV (snapshot), kế hoạch cấp phát của
+  request (`build_plan` dùng chung với Kho & cấp phát).
+

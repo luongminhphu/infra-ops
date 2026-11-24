@@ -3,6 +3,7 @@ and what must be bought (then proposed as a purchase request in the workload mod
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -21,7 +22,7 @@ from app.core.workflow.models import Job
 from app.modules.lifecycle.allocation import Line, Need, allocate, matches
 from app.modules.lifecycle.models import LifecycleRequest, Snapshot
 from app.modules.lifecycle.queries import latest_run
-from app.modules.lifecycle.settings import MODULE_ID, SETTINGS_KEY, LifecycleSettings
+from app.modules.lifecycle.settings import FIELD_TITLES, MODULE_ID, SETTINGS_KEY, LifecycleSettings
 
 router = APIRouter(tags=["lifecycle-inventory"])
 view = require("lifecycle.job.view")
@@ -55,6 +56,11 @@ def _line(line: Line) -> dict[str, Any]:
 async def allocation(
     _: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
+    return await build_plan(session)
+
+
+async def build_plan(session: AsyncSession) -> dict[str, Any]:
+    """Stock summary and per-request allocation (reuse / buy) for upcoming onboards."""
     settings = await load_settings(session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
     run = await latest_run(session)
     assets: dict[str, dict[str, Any]] = {}
@@ -172,3 +178,54 @@ async def set_band(
     await session.commit()
     band, source = band_of(req)
     return {"band": band, "band_source": source}
+
+
+@router.get("/jobs/{job_id}/prepare")
+async def prepare(
+    job_id: uuid.UUID, _: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """Everything already known for a job's preparation wizard, so the operator confirms instead of typing:
+    the RTR details, the SDP user matched by employee ID and the device allocation (reuse / buy)."""
+    job = await session.get(Job, job_id)
+    if job is None or job.module_id != MODULE_ID:
+        raise NotFound("Không tìm thấy Job.")
+    req = await session.get(LifecycleRequest, job.external_ref) if job.external_ref else None
+    if req is None:
+        raise NotFound("Không tìm thấy request RTR của Job.")
+    band, band_source = band_of(req)
+    details = [
+        {"key": k, "label": title, "value": (req.fields or {}).get(k)}
+        for k, title in FIELD_TITLES.items()
+        if k not in ("change_type", "full_name", "employee_id", "effective_date", "band")
+        and (req.fields or {}).get(k)
+    ]
+    sdp_user = None
+    run = await latest_run(session)
+    if run is not None and req.employee_id:
+        snap = await session.scalar(
+            select(Snapshot).where(
+                Snapshot.run_id == run.id,
+                Snapshot.system == "sdp_user",
+                Snapshot.employee_id == req.employee_id,
+            )
+        )
+        if snap is not None:
+            sdp_user = {k: snap.data.get(k) for k in ("id", "name", "email", "employee_id")}
+    plan = await build_plan(session) if req.kind == "onboard" else None
+    entry = next((r for r in plan["requests"] if r["id"] == req.id), None) if plan else None
+    return {
+        "request": {
+            "id": req.id,
+            "display_id": req.display_id,
+            "kind": req.kind,
+            "full_name": req.full_name,
+            "employee_id": req.employee_id,
+            "effective_date": req.effective_date,
+            "band": band,
+            "band_source": band_source,
+            "details": details,
+        },
+        "sdp_user": sdp_user,
+        "allocation": entry,
+        "as_of": run.finished_at if run else None,
+    }

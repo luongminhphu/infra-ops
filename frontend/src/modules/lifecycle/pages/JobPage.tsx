@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { JobWizard } from "./JobWizard";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CalendarClock, LoaderCircle, ChevronLeft, Eye, Play, RotateCcw, ShieldAlert, SkipForward, Workflow, XCircle } from "lucide-react";
+import { AlertTriangle, CalendarClock, ListChecks, LoaderCircle, ChevronLeft, Eye, Play, RotateCcw, ShieldAlert, SkipForward, Workflow, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
@@ -36,7 +37,7 @@ function msg(e: unknown): string {
   return errorMessage(e);
 }
 
-function StepDetail({ job, step, act }: { job: Job; step: JobStep; act: ReturnType<typeof useJobActions> }) {
+export function StepDetail({ job, step, act }: { job: Job; step: JobStep; act: ReturnType<typeof useJobActions> }) {
   const { can } = useAuth();
   const canRun = can("lifecycle.job.execute");
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -162,7 +163,7 @@ function StepDetail({ job, step, act }: { job: Job; step: JobStep; act: ReturnTy
   );
 }
 
-function useJobActions(job: Job | undefined) {
+export function useJobActions(job: Job | undefined) {
   const qc = useQueryClient();
   const id = job?.id;
   const done = (j: Job, text?: string) => {
@@ -229,6 +230,10 @@ export function JobPage() {
   const q = useJob(id);
   const job = q.data;
   const act = useJobActions(job);
+  const [search, setSearch] = useSearchParams();
+  // Operators work step by step by default; coordinators (who can reassign) get the full view.
+  const view = search.get("view") ?? (can("lifecycle.job.assign") ? "full" : "wizard");
+  const setView = (v: string) => setSearch((cur) => { const n = new URLSearchParams(cur); n.set("view", v); return n; }, { replace: true });
   const [selected, setSelected] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [flowOpen, setFlowOpen] = useState(false);
@@ -259,6 +264,7 @@ export function JobPage() {
 
   const js = job.stalled_minutes ? { status: "warning" as const, label: "" } : JOB_STATUS[job.status];
   const canRun = can("lifecycle.job.execute");
+  if (view === "wizard") return <>{back}<JobWizard job={job} onFull={() => setView("full")} /></>;
   const step = job.steps.find((s) => s.key === selected) ?? job.steps[0]!;
   const finished = ["completed", "cancelled"].includes(job.status);
   const eff = job.params.effective_date;
@@ -284,6 +290,7 @@ export function JobPage() {
         }
         actions={
           <>
+            {canRun && !finished && <Button onClick={() => setView("wizard")}><ListChecks className="size-4" aria-hidden="true" />Làm từng bước</Button>}
             <Button onClick={() => setFlowOpen(true)}><Workflow className="size-4" aria-hidden="true" />Lưu đồ</Button>
             <Button onClick={() => setPreviewOpen(true)}><Eye className="size-4" aria-hidden="true" />Xem trước các bước</Button>
             {can("lifecycle.job.assign") && !finished && <AssignJobButton job={job} />}
