@@ -41,6 +41,10 @@ export function AppShell() {
   // Move focus to the main heading after navigation so screen readers announce the new page.
   useEffect(() => {
     document.querySelector<HTMLElement>("main h1")?.focus({ preventScroll: true });
+    // Phone sub-nav scrolls horizontally: keep the current page's tab in view.
+    document
+      .querySelector<HTMLElement>('[data-subnav-strip] [aria-current="page"]')
+      ?.scrollIntoView({ block: "nearest", inline: "center" });
   }, [location.pathname]);
 
   const subLinks = (horizontal: boolean) =>
@@ -94,7 +98,7 @@ export function AppShell() {
         <Topbar />
         {sub && (
           <nav aria-label={`${sub.title} (thu gọn)`} className="border-b border-line bg-surface lg:hidden">
-            <ul className="flex gap-1 overflow-x-auto px-3 py-1.5">{subLinks(true)}</ul>
+            <ul data-subnav-strip className="flex gap-1 overflow-x-auto px-3 py-1.5">{subLinks(true)}</ul>
           </nav>
         )}
         <main id="main" className="mx-auto w-full max-w-[1600px] flex-1 px-4 pt-5 pb-24 sm:px-5 sm:pb-5 [&_h1]:outline-none" tabIndex={-1}>

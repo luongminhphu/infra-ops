@@ -952,3 +952,24 @@ Quyết định (theo trả lời của product owner):
   thêm PDF báo giá và ảnh không có hàng. Mẫu mặc định đổi sang lời trình duyệt; hệ thống đã lưu mẫu cũ giữ nguyên
   (`items_text` cũng hiện thành bảng trong bản HTML).
 
+## 25. Sửa theo critique lần 3 (24/11/2026)
+
+Critique 27/40 (sau phase 8–12) → đã sửa:
+- **Job đứng yên**: `job_out.stalled_minutes` (Job `running` không được worker cập nhật quá 10 phút). Trang Job báo
+  “Bước tự động chưa chạy sau X – worker có thể đang dừng… không cần bỏ qua bước”, bước tự động đang chạy có
+  thông báo tiến độ; badge “Đứng yên X ở bước N” ở danh sách Job, Tổng quan (“Cần xử lý tiếp”). Bộ đếm thống nhất:
+  “Đang ở bước N/T · xong M”.
+- **Đề xuất mua**: hộp thoại Duyệt có bối cảnh (người đề xuất, người dùng, nguồn, lý do) và cảnh báo trùng (cùng
+  thiết bị + người dùng đang chờ/đã duyệt); tên người đề xuất thay email (`created_by_name`); mã PO/nguồn không
+  xuống dòng; **duyệt/từ chối hàng loạt** (`POST /purchases/bulk`, từng đề xuất kiểm tra như duyệt lẻ trong
+  savepoint, cái không đạt giữ nguyên và báo lý do); lý do nút Duyệt bị khoá gắn `aria-describedby`; dạng thẻ trên
+  điện thoại.
+- **Ghi ra ngoài**: Nhập kho SDP nêu kết nối đích (`GET /purchases/receive-target`), PO, “không tự xoá được”;
+  Enter chuyển sang serial kế tiếp (máy quét mã vạch); Chốt PO hiện người nhận email trình duyệt.
+- **Tổng quan**: thẻ bắt đầu không còn nói “số liệu trống”; “Đang mở” cùng định nghĩa với trang Job; số 0 trung
+  tính; “0 nhân viên” là cảnh báo.
+- Điện thoại: menu con tự cuộn tới mục đang chọn, tab không xuống dòng, trang Kho đưa nhân viên lên trước KPI.
+- Câu chữ: Việc của tôi “Job đang giao cho bạn phụ trách”, gợi ý mua có HelpTip “Không cần”, mô tả trang Đề xuất
+  mua rút gọn, thanh hạn mức PO ≥90% cho biết đề xuất nào sẽ sang PO mới.
+- (Phát hiện “Job chuyển giao không hiện ở Việc của tôi” là lỗi dữ liệu demo sửa tay bằng SQL, không phải lỗi.)
+

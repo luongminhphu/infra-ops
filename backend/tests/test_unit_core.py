@@ -104,3 +104,16 @@ async def test_concurrent_startup_does_not_collide(app) -> None:  # type: ignore
     async with get_sessionmaker()() as s:
         n = await s.scalar(select(func.count()).select_from(ScheduledTaskRow))
     assert n == len(get_registry().scheduled_tasks())
+
+
+def test_running_job_without_progress_is_flagged_stalled() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from app.core.workflow.api import _stalled_minutes
+    from app.core.workflow.models import Job
+
+    now = datetime.now(UTC)
+    assert _stalled_minutes(Job(status="running", updated_at=now - timedelta(minutes=2))) is None
+    assert _stalled_minutes(Job(status="running", updated_at=now - timedelta(hours=15))) == 900
+    # Waiting for a person is not "stalled": only running jobs are advanced by the worker.
+    assert _stalled_minutes(Job(status="waiting", updated_at=now - timedelta(hours=15))) is None

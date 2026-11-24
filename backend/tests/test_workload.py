@@ -466,6 +466,7 @@ async def test_po_limit_close_and_email(client) -> None:  # type: ignore[no-unty
         ids.append(p["id"])
     data = (await client.get("/api/workload/pos")).json()
     assert [o["total"] for o in data["open"]] == [60_000_000, 20_000_000]
+    assert data["email_to"] == ["mua-hang@test.local"]
     assert (await client.get("/api/workload/purchases?source_ref=RTR-1")).json()["items"][0][
         "employee"
     ] == "Nguyễn Văn A"
@@ -545,6 +546,8 @@ async def test_receive_creates_in_store_assets_on_sdp(client, sdp) -> None:  # t
         await client.post(f"/api/workload/pos/{po['id']}/close", json={"version_total": po["total"]})
     ).status_code == 200
 
+    target = (await client.get("/api/workload/purchases/receive-target")).json()
+    assert target["connection"]["name"] == "SDP WL" and target["state"] == "In Store"
     url = f"/api/workload/purchases/{p['id']}/receive"
     bad = await client.post(url, json={"units": [{"serial": "SN-1"}]})
     assert bad.json()["error"]["code"] == "units_mismatch"
@@ -803,3 +806,36 @@ async def test_supplier_recognition_out_of_stock_and_approval_email(client) -> N
     names = [a.get_filename() for a in msg.iter_attachments()]
     assert any(n.startswith("het-hang-") and n.endswith("store.png") for n in names)
     assert sum(n.startswith("bao-gia-") for n in names) == 2
+
+
+async def test_bulk_approve_applies_eligible_and_reports_the_rest(client) -> None:  # type: ignore[no-untyped-def]
+    await client.login("wl-mgr@test.local")
+    cat = (
+        await client.post("/api/workload/catalog", json={"name": "Tai nghe bulk", "unit_price": 500_000})
+    ).json()
+    ids = []
+    for evidence in (True, True, False):
+        p = (
+            await client.post(
+                "/api/workload/purchases",
+                json={"kind": "new", "item": "Tai nghe", "quantity": 1, "catalog_item_id": cat["id"]},
+            )
+        ).json()
+        if evidence:
+            await client.post(
+                f"/api/workload/purchases/{p['id']}/evidence", files={"file": ("ok.png", PNG, "image/png")}
+            )
+        ids.append(p["id"])
+    assert p["created_by_name"]  # requester shown by name, not only the e-mail
+    r = await client.post("/api/workload/purchases/bulk", json={"ids": ids, "status": "approved"})
+    assert r.status_code == 200, r.text
+    assert sorted(r.json()["done"]) == sorted(ids[:2]) and list(r.json()["failed"]) == [ids[2]]
+    items = {x["id"]: x for x in (await client.get("/api/workload/purchases")).json()["items"]}
+    assert [items[i]["status"] for i in ids] == ["approved", "approved", "proposed"]
+    assert items[ids[0]]["po"] is not None  # packed into an open PO
+    rej = await client.post("/api/workload/purchases/bulk", json={"ids": [ids[2]], "status": "rejected"})
+    assert "lý do" in rej.json()["failed"][ids[2]]
+    await client.login("wl-op1@test.local")
+    assert (
+        await client.post("/api/workload/purchases/bulk", json={"ids": ids, "status": "approved"})
+    ).status_code == 403

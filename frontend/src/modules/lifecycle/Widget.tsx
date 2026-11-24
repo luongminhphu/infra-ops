@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/core/api/client";
 import { JOB_WORKFLOWS, jobStatusLabel, WORKFLOW_LABEL, type Job } from "./jobs";
-import { ChevronRight, GitCompareArrows } from "lucide-react";
+import { AlertTriangle, ChevronRight, GitCompareArrows } from "lucide-react";
 import { EmptyState } from "@/core/ui/feedback";
 import { StatusBadge } from "@/core/ui/status";
 import { formatRelative } from "@/core/lib/format";
@@ -21,7 +21,8 @@ export function JobsWidget({ data }: { data: unknown }) {
   const rows = (data as { counts: { workflow: string; status: string; count: number }[] }).counts;
   const sum = (statuses: string[]) => rows.filter((r) => statuses.includes(r.status)).reduce((n, r) => n + r.count, 0);
   const tiles = [
-    { label: "Đang mở", value: sum(["running", "waiting", "scheduled", "failed"]), to: "open", tone: "" },
+    // Same definition as the Jobs page filter "Đang mở": everything not completed or cancelled.
+    { label: "Đang mở", value: sum(["draft", "running", "waiting", "scheduled", "failed"]), to: "open", tone: "" },
     { label: "Chờ người xử lý / chờ ký", value: sum(["waiting"]), to: "waiting", tone: "text-waiting" },
     { label: "Lỗi", value: sum(["failed"]), to: "failed", tone: "text-failed" },
     { label: "Nháp chưa bắt đầu", value: sum(["draft"]), to: "draft", tone: "" },
@@ -47,10 +48,11 @@ export function JobsWidget({ data }: { data: unknown }) {
 function WaitingJobs() {
   const q = useQuery({
     queryKey: ["jobs", "dashboard-waiting"],
-    queryFn: () => api<{ items: Job[] }>(`/api/core/jobs?status=waiting&limit=6&workflows=${JOB_WORKFLOWS}`),
+    queryFn: () => api<{ items: Job[] }>(`/api/core/jobs?status=open&limit=50&workflows=${JOB_WORKFLOWS}`),
     refetchInterval: 30_000,
   });
-  const jobs = q.data?.items ?? [];
+  // Waiting for a person, or running but stalled (worker not advancing it).
+  const jobs = (q.data?.items ?? []).filter((j) => j.status === "waiting" || j.stalled_minutes).slice(0, 6);
   if (!jobs.length) return null;
   return (
     <div className="mb-3">
@@ -87,14 +89,21 @@ export function ReconciliationWidget({ data }: { data: unknown }) {
       <div>
         <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
           <StatusBadge status={RUN_STATUS[d.run.status].status} label={RUN_STATUS[d.run.status].label} />
-          Đồng bộ {formatRelative(d.run.finished_at)} · {d.employees ?? 0} nhân viên
+          Đồng bộ {formatRelative(d.run.finished_at)} ·{" "}
+          {d.employees ? (
+            `${d.employees} nhân viên`
+          ) : (
+            <span className="inline-flex items-center gap-1 text-waiting">
+              <AlertTriangle className="size-3.5" aria-hidden="true" />chưa đọc được nhân viên nào – kiểm tra kết nối và nhãn trường RTR
+            </span>
+          )}
         </div>
         <ul className="mt-3 grid grid-cols-3 gap-2" aria-label="Nhân viên đang lệch theo mức độ">
           {(["high", "medium", "low"] as const).map((s) => (
             <li key={s}>
               <Link to={`/lifecycle/reconciliation?severity=${s}`} className="block rounded-sm border border-line px-3 py-2 hover:bg-surface-2">
                 <span className="block text-sm text-muted">{SEVERITY[s].label}</span>
-                <span className={`block tabular text-2xl font-semibold ${s === "high" ? "text-failed" : s === "medium" ? "text-mismatch" : "text-waiting"}`}>
+                <span className={`block tabular text-2xl font-semibold ${(d.severity?.[s] ?? 0) === 0 ? "" : s === "high" ? "text-failed" : s === "medium" ? "text-mismatch" : "text-waiting"}`}>
                   {d.severity?.[s] ?? 0}
                 </span>
               </Link>

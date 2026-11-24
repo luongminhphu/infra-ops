@@ -38,7 +38,7 @@ export function Tabs({
   };
   return (
     <div>
-      <div role="tablist" aria-label={label} className="flex gap-1 border-b border-line" onKeyDown={onKey}>
+      <div role="tablist" aria-label={label} className="flex gap-1 overflow-x-auto border-b border-line pb-px" onKeyDown={onKey}>
         {tabs.map((t) => {
           const selected = t.key === value;
           return (
@@ -55,7 +55,7 @@ export function Tabs({
               tabIndex={selected ? 0 : -1}
               onClick={() => onChange(t.key)}
               className={cn(
-                "-mb-px cursor-pointer border-b-2 px-3 py-2 text-base font-medium transition-colors duration-150",
+                "-mb-px shrink-0 cursor-pointer border-b-2 px-3 py-2 whitespace-nowrap text-base font-medium transition-colors duration-150",
                 selected ? "border-primary text-ink" : "border-transparent text-muted hover:text-ink",
               )}
             >

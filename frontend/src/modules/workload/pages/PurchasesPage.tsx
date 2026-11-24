@@ -56,7 +56,7 @@ export function PurchasesPage() {
     <>
       <PageHeader
         title="Đề xuất mua thiết bị"
-        description="Operator đề xuất thiết bị cần cấp kèm bằng chứng Function Head duyệt → Supervisor định giá (báo giá đối tác / bảng giá) và duyệt → hệ thống gom PO tổng theo hạn mức → Supervisor chốt PO và gửi email cho Phòng Mua hàng."
+        description="Đề xuất thiết bị cần cấp, duyệt, gom PO theo hạn mức và trình duyệt PO."
         actions={
           <>
             <a className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-line-strong bg-surface px-3 font-medium hover:bg-surface-2" href="/api/workload/purchases/export">
