@@ -908,3 +908,17 @@ Quyết định (theo trả lời của product owner):
   lập đề xuất mua (liên kết sang module workload qua URL, không import chéo module).
 - **Tooltip hướng dẫn**: core `HelpTip` (nút “?” mở ghi chú, chạm/bàn phím được, Esc đóng) trên các phần mới.
 
+## 22. Phase 10 – Nhận hàng → nhập kho SDP (24/11/2026)
+
+Product owner chọn khép vòng mua sắm của phase 9:
+- Bảng giá có thêm **Sản phẩm trên SDP** (`workload_catalog_item.sdp_product`). Có giá trị → thiết bị được quản lý
+  tài sản; trống → linh kiện/sửa chữa, nhận hàng chỉ đổi trạng thái.
+- `ordered → received` không còn là thao tác tay: `POST /api/workload/purchases/{id}/receive` (quyền
+  `workload.purchase.manage`). Thiết bị có sản phẩm SDP cần đủ serial (không trùng) = số lượng; API tạo Job
+  `workload.receive` (worker). Bước ghi đọc trước theo `serial_number`, chỉ tạo tài sản còn thiếu (trạng thái
+  `asset_state_in_store`, mặc định “In Store”, tên = asset tag hoặc serial), `before_state` ghi serial đã có, lỗi
+  thì không đổi trạng thái đề xuất và bấm Thử lại an toàn. Xong: đề xuất `received` + `received_assets`, audit,
+  và `request_run("lifecycle.sync")` để Kho & cấp phát thấy hàng mới (bỏ qua nếu module lifecycle không cài).
+- Không tự gán tài sản mới cho onboard: engine cấp phát phase 9 đã gợi ý tận dụng sau khi đồng bộ; Operator vẫn
+  xác nhận bằng “Chọn tài sản tận dụng vào Job”.
+

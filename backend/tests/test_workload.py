@@ -73,6 +73,8 @@ class FakeSdp:
             "505": req("505", "Canceled", "12", 3, None),
         }
         self.puts: list[str] = []
+        self.assets: list[dict] = [{"id": "900", "serial_number": "SN-OLD", "name": "OLD"}]
+        self.asset_posts: list[dict] = []
         self.techs = [
             {"id": "11", "name": "Tech 11", "email_id": "wl-op1@test.local"},
             {"id": "12", "name": "Tech 12", "email_id": "wl-op2@test.local"},
@@ -100,6 +102,20 @@ class FakeSdp:
             return httpx.Response(200, json={**OK, "request": self.requests[rid]})
 
         r.route(url__regex=rf"{re.escape(SDP)}/api/v3/requests/(?P<rid>\d+)$").mock(side_effect=detail)
+
+        def assets(request: httpx.Request) -> httpx.Response:
+            if request.method == "POST":
+                body = json.loads(parse_qs(request.content.decode())["input_data"][0])["asset"]
+                created = {**body, "id": str(1000 + len(self.asset_posts))}
+                self.asset_posts.append(body)
+                self.assets.append(created)
+                return httpx.Response(201, json={**OK, "asset": created})
+            crit = json.loads(request.url.params["input_data"])["list_info"]["search_criteria"]
+            crit = crit[0] if isinstance(crit, list) else crit
+            rows = [a for a in self.assets if a.get(crit["field"]) == crit["value"]]
+            return httpx.Response(200, json={**OK, "list_info": {"has_more_rows": False}, "assets": rows})
+
+        r.route(url__regex=rf"{re.escape(SDP)}/api/v3/assets(\?.*)?$").mock(side_effect=assets)
 
 
 async def _user(admin, role: str, upn: str) -> None:  # type: ignore[no-untyped-def]
@@ -390,8 +406,12 @@ async def test_portal_accounts_and_purchase_flow(admin, client, sdp) -> None:  #
         f"/api/workload/pos/{open_po['id']}/close", json={"version_total": open_po["total"]}
     )
     assert closed.status_code == 200 and closed.json()["number"].startswith("PO-")
-    r = await client.patch(f"/api/workload/purchases/{pid}", json={"status": "received"})
-    assert r.status_code == 200 and r.json()["status"] == "received"
+    # Not tracked as an SDP asset (no SDP product): receiving just marks it received.
+    assert (
+        await client.patch(f"/api/workload/purchases/{pid}", json={"status": "received"})
+    ).status_code == 400
+    r = await client.post(f"/api/workload/purchases/{pid}/receive", json={})
+    assert r.status_code == 200 and r.json()["status"] == "received", r.text
     listed = (await client.get("/api/workload/purchases")).json()
     assert any(p["id"] == pid for p in listed["items"])
     assert listed["counts"]["received"] == sum(p["status"] == "received" for p in listed["items"])
@@ -488,3 +508,68 @@ async def test_po_limit_close_and_email(client) -> None:  # type: ignore[no-unty
     # Settings reject a broken e-mail template.
     s["po_email_body"] = "Xin chào {{ po_number "
     assert (await client.put("/api/workload/settings", json=s)).json()["error"]["code"] == "invalid_settings"
+
+
+@respx.mock(assert_all_called=False)
+async def test_receive_creates_in_store_assets_on_sdp(client, sdp) -> None:  # type: ignore[no-untyped-def]
+    """Received devices become In Store assets on SDP via a worker job; serials SDP already has are
+    not created again (read first), and the purchase lists the assets."""
+    await client.login("wl-mgr@test.local")
+    cat = (
+        await client.post(
+            "/api/workload/catalog",
+            json={"name": "Laptop nhận kho", "unit_price": 1_000_000, "sdp_product": "Dell Latitude 5440"},
+        )
+    ).json()
+    assert cat["sdp_product"] == "Dell Latitude 5440"
+    p = (
+        await client.post(
+            "/api/workload/purchases",
+            json={"kind": "new", "item": "Laptop", "quantity": 2, "catalog_item_id": cat["id"]},
+        )
+    ).json()
+    await client.post(
+        f"/api/workload/purchases/{p['id']}/evidence", files={"file": ("ok.png", PNG, "image/png")}
+    )
+    assert (
+        await client.patch(f"/api/workload/purchases/{p['id']}", json={"status": "approved"})
+    ).status_code == 200
+    early = await client.post(f"/api/workload/purchases/{p['id']}/receive", json={"units": []})
+    assert early.json()["error"]["code"] == "not_ordered"
+    po = next(
+        o
+        for o in (await client.get("/api/workload/pos")).json()["open"]
+        if any(i["id"] == p["id"] for i in o["items"])
+    )
+    assert (
+        await client.post(f"/api/workload/pos/{po['id']}/close", json={"version_total": po["total"]})
+    ).status_code == 200
+
+    url = f"/api/workload/purchases/{p['id']}/receive"
+    bad = await client.post(url, json={"units": [{"serial": "SN-1"}]})
+    assert bad.json()["error"]["code"] == "units_mismatch"
+    dup = await client.post(url, json={"units": [{"serial": "SN-1"}, {"serial": "sn-1"}]})
+    assert dup.json()["error"]["code"] == "duplicate_serial"
+    r = await client.post(
+        url, json={"units": [{"serial": "SN-NEW", "asset_tag": "LT-0999"}, {"serial": "SN-OLD"}]}
+    )
+    assert (
+        r.status_code == 200
+        and r.json()["status"] == "ordered"
+        and r.json()["receive_job"]["status"] == "running"
+    )
+    assert (await client.post(url, json={"units": [{"serial": "A1"}, {"serial": "A2"}]})).json()["error"][
+        "code"
+    ] == "receive_running"
+
+    async with get_sessionmaker()() as s:
+        await pump(s)
+    got = next(x for x in (await client.get("/api/workload/purchases")).json()["items"] if x["id"] == p["id"])
+    assert got["status"] == "received", got["receive_job"]
+    assert [(a["serial"], a["id"]) for a in got["received_assets"]] == [("SN-NEW", "1000"), ("SN-OLD", "900")]
+    assert sdp.asset_posts == [
+        {"name": "LT-0999", "product": {"name": "Dell Latitude 5440"}, "asset_tag": "LT-0999",
+         "serial_number": "SN-NEW", "state": {"name": "In Store"}}
+    ]  # fmt: skip
+    job = (await client.get(f"/api/core/jobs/{r.json()['receive_job']['id']}")).json()
+    assert job["status"] == "completed" and job["steps"][0]["before_state"]["existing"] == {"SN-OLD": "900"}

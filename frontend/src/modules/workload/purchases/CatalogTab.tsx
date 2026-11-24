@@ -26,6 +26,7 @@ function EditDialog({ item, onClose }: { item: CatalogItem | null; onClose: () =
   const [spec, setSpec] = useState(item?.spec ?? "");
   const [price, setPrice] = useState(item?.unit_price ? String(item.unit_price) : "");
   const [vendor, setVendor] = useState(item?.vendor ?? "");
+  const [sdpProduct, setSdpProduct] = useState(item?.sdp_product ?? "");
   const [quoted, setQuoted] = useState(item?.quoted_at ?? "");
   const [quotedBad, setQuotedBad] = useState(false);
   const [active, setActive] = useState(item?.active ?? true);
@@ -35,7 +36,7 @@ function EditDialog({ item, onClose }: { item: CatalogItem | null; onClose: () =
     mutationFn: () =>
       api<CatalogItem>(item ? `/api/workload/catalog/${item.id}` : "/api/workload/catalog", {
         method: item ? "PUT" : "POST",
-        json: { name, category, spec, unit_price: price ? Number(price) : null, vendor, quoted_at: quoted || null, active },
+        json: { name, category, spec, unit_price: price ? Number(price) : null, sdp_product: sdpProduct, vendor, quoted_at: quoted || null, active },
       }),
     onSuccess: (c) => {
       toast.success(`Đã lưu “${c.name}”${c.unit_price ? ` – ${formatVnd(c.unit_price)}` : ""}. PO nháp đã được tính lại.`);
@@ -73,6 +74,13 @@ function EditDialog({ item, onClose }: { item: CatalogItem | null; onClose: () =
         <Field label="Ngày báo giá" error="Ngày theo dạng dd/MM/yyyy." showError={tried && bad.quoted}>
           <DateInput value={quoted} onChange={setQuoted} onInvalidChange={setQuotedBad} />
         </Field>
+        <Field
+          label="Sản phẩm trên ServiceDesk Plus"
+          hint="Tên Product trên SDP (vd. Dell Latitude 5440). Có tên thì khi nhận hàng hệ thống tạo tài sản In Store theo serial; để trống với linh kiện, sửa chữa không quản lý tài sản."
+          className="sm:col-span-2"
+        >
+          <Input value={sdpProduct} maxLength={300} onChange={(e) => setSdpProduct(e.target.value)} />
+        </Field>
         <Field label="Quy cách" className="sm:col-span-2">
           <Textarea rows={2} maxLength={1000} value={spec} onChange={(e) => setSpec(e.target.value)} />
         </Field>
@@ -98,6 +106,7 @@ export function CatalogTab() {
           <span className="block max-w-96">
             <span className="block font-medium">{c.row.original.name}</span>
             {c.row.original.spec && <span className="block truncate text-xs text-muted" title={c.row.original.spec}>{c.row.original.spec}</span>}
+            <span className="block text-xs text-muted">{c.row.original.sdp_product ? `Tài sản SDP: ${c.row.original.sdp_product}` : "Không tạo tài sản SDP"}</span>
           </span>
         ),
       },

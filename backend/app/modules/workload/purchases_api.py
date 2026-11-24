@@ -24,6 +24,8 @@ from app.core.db import get_session
 from app.core.errors import AppError, NotFound
 from app.core.settings.service import load_settings
 from app.core.storage.service import check_size, read_file, safe_filename, save_file, sniff
+from app.core.workflow.engine import create_job, start_job
+from app.core.workflow.models import Job
 from app.modules.workload import po as pos
 from app.modules.workload.api import VIEW_ALL, _my_technician, ticket_out
 from app.modules.workload.models import (
@@ -58,7 +60,7 @@ STATUS_LABEL = {
 NEXT: dict[str, set[str]] = {
     "proposed": {"approved", "rejected"},
     "approved": {"rejected"},
-    "ordered": {"received"},
+    "ordered": set(),  # → received via POST /purchases/{id}/receive (creates the SDP assets)
     "received": set(),
     "rejected": {"proposed"},
 }
@@ -69,6 +71,7 @@ def out(
     cat: CatalogItem | None = None,
     evidence: list[PurchaseEvidence] | None = None,
     po: PurchaseOrder | None = None,
+    job: Job | None = None,
 ) -> dict[str, Any]:
     price = pos.price_of(p, cat)
     return {
@@ -103,6 +106,15 @@ def out(
         ],
         "po": {"id": str(po.id), "number": po.number, "status": po.status} if po else None,
         "next": sorted(NEXT[p.status]),
+        "sdp_product": cat.sdp_product if cat else "",
+        "received_assets": p.received_assets,
+        "receive_job": None
+        if job is None
+        else {
+            "id": str(job.id),
+            "status": job.status,
+            "error": next((st.message for st in job.steps if st.status == "failed"), None),
+        },
     }
 
 
@@ -122,8 +134,23 @@ async def _full(session: AsyncSession, rows: list[PurchaseRequest]) -> list[dict
             )
         ).all():
             ev.setdefault(e.purchase_id, []).append(e)
+    jobs: dict[str, Job] = {}
+    ordered = [str(p.id) for p in rows if p.status == "ordered"]
+    if ordered:
+        for j in (
+            await session.scalars(
+                select(Job)
+                .where(
+                    Job.workflow_key == "workload.receive",
+                    Job.external_ref.in_(ordered),
+                    Job.status != "cancelled",
+                )
+                .order_by(Job.created_at)
+            )
+        ).all():
+            jobs[j.external_ref] = j  # type: ignore[index]
     return [
-        out(p, cats.get(p.catalog_item_id), ev.get(p.id, []), po_rows.get(p.po_id))  # type: ignore[arg-type]
+        out(p, cats.get(p.catalog_item_id), ev.get(p.id, []), po_rows.get(p.po_id), jobs.get(str(p.id)))  # type: ignore[arg-type]
         for p in rows
     ]
 
@@ -295,6 +322,98 @@ async def update_purchase(
         await pos.repack(session, await _settings(session))
     await session.commit()
     await session.refresh(p)
+    return await _one(session, p)
+
+
+class UnitIn(BaseModel):
+    serial: str = Field(min_length=2, max_length=100)
+    asset_tag: str = Field("", max_length=100)
+
+
+class ReceiveIn(BaseModel):
+    units: list[UnitIn] = Field(default_factory=list, max_length=500)
+    note: str = Field("", max_length=1000)
+
+
+@router.post("/purchases/{purchase_id}/receive")
+async def receive(
+    purchase_id: uuid.UUID,
+    body: ReceiveIn,
+    user: CurrentUser = Depends(manage),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Goods arrived. Devices tracked on SDP (catalog item has an SDP product) get one asset per unit,
+    created In Store by a worker job; anything else (parts, repairs) is simply marked received."""
+    p = await session.get(PurchaseRequest, purchase_id, with_for_update=True)
+    if p is None:
+        raise NotFound("Không tìm thấy đề xuất.")
+    if p.status != "ordered":
+        raise AppError("Chỉ nhận hàng cho đề xuất đã đặt mua (PO đã chốt).", code="not_ordered")
+    running = await session.scalar(
+        select(Job.id).where(
+            Job.workflow_key == "workload.receive",
+            Job.external_ref == str(p.id),
+            Job.status.not_in(["completed", "cancelled"]),
+        )
+    )
+    if running:
+        raise AppError(
+            "Đang nhập kho đề xuất này – xem tiến độ hoặc thử lại bước lỗi.", code="receive_running"
+        )
+    cat = await session.get(CatalogItem, p.catalog_item_id) if p.catalog_item_id else None
+    if cat is None or not cat.sdp_product:
+        before = p.status
+        p.status, p.updated_at = "received", datetime.now(UTC)
+        if body.note.strip():
+            p.note = body.note.strip()
+        await record(
+            session,
+            actor=user.actor,
+            module_id=MODULE_ID,
+            action="workload.purchase_status",
+            target_type="purchase",
+            target_id=str(p.id),
+            target_label=p.item,
+            before={"status": before},
+            after={"status": "received", "sdp_assets": False},
+        )
+        await session.commit()
+        return await _one(session, p)
+
+    serials = [u.serial.strip() for u in body.units]
+    if len(serials) != p.quantity:
+        raise AppError(f"Nhập đủ serial cho {p.quantity} thiết bị.", code="units_mismatch")
+    if len({x.lower() for x in serials}) != len(serials):
+        raise AppError("Serial bị trùng.", code="duplicate_serial")
+    settings = await _settings(session)
+    job, _ = await create_job(
+        session,
+        user.actor,
+        "workload.receive",
+        params={
+            "purchase_id": str(p.id),
+            "product": cat.sdp_product,
+            "state": settings.asset_state_in_store,
+            "units": [{"serial": u.serial.strip(), "asset_tag": u.asset_tag.strip()} for u in body.units],
+        },
+        subject_key=str(p.id),
+        subject_label=f"Nhập kho {p.quantity} × {cat.name}",
+        external_ref=str(p.id),
+        idempotency_key=f"workload.receive:{uuid.uuid4()}",
+    )
+    await start_job(session, user.actor, job, None)
+    await record(
+        session,
+        actor=user.actor,
+        module_id=MODULE_ID,
+        action="workload.receive_requested",
+        system_type="sdp",
+        target_type="purchase",
+        target_id=str(p.id),
+        target_label=p.item,
+        after={"serials": serials, "product": cat.sdp_product},
+    )
+    await session.commit()
     return await _one(session, p)
 
 
@@ -475,6 +594,7 @@ def catalog_out(c: CatalogItem) -> dict[str, Any]:
         "category": c.category,
         "spec": c.spec,
         "unit_price": c.unit_price,
+        "sdp_product": c.sdp_product,
         "vendor": c.vendor,
         "quoted_at": c.quoted_at,
         "active": c.active,
@@ -496,6 +616,7 @@ class CatalogIn(BaseModel):
     category: str = Field("", max_length=100)
     spec: str = Field("", max_length=1000)
     unit_price: int | None = Field(None, ge=1, le=10_000_000_000)
+    sdp_product: str = Field("", max_length=300)
     vendor: str = Field("", max_length=200)
     quoted_at: date | None = None
     active: bool = True
@@ -505,6 +626,7 @@ async def _save_catalog(
     session: AsyncSession, user: CurrentUser, c: CatalogItem, body: CatalogIn, before: dict[str, Any] | None
 ) -> dict[str, Any]:
     c.name, c.category, c.spec = body.name.strip(), body.category.strip(), body.spec.strip()
+    c.sdp_product = body.sdp_product.strip()
     c.unit_price, c.vendor, c.quoted_at, c.active = (
         body.unit_price,
         body.vendor.strip(),
