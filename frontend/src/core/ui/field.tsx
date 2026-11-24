@@ -60,7 +60,10 @@ interface FieldProps {
  * do not announce hidden errors.
  */
 export function Field({ label, hint, error, showError = false, required, className, children }: FieldProps) {
-  const id = useId();
+  const generated = useId();
+  // Keep an id the caller set on the control (e.g. to move focus to it); otherwise generate one.
+  const own = isValidElement<{ id?: string }>(children) ? children.props.id : undefined;
+  const id = own ?? generated;
   const hintId = `${id}-hint`;
   const errorId = `${id}-error`;
   const invalid = Boolean(error && showError);

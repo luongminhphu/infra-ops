@@ -546,6 +546,8 @@ async def test_receive_creates_in_store_assets_on_sdp(client, sdp) -> None:  # t
         await client.post(f"/api/workload/pos/{po['id']}/close", json={"version_total": po["total"]})
     ).status_code == 200
 
+    queue = (await client.get("/api/core/me/next")).json()["items"]
+    assert any(i["key"] == "receive:ordered" and i["href"] == "/workload/purchases/receive" for i in queue)
     target = (await client.get("/api/workload/purchases/receive-target")).json()
     assert target["connection"]["name"] == "SDP WL" and target["state"] == "In Store"
     url = f"/api/workload/purchases/{p['id']}/receive"

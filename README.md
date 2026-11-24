@@ -33,6 +33,7 @@ Tài liệu: [kiến trúc](docs/architecture.md) · [thêm module](docs/adding-
 | 13 | **Làm từng bước (wizard)**: khung Wizard dùng chung; Job Onboard/Offboard cho Operator mở thẳng dạng từng bước, dữ liệu biết trước được điền sẵn để chỉ cần xác nhận | Xong |
 | 14 | **Đề xuất mua từng bước**: Thiết bị → Người dùng & lý do → Bằng chứng Function Head → Xem lại & gửi, điền sẵn từ request/onboard | Xong |
 | 15 | **Việc tiếp theo**: Việc của tôi thành một hàng chờ theo ưu tiên từ mọi module, nút *Làm việc tiếp theo* | **Xong** |
+| 16 | **Nhận hàng từng bước**: chọn PO → quét serial từng máy → xác nhận ghi SDP → kết quả + Job onboard còn thiếu máy | **Xong** |
 | sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
 
 ## Chạy local

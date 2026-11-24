@@ -120,3 +120,14 @@ describe("Dialog focus", () => {
     expect(document.activeElement).toBe(screen.getByLabelText("Tìm trang"));
   });
 });
+
+describe("Field keeps the control's own id", () => {
+  it("links the label to a caller-provided id", () => {
+    render(
+      <Field label="Serial máy 1">
+        <Input id="serial-1" />
+      </Field>,
+    );
+    expect(screen.getByLabelText("Serial máy 1")).toHaveAttribute("id", "serial-1");
+  });
+});
