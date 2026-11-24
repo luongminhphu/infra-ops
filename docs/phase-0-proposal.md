@@ -1011,3 +1011,12 @@ Quyết định:
 - Việc của tôi: thẻ “Việc tiếp theo” + nút *Làm việc tiếp theo*, danh sách theo nhóm ưu tiên, nhóm cũ trong
   “Xem theo nhóm”; wizard Job và màn “Đã gửi” đề xuất có lối “Việc tiếp theo” quay lại hàng chờ.
 
+## 29. Phase 16 – Nhận hàng từng bước (24/11/2026)
+
+- Wizard `/workload/purchases/receive` (quyền `workload.purchase.manage`): Chọn PO (PO đã chốt còn hạng mục đã đặt
+  chưa nhận) → Serial từng máy (Enter sang ô kế tiếp, kiểm tra thiếu/trùng trong cả PO) → Xác nhận (số tài sản,
+  kết nối SDP, không tự xoá được, đồng bộ Kho sau đó) → Kết quả (theo dõi Job nhận hàng, Job onboard còn thiếu máy).
+- Mỗi hạng mục vẫn gọi `POST /purchases/{id}/receive` (workflow `workload.receive` – idempotent, giữ serial đã có).
+  Tab PO có nút *Nhận hàng* mở wizard đúng PO; dialog nhận hàng cũ giữ cho màn Supervisor.
+- Việc tiếp theo: “N hạng mục đã đặt mua chờ nhận hàng” (ưu tiên 3) cho người có quyền quản lý đề xuất.
+- Core `Field` giữ `id` do control tự đặt (để chuyển focus), chỉ sinh id khi không có.

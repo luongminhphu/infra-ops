@@ -118,4 +118,19 @@ async def load(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
                     "action": "Duyệt",
                 }
             )
+        # Ordered goods not received yet: receive them PO by PO when they arrive.
+        ordered = await session.scalar(select(func.count()).where(PurchaseRequest.status == "ordered"))
+        if ordered:
+            items.append(
+                {
+                    "key": "receive:ordered",
+                    "kind": "purchase_receive",
+                    "priority": 3,
+                    "title": f"{ordered} hạng mục đã đặt mua chờ nhận hàng",
+                    "detail": "Khi hàng về: quét serial, hệ thống nhập kho SDP.",
+                    "due": None,
+                    "href": "/workload/purchases/receive",
+                    "action": "Nhận hàng",
+                }
+            )
     return items
