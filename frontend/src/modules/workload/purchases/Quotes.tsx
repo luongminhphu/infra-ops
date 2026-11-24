@@ -8,7 +8,7 @@ import { Button } from "@/core/ui/button";
 import { Field, Input } from "@/core/ui/field";
 import { HelpTip } from "@/core/ui/help-tip";
 import { useSuppliers, type Purchase } from "../api";
-import { pastedImage } from "../PurchaseDialog";
+import { pastedImage } from "../evidence";
 
 const digits = (s: string) => s.replace(/\D/g, "").slice(0, 11);
 const group = (s: string) => (s ? new Intl.NumberFormat("vi-VN").format(Number(s)) : "");

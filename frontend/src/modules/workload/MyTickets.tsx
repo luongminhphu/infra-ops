@@ -13,7 +13,6 @@ import { formatDateTime } from "@/core/lib/format";
 import { cn } from "@/core/lib/cn";
 import type { MyWork, Ticket } from "./api";
 import { KIND_LABEL, ticketBadge } from "./labels";
-import { PurchaseDialog } from "./PurchaseDialog";
 
 type Tab = "in_progress" | "pending" | "on_hold" | "overdue" | "done";
 const TABS: { key: Tab; label: string }[] = [
@@ -45,7 +44,6 @@ export function MyTicketsSection() {
   const { can } = useAuth();
   const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>("in_progress");
-  const [propose, setPropose] = useState<Ticket | null>(null);
   const q = useQuery({ queryKey: ["workload", "my-work"], queryFn: () => api<MyWork>("/api/workload/my-work"), refetchInterval: 60_000 });
   const dismiss = useMutation({
     mutationFn: (id: string) => api(`/api/workload/tickets/${id}/dismiss-purchase`, { method: "POST" }),
@@ -109,7 +107,12 @@ export function MyTicketsSection() {
                     <p className="text-muted">{t.device_need ? KIND_LABEL[t.device_need] : ""} · {t.requester_name ?? "—"}</p>
                     {can("workload.purchase.create") && (
                       <div className="mt-1.5 flex gap-2">
-                        <Button size="sm" onClick={() => setPropose(t)}>Lập đề xuất</Button>
+                        <Link
+                          className="inline-flex h-7 items-center rounded-sm border border-line-strong bg-surface px-2.5 text-sm font-medium hover:bg-surface-2"
+                          to={`/workload/purchases/new?${new URLSearchParams({ ticket: t.id, ref: t.display_id ?? t.id, kind: t.device_need ?? "replace", item: t.subject.slice(0, 300), employee: t.requester_name ?? "", reason: `Request #${t.display_id ?? t.id}: ${t.subject}` })}`}
+                        >
+                          Lập đề xuất
+                        </Link>
                         <Button size="sm" loading={dismiss.isPending && dismiss.variables === t.id} onClick={() => dismiss.mutate(t.id)}>Không cần</Button>
                       </div>
                     )}
@@ -122,7 +125,6 @@ export function MyTicketsSection() {
           </section>
         </div>
       )}
-      {propose && <PurchaseDialog ticket={propose} onClose={() => setPropose(null)} />}
     </Panel>
   );
 }

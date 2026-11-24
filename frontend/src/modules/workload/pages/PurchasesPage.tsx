@@ -1,11 +1,9 @@
-import { useSearchParams } from "react-router-dom";
+import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { Download, Plus } from "lucide-react";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { Button } from "@/core/ui/button";
 import { PageHeader } from "@/core/ui/feedback";
 import { Tabs } from "@/core/ui/tabs";
-import type { DeviceNeed } from "../api";
-import { PurchaseDialog, type PurchasePrefill } from "../PurchaseDialog";
 import { CatalogTab } from "../purchases/CatalogTab";
 import { PoTab } from "../purchases/PoTab";
 import { ProposalsTab } from "../purchases/ProposalsTab";
@@ -18,29 +16,12 @@ const ALL_TABS = [
   { key: "suppliers", label: "Nhà cung cấp" },
 ];
 
-/** Prefill from a link (e.g. Kho & cấp phát → “Lập đề xuất mua”): ?new=1&source=onboard&ref=…&item=… */
-function prefillFrom(params: URLSearchParams): PurchasePrefill | null {
-  if (params.get("new") !== "1") return null;
-  const qty = Number(params.get("qty"));
-  return {
-    kind: (params.get("kind") as DeviceNeed | "new" | null) ?? "new",
-    item: params.get("item") ?? "",
-    catalogName: params.get("catalog") ?? "",
-    quantity: qty > 0 ? qty : 1,
-    source: params.get("source") === "onboard" ? "onboard" : "manual",
-    sourceRef: params.get("ref") ?? undefined,
-    employee: params.get("employee") ?? "",
-    reason: params.get("reason") ?? "",
-  };
-}
-
 export function PurchasesPage() {
   const { can } = useAuth();
   const [params, setParams] = useSearchParams();
   // Prices, POs and the price list are for supervisors; operators only request devices.
   const TABS = can("workload.price.view") ? ALL_TABS : ALL_TABS.slice(0, 1);
   const tab = TABS.some((t) => t.key === params.get("tab")) ? params.get("tab")! : "proposals";
-  const prefill = prefillFrom(params);
   const update = (patch: Record<string, string | null>) =>
     setParams(
       (cur) => {
@@ -50,7 +31,13 @@ export function PurchasesPage() {
       },
       { replace: true },
     );
-  const closeNew = () => update({ new: null, source: null, ref: null, item: null, catalog: null, qty: null, kind: null, employee: null, reason: null });
+  const navigate = useNavigate();
+  // Old links (?new=1&…) open the step-by-step proposal with the same pre-filled values.
+  if (params.get("new") === "1") {
+    const rest = new URLSearchParams(params);
+    rest.delete("new");
+    return <Navigate replace to={`/workload/purchases/new?${rest}`} />;
+  }
 
   return (
     <>
@@ -63,7 +50,7 @@ export function PurchasesPage() {
               <Download className="size-4" aria-hidden="true" />Xuất Excel
             </a>
             {can("workload.purchase.create") && (
-              <Button variant="primary" onClick={() => update({ new: "1" })}><Plus className="size-4" aria-hidden="true" />Đề xuất mới</Button>
+              <Button variant="primary" onClick={() => navigate("/workload/purchases/new")}><Plus className="size-4" aria-hidden="true" />Đề xuất mới</Button>
             )}
           </>
         }
@@ -74,7 +61,6 @@ export function PurchasesPage() {
         {tab === "catalog" && <CatalogTab />}
         {tab === "suppliers" && <SuppliersTab />}
       </Tabs>
-      {prefill && can("workload.purchase.create") && <PurchaseDialog prefill={prefill} onClose={closeNew} />}
     </>
   );
 }

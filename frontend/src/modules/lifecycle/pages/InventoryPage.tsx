@@ -121,8 +121,7 @@ function RequestCard({ r, purchases, bands }: { r: PlanRequest; purchases: Purch
   });
   const proposed = (l: Line) => purchases?.find((p) => p.source_ref === ref && p.item === buyItem(l) && p.status !== "rejected");
   const buyLink = (l: Line) =>
-    `/workload/purchases?${new URLSearchParams({
-      new: "1",
+    `/workload/purchases/new?${new URLSearchParams({
       source: "onboard",
       ref,
       kind: "new",

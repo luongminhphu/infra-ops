@@ -18,7 +18,7 @@ import { useCatalog, type Purchase, type PurchaseStatus } from "../api";
 import { KIND_LABEL, PURCHASE_STATUS } from "../labels";
 import { QuotesBlock } from "./Quotes";
 import { ReceiveDialog } from "./ReceiveDialog";
-import { EVIDENCE_ACCEPT, EvidenceHelp, pastedImage, uploadEvidence } from "../PurchaseDialog";
+import { EVIDENCE_ACCEPT, EvidenceHelp, pastedImage, uploadEvidence } from "../evidence";
 
 const ACTION_LABEL: Partial<Record<PurchaseStatus, string>> = {
   approved: "Duyệt",
