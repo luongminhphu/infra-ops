@@ -12,8 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.workload.api import _my_technician
 from app.modules.workload.models import PurchaseEvidence, PurchaseRequest, Ticket
 
-MAX_TICKETS = 15
-
 
 def _days(delta: timedelta) -> int:
     return max(1, int(delta.total_seconds() // 86400))
@@ -24,7 +22,8 @@ async def load(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     me = await _my_technician(session, user)
     if me is not None:
-        # Overdue first, then due within a day; tasks are worked on in ServiceDesk Plus.
+        # One item per group (overdue / due today): tasks are worked on in ServiceDesk Plus, so one
+        # reminder is enough and the person's process work (jobs, with a due date) ranks above it.
         due = (
             await session.scalars(
                 select(Ticket)
@@ -34,21 +33,36 @@ async def load(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
                     Ticket.due_by < now + timedelta(days=1),
                 )
                 .order_by(Ticket.due_by)
-                .limit(MAX_TICKETS)
             )
         ).all()
-        for t in due:
-            late = t.due_by < now  # type: ignore[operator]
+        late = [t for t in due if t.due_by < now]  # type: ignore[operator]
+        today = [t for t in due if t.due_by >= now]  # type: ignore[operator]
+        for group, prio, state, title in (
+            (late, 1, "overdue", "quá hạn"),
+            (today, 2, "open", "đến hạn trong hôm nay"),
+        ):
+            if not group:
+                continue
+            first = group[0]
+            ref = f"#{first.display_id or first.id}"
+            if len(group) == 1:
+                head = f"Request {ref} {title}" + (
+                    f" ({_days(now - first.due_by)} ngày)" if prio == 1 else ""
+                )  # type: ignore[operator]
+                detail = first.subject
+            else:
+                head = f"{len(group)} request {title}"
+                detail = f"Lâu nhất: {ref} – {first.subject}"
             items.append(
                 {
-                    "key": f"ticket:{t.id}",
+                    "key": f"tickets:{state}",
                     "kind": "ticket",
-                    "priority": 1 if late else 2,
-                    "title": f"Request #{t.display_id or t.id} {'trễ ' + str(_days(now - t.due_by)) + ' ngày' if late else 'đến hạn trong hôm nay'}",  # type: ignore[operator]
-                    "detail": t.subject,
-                    "due": t.due_by,
-                    "href": f"/workload/tickets?state={'overdue' if late else 'open'}",
-                    "action": "Xem task",
+                    "priority": prio,
+                    "title": head,
+                    "detail": detail,
+                    "due": None,
+                    "href": f"/workload/tickets?state={state}",
+                    "action": "Xem task trên danh sách",
                 }
             )
         has_po = exists().where(PurchaseRequest.ticket_id == Ticket.id, PurchaseRequest.status != "rejected")
@@ -118,19 +132,45 @@ async def load(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
                     "action": "Duyệt",
                 }
             )
-        # Ordered goods not received yet: receive them PO by PO when they arrive.
+    # Ordered goods not received yet: receive them PO by PO when they arrive.
+    ordered = 0
+    if user.has("workload.purchase.receive"):
         ordered = await session.scalar(select(func.count()).where(PurchaseRequest.status == "ordered"))
-        if ordered:
-            items.append(
-                {
-                    "key": "receive:ordered",
-                    "kind": "purchase_receive",
-                    "priority": 3,
-                    "title": f"{ordered} hạng mục đã đặt mua chờ nhận hàng",
-                    "detail": "Khi hàng về: quét serial, hệ thống nhập kho SDP.",
-                    "due": None,
-                    "href": "/workload/purchases/receive",
-                    "action": "Nhận hàng",
-                }
-            )
+    if ordered:
+        items.append(
+            {
+                "key": "receive:ordered",
+                "kind": "purchase_receive",
+                "priority": 3,
+                "title": f"{ordered} hạng mục đã đặt mua chờ nhận hàng",
+                "detail": "Khi hàng về: quét serial, hệ thống nhập kho SDP.",
+                "due": None,
+                "href": "/workload/purchases/receive",
+                "action": "Nhận hàng",
+            }
+        )
     return items
+
+
+async def summary(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
+    """My SDP tasks: done in the last 7 days, overdue, due within 3 days, open."""
+    me = await _my_technician(session, user)
+    if me is None:
+        return []
+    now = datetime.now(UTC)
+    mine = Ticket.technician_id == me.id
+    is_open = Ticket.state == "open"
+
+    async def count(*where: Any) -> int:
+        return int(await session.scalar(select(func.count()).select_from(Ticket).where(mine, *where)) or 0)
+
+    return [
+        {"key": "tickets:done", "group": "done", "label": "task SDP", "href": "/workload/tickets?state=done",
+         "count": await count(Ticket.state == "done", Ticket.completed_at >= now - timedelta(days=7))},
+        {"key": "tickets:late", "group": "late", "label": "task SDP", "href": "/workload/tickets?state=overdue",
+         "count": await count(is_open, Ticket.due_by < now)},
+        {"key": "tickets:soon", "group": "soon", "label": "task SDP", "href": "/workload/tickets?state=open",
+         "count": await count(is_open, Ticket.due_by >= now, Ticket.due_by < now + timedelta(days=3))},
+        {"key": "tickets:open", "group": "open", "label": "task SDP", "href": "/workload/tickets?state=open",
+         "count": await count(is_open)},
+    ]  # fmt: skip

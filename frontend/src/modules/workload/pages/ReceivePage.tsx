@@ -1,15 +1,19 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, ChevronLeft, LoaderCircle, PackageCheck, TriangleAlert } from "lucide-react";
+import { CheckCircle2, ChevronLeft, FileSpreadsheet, LoaderCircle, PackageCheck, TriangleAlert } from "lucide-react";
 import { api, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { formatDate, formatDateTime } from "@/core/lib/format";
 import { Button } from "@/core/ui/button";
 import { EmptyState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input } from "@/core/ui/field";
+import { HelpTip } from "@/core/ui/help-tip";
+import { announce } from "@/core/ui/live-region";
 import { Wizard } from "@/core/ui/wizard";
-import type { Purchase, PurchaseOrder } from "../api";
+import type { Purchase } from "../api";
+import { todayVn } from "../periods";
+import { assignSerials, suggestTag, typeCode, type HandoverRow, type Unit } from "../receive";
 
 const STEPS = [
   { key: "po", title: "Chọn PO" },
@@ -18,23 +22,35 @@ const STEPS = [
   { key: "done", title: "Kết quả" },
 ];
 
-interface Unit {
-  serial: string;
-  asset_tag: string;
+interface ReceivablePo {
+  id: string;
+  number: string | null;
+  closed_at: string | null;
+  items: Purchase[];
 }
 interface Target {
   connection: { name: string; environment: string; enabled: boolean } | null;
   state: string;
+  asset_tag: { prefix: string; codes: Record<string, string> };
 }
+const DRAFT_KEY = "infraops.receive.units";
+const loadDraft = (): Record<string, Unit[]> => {
+  try {
+    return JSON.parse(sessionStorage.getItem(DRAFT_KEY) ?? "{}") as Record<string, Unit[]>;
+  } catch {
+    return {};
+  }
+};
 interface Allocation {
   requests: { id: string; display_id: string | null; full_name: string | null; effective_date: string | null; status: string; job: { id: string } | null; lines: { label: string; buy: number }[] }[];
 }
 
-const waitingItems = (po: PurchaseOrder) => po.items.filter((p) => p.status === "ordered" && !p.receive_job);
+const waitingItems = (po: ReceivablePo) => po.items.filter((p) => p.status === "ordered" && !p.receive_job);
 
 /**
- * Supervisor: receive the goods of a closed PO in one pass – pick the PO, scan a serial per device
- * (Enter moves to the next field), confirm the SDP write, then see what onboards can now be equipped.
+ * Receive the goods of a closed PO in one pass (operators unpack the boxes): pick the PO, scan a serial
+ * per device or read them from the vendor's handover file, take the suggested asset tags, confirm the
+ * SDP write, then see what onboards can now be equipped. Entered serials survive a refresh (session).
  */
 export function ReceivePage() {
   const [params] = useSearchParams();
@@ -43,19 +59,37 @@ export function ReceivePage() {
   const { can } = useAuth();
   const [i, setI] = useState(0);
   const [poId, setPoId] = useState(params.get("po") ?? "");
-  const [units, setUnits] = useState<Record<string, Unit[]>>({});
+  const [units, setUnits] = useState<Record<string, Unit[]>>(loadDraft);
+  const [fileNote, setFileNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify(units));
+    } catch {
+      /* private mode: the draft just isn't kept */
+    }
+  }, [units]);
   const [tried, setTried] = useState(false);
   const [results, setResults] = useState<{ id: string; ok: boolean; message?: string }[]>([]);
-  const pos = useQuery({ queryKey: ["workload", "pos"], queryFn: () => api<{ closed: PurchaseOrder[] }>("/api/workload/pos") });
+  const pos = useQuery({ queryKey: ["workload", "receivable"], queryFn: () => api<{ closed: ReceivablePo[] }>("/api/workload/purchases/receivable") });
   const target = useQuery({ queryKey: ["workload", "receive-target"], queryFn: () => api<Target>("/api/workload/purchases/receive-target") });
   const open = (pos.data?.closed ?? []).filter((po) => waitingItems(po).length > 0);
-  const po = open.find((x) => x.id === poId) ?? (open.length === 1 ? open[0] : undefined);
+  // Pre-select the most recently closed PO (goods usually arrive in that order); the person confirms.
+  const po = open.find((x) => x.id === poId) ?? open[0];
   const items = po ? waitingItems(po) : [];
   const tracked = items.filter((p) => p.sdp_product);
-  const unitsOf = (p: Purchase) => units[p.id] ?? Array.from({ length: p.quantity }, () => ({ serial: "", asset_tag: "" }));
+  const unitsOf = (p: Purchase) => units[p.id] ?? Array.from({ length: p.quantity }, (): Unit => ({ serial: "", asset_tag: "" }));
   const allSerials = tracked.flatMap((p) => unitsOf(p).map((u) => u.serial.trim().toLowerCase()));
   const dupes = useMemo(() => new Set(allSerials.filter((s, k) => s && allSerials.indexOf(s) !== k)), [allSerials]);
   const missing = allSerials.filter((s) => s.length < 2).length;
+  const allTags = tracked.flatMap((p) => unitsOf(p).map((u) => u.asset_tag.trim().toLowerCase()));
+  const tagDupes = new Set(allTags.filter((t, k) => t && allTags.indexOf(t) !== k));
+  const year = todayVn().slice(0, 4);
+  const tagFor = (p: Purchase, serial: string) =>
+    target.data ? suggestTag(target.data.asset_tag.prefix, year, typeCode(p.catalog_item?.category, target.data.asset_tag.codes), serial) : "";
+  const conn = target.data?.connection;
+  const noSdp = open.some((x) => waitingItems(x).some((p) => p.sdp_product)) && target.isSuccess && !conn?.enabled;
+  const noSdpText = conn ? "Kết nối ServiceDesk Plus đang tắt." : "Chưa có kết nối ServiceDesk Plus.";
   const fieldIds = tracked.flatMap((p) => unitsOf(p).map((_, k) => `rcv-${p.id}-${k}`));
 
   // Results step: follow the SDP jobs until each proposal is received or failed.
@@ -94,11 +128,55 @@ export function ReceivePage() {
 
   const setUnit = (p: Purchase, k: number, patch: Partial<Unit>) =>
     setUnits((cur) => ({ ...cur, [p.id]: unitsOf(p).map((u, j) => (j === k ? { ...u, ...patch } : u)) }));
+  // Serial typed or scanned: keep the asset tag in step unless the person wrote their own.
+  const setSerial = (p: Purchase, k: number, serial: string) => {
+    const u = unitsOf(p)[k]!;
+    const keep = u.asset_tag && !u.auto;
+    setUnit(p, k, keep ? { serial } : { serial, asset_tag: tagFor(p, serial), auto: true });
+  };
+  const toConfirm = () => {
+    setTried(true);
+    if (!missing && !dupes.size && !tagDupes.size) setI(2);
+  };
   const nextField = (id: string) => (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== "Enter") return;
     e.preventDefault();
-    document.getElementById(fieldIds[fieldIds.indexOf(id) + 1] ?? "")?.focus();
+    const next = fieldIds[fieldIds.indexOf(id) + 1];
+    if (next) document.getElementById(next)?.focus();
+    else toConfirm(); // last scan: move on
   };
+  const readFile = useMutation({
+    mutationFn: (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return api<{ rows: HandoverRow[] }>("/api/workload/purchases/receive/extract", { method: "POST", body: fd });
+    },
+    onSuccess: ({ rows }, file) => {
+      const slots = tracked.flatMap((p) => unitsOf(p).map((u, k) => ({ key: `${p.id}:${k}`, name: p.catalog_item?.name ?? p.item, filled: !!u.serial.trim() })));
+      const got = assignSerials(slots, rows);
+      setUnits((cur) => {
+        const next = { ...cur };
+        for (const p of tracked) {
+          next[p.id] = unitsOf(p).map((u, k) => {
+            const r = got.get(`${p.id}:${k}`);
+            if (!r) return u;
+            return r.asset_tag ? { serial: r.serial, asset_tag: r.asset_tag, auto: false } : { serial: r.serial, asset_tag: tagFor(p, r.serial), auto: true };
+          });
+        }
+        return next;
+      });
+      const empty = slots.filter((x) => !x.filled).length;
+      const text = got.size
+        ? `Đã điền ${got.size}/${empty} serial từ “${file.name}” (file có ${rows.length} dòng) – kiểm tra lại từng ô trước khi tiếp tục.`
+        : `“${file.name}” có ${rows.length} serial nhưng không còn ô trống để điền.`;
+      setFileNote({ ok: true, text });
+      announce(text);
+    },
+    onError: (e) => {
+      setFileNote({ ok: false, text: errorMessage(e) });
+      announce(errorMessage(e));
+    },
+  });
 
   const header = (
     <>
@@ -124,6 +202,15 @@ export function ReceivePage() {
           description="Chỉ hiện PO đã chốt còn hạng mục chưa nhận."
           next={{ label: "Tiếp tục", onClick: () => { setPoId(po!.id); setI(1); }, disabled: !po, reason: po ? null : open.length ? "Chọn một PO." : null }}
         >
+          {noSdp && (
+            <p role="status" className="mb-3 flex items-start gap-2 rounded-sm border border-waiting/40 bg-waiting-soft px-3 py-2 text-sm">
+              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-waiting" aria-hidden="true" />
+              <span>
+                {noSdpText} Vẫn quét serial được (được giữ lại khi tải lại trang), nhưng chỉ nhập kho được khi Quản trị{" "}
+                {can("core.connections.manage") ? <Link className="font-medium text-primary underline" to="/settings/connections">bật kết nối SDP</Link> : "bật kết nối SDP"}.
+              </span>
+            </p>
+          )}
           {open.length === 0 ? (
             <EmptyState icon={PackageCheck} title="Không có PO nào chờ nhận hàng">PO đã chốt còn hạng mục “Đã đặt mua” sẽ hiện ở đây.</EmptyState>
           ) : (
@@ -158,14 +245,45 @@ export function ReceivePage() {
           steps={STEPS}
           current={1}
           title={`Serial thiết bị của ${po.number}`}
-          description="Quét mã vạch vào từng ô – Enter chuyển sang ô kế tiếp. Asset tag (nếu có) dùng làm tên tài sản."
+          description="Quét mã vạch vào từng ô (Enter sang ô kế tiếp) hoặc đọc từ file biên bản bàn giao. Mã tài sản được gợi ý theo serial."
           onBack={() => setI(0)}
           next={{
             label: "Tiếp tục",
-            onClick: () => { setTried(true); if (!missing && !dupes.size) setI(2); },
-            reason: tried && (missing || dupes.size) ? (dupes.size ? "Có serial bị trùng." : `Còn ${missing} serial chưa nhập.`) : null,
+            onClick: toConfirm,
+            reason: tried && (missing || dupes.size || tagDupes.size) ? (dupes.size ? "Có serial bị trùng." : tagDupes.size ? "Có mã tài sản bị trùng." : `Còn ${missing} serial chưa nhập.`) : null,
           }}
         >
+          {tracked.length > 0 && (
+            <div className="mb-5 rounded-sm border border-dashed border-line px-3 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button onClick={() => fileInput.current?.click()} loading={readFile.isPending}>
+                  <FileSpreadsheet className="size-4" aria-hidden="true" />Đọc serial từ file biên bản
+                </Button>
+                <span className="text-sm text-muted">
+                  PDF hoặc Excel (.xlsx) của nhà cung cấp
+                  <HelpTip title="Đọc serial từ file">
+                    <span className="block">Excel: cần một cột tiêu đề “Serial” / “S/N” / “Số serial” (cột “Asset tag” / “Mã tài sản” nếu có cũng được đọc).</span>
+                    <span className="block">PDF: cần có chữ (không phải bản scan) và nhãn “S/N:” hoặc bảng có cột Serial.</span>
+                    <span className="block">Serial được điền vào ô còn trống, khớp theo tên thiết bị; file không được lưu lại.</span>
+                  </HelpTip>
+                </span>
+              </div>
+              <input
+                ref={fileInput}
+                type="file"
+                className="sr-only"
+                tabIndex={-1}
+                aria-hidden="true"
+                accept=".pdf,.xlsx,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) readFile.mutate(f);
+                }}
+              />
+              {fileNote && <p className={fileNote.ok ? "mt-2 text-sm text-done" : "mt-2 text-sm text-failed"}>{fileNote.text}</p>}
+            </div>
+          )}
           <div className="space-y-5">
             {items.map((p) => (
               <section key={p.id} aria-label={p.catalog_item?.name ?? p.item}>
@@ -176,14 +294,15 @@ export function ReceivePage() {
                       const id = `rcv-${p.id}-${k}`;
                       const key = u.serial.trim().toLowerCase();
                       const err = !key ? "Nhập serial." : key.length < 2 ? "Serial quá ngắn." : dupes.has(key) ? "Serial bị trùng." : "";
+                      const tagErr = tagDupes.has(u.asset_tag.trim().toLowerCase()) ? "Mã tài sản bị trùng – sửa 4 ký tự cuối." : "";
                       return (
                         <li key={k} className="grid items-start gap-2 sm:grid-cols-[2rem_1fr_1fr]">
                           <span className="pt-2 text-sm text-muted tabular" aria-hidden="true">{k + 1}.</span>
                           <Field label={`Serial máy ${k + 1}`} required error={err} showError={tried && !!err}>
-                            <Input id={id} data-autofocus={id === fieldIds[0]} value={u.serial} maxLength={100} onKeyDown={nextField(id)} onChange={(e) => setUnit(p, k, { serial: e.target.value })} />
+                            <Input id={id} data-autofocus={id === fieldIds[0] || undefined} value={u.serial} maxLength={100} onKeyDown={nextField(id)} onChange={(e) => setSerial(p, k, e.target.value)} />
                           </Field>
-                          <Field label={`Asset tag máy ${k + 1}`}>
-                            <Input value={u.asset_tag} maxLength={100} onChange={(e) => setUnit(p, k, { asset_tag: e.target.value })} />
+                          <Field label={`Mã tài sản máy ${k + 1}`} hint={u.auto && u.asset_tag ? "Gợi ý theo serial" : undefined} error={tagErr} showError={!!tagErr}>
+                            <Input value={u.asset_tag} maxLength={100} onChange={(e) => setUnit(p, k, { asset_tag: e.target.value, auto: false })} />
                           </Field>
                         </li>
                       );
@@ -201,7 +320,6 @@ export function ReceivePage() {
   }
 
   if (i === 2 && po) {
-    const conn = target.data?.connection;
     const assets = tracked.reduce((n, p) => n + p.quantity, 0);
     return (
       <>
@@ -218,7 +336,7 @@ export function ReceivePage() {
             onClick: () => receive.mutate(),
             loading: receive.isPending,
             disabled: assets > 0 && !conn?.enabled,
-            reason: assets > 0 && !conn ? "Chưa có kết nối ServiceDesk Plus." : assets > 0 && conn && !conn.enabled ? "Kết nối SDP đang tắt." : null,
+            reason: assets > 0 && !conn?.enabled ? `${noSdpText} Serial đã nhập được giữ lại.` : null,
           }}
         >
           <ul className="list-disc space-y-1.5 pl-5 text-sm">
@@ -280,7 +398,7 @@ export function ReceivePage() {
         )}
         <div className="mt-5 flex flex-wrap justify-end gap-2">
           <Button onClick={() => navigate("/me/work")}>Việc tiếp theo</Button>
-          <Button variant="primary" onClick={() => { setResults([]); setUnits({}); setTried(false); setPoId(""); setI(0); }}>Nhận PO khác</Button>
+          <Button variant="primary" onClick={() => { setResults([]); setUnits({}); setTried(false); setPoId(""); setFileNote(null); setI(0); }}>Nhận PO khác</Button>
         </div>
       </Wizard>
     </>

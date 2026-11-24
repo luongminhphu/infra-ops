@@ -12,6 +12,7 @@ import { Dialog } from "@/core/ui/dialog";
 import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader, Panel } from "@/core/ui/feedback";
 import { Field, Input } from "@/core/ui/field";
 import { HelpTip } from "@/core/ui/help-tip";
+import { buyLink as buyLinkFor, proposedFor } from "../buy";
 import { StatusBadge, type Status } from "@/core/ui/status";
 
 interface Asset {
@@ -62,8 +63,6 @@ const REQ_STATUS: Record<PlanRequest["status"], { status: Status; label: string 
 };
 
 const assetText = (a: Asset) => `${a.name ?? a.id}${a.asset_tag ? ` (${a.asset_tag})` : ""}`;
-const buyItem = (l: Line) => l.catalog_name || l.label;
-
 function BandDialog({ req, bands, onClose }: { req: PlanRequest; bands: string[]; onClose: () => void }) {
   const qc = useQueryClient();
   const [band, setBand] = useState(req.band_source === "override" ? (req.band ?? "") : "");
@@ -119,18 +118,8 @@ function RequestCard({ r, purchases, bands }: { r: PlanRequest; purchases: Purch
     },
     onError: (e) => toast.error(errorMessage(e)),
   });
-  const proposed = (l: Line) => purchases?.find((p) => p.source_ref === ref && p.item === buyItem(l) && p.status !== "rejected");
-  const buyLink = (l: Line) =>
-    `/workload/purchases/new?${new URLSearchParams({
-      source: "onboard",
-      ref,
-      kind: "new",
-      item: buyItem(l),
-      catalog: l.catalog_name,
-      qty: String(l.buy),
-      employee: `${r.full_name ?? ""}${r.employee_id ? ` (${r.employee_id})` : ""}`,
-      reason: `Onboard ${r.full_name ?? ""} – band ${r.band}, hiệu lực ${formatDate(r.effective_date)}: kho không còn ${l.label} phù hợp tiêu chuẩn.`,
-    })}`;
+  const proposed = (l: Line) => proposedFor(purchases, r, l);
+  const buyLink = (l: Line) => buyLinkFor(r, l);
 
   return (
     <li className="rounded-md border border-line bg-surface p-4 shadow-card">

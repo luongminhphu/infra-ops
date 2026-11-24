@@ -125,7 +125,9 @@ manifest = ModuleManifest(
             timeout_seconds=1800,
         ),
     ],
-    next_actions=[NextActionSource("lifecycle.jobs", "lifecycle.job.view", next_actions.load)],
+    next_actions=[
+        NextActionSource("lifecycle.jobs", "lifecycle.job.view", next_actions.load, next_actions.summary)
+    ],
     dashboard_widgets=[
         DashboardWidget(
             "lifecycle.jobs", "Job onboard / offboard", "lifecycle_jobs", "lifecycle.job.view", _jobs, order=2

@@ -650,6 +650,8 @@ async def test_job_assignee_follows_sdp_and_reassign_writes_back(admin, client, 
         await client.get("/api/core/jobs?assignee=me&workflows=lifecycle.onboard,lifecycle.offboard")
     ).json()
     assert [x["id"] for x in mine["items"]] == [j["id"]]
+    summary = {i["key"]: i["count"] for i in (await client.get("/api/core/me/summary")).json()["items"]}
+    assert summary["jobs:open"] == 1 and summary["jobs:done"] == 0
     assert (
         await client.post(f"/api/lifecycle/jobs/{j['id']}/assign", json={"user_id": j["id"]})
     ).status_code == 403

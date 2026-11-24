@@ -34,6 +34,7 @@ Tài liệu: [kiến trúc](docs/architecture.md) · [thêm module](docs/adding-
 | 14 | **Đề xuất mua từng bước**: Thiết bị → Người dùng & lý do → Bằng chứng Function Head → Xem lại & gửi, điền sẵn từ request/onboard | Xong |
 | 15 | **Việc tiếp theo**: Việc của tôi thành một hàng chờ theo ưu tiên từ mọi module, nút *Làm việc tiếp theo* | **Xong** |
 | 16 | **Nhận hàng từng bước**: chọn PO → quét serial từng máy → xác nhận ghi SDP → kết quả + Job onboard còn thiếu máy | **Xong** |
+| 17 | **Tổng quan** đầu Việc của tôi (trễ hạn / đến hạn 3 ngày / đang mở / đã xong 7 ngày); Operator nhận hàng, **đọc serial từ file biên bản** (PDF/Excel), **gợi ý mã tài sản** HCM-năm-loại-4 số cuối serial; sửa theo critique luồng Operator | **Xong** |
 | sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
 
 ## Chạy local

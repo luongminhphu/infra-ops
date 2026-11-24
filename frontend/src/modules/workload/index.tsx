@@ -14,7 +14,7 @@ export const workloadModule: FrontendModule = {
   id: "workload",
   routes: [
     { path: "workload/tickets", element: <RequirePermission permission="workload.tickets.view"><TicketsPage /></RequirePermission> },
-    { path: "workload/purchases/receive", element: <RequirePermission permission="workload.purchase.manage"><ReceivePage /></RequirePermission> },
+    { path: "workload/purchases/receive", element: <RequirePermission permission="workload.purchase.receive"><ReceivePage /></RequirePermission> },
     { path: "workload/purchases/new", element: <RequirePermission permission="workload.purchase.create"><NewPurchasePage /></RequirePermission> },
     { path: "workload/purchases", element: <RequirePermission permission="workload.tickets.view"><PurchasesPage /></RequirePermission> },
     { path: "workload/stats", element: <RequirePermission permission="workload.stats.view"><StatsPage /></RequirePermission> },

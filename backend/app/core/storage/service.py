@@ -20,6 +20,7 @@ _MAGIC = {
     "image/jpeg": (b"\xff\xd8\xff",),
     # DOCX is a ZIP container
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": (b"PK\x03\x04",),
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": (b"PK\x03\x04",),
 }
 
 

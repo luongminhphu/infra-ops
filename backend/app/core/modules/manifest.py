@@ -60,6 +60,9 @@ class NextActionSource:
     key: str
     permission: str
     load: Callable[[AsyncSession, Any], Awaitable[list[dict[str, Any]]]]
+    # Counts for the summary at the top of "Việc của tôi": ``{key, group, label, count, href}`` where
+    # group is done (last 7 days) | late | soon (next 3 days) | open.
+    summary: Callable[[AsyncSession, Any], Awaitable[list[dict[str, Any]]]] | None = None
 
 
 @dataclass(frozen=True)

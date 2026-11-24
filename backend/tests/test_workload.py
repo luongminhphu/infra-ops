@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import re
 from datetime import UTC, datetime
@@ -550,6 +551,29 @@ async def test_receive_creates_in_store_assets_on_sdp(client, sdp) -> None:  # t
     assert any(i["key"] == "receive:ordered" and i["href"] == "/workload/purchases/receive" for i in queue)
     target = (await client.get("/api/workload/purchases/receive-target")).json()
     assert target["connection"]["name"] == "SDP WL" and target["state"] == "In Store"
+    assert target["asset_tag"]["prefix"] == "HCM" and target["asset_tag"]["codes"]["Laptop"] == "LT"
+
+    # Operators unpack the boxes: they see the closed PO's items (no prices) and can read the handover file.
+    await client.login("wl-op1@test.local")
+    recv = (await client.get("/api/workload/purchases/receivable")).json()["closed"]
+    item = next(i for o in recv for i in o["items"] if i["id"] == p["id"])
+    assert item["unit_price"] is None and item["catalog_item"]["name"] == "Laptop nhận kho"
+    assert any(i["key"] == "receive:ordered" for i in (await client.get("/api/core/me/next")).json()["items"])
+    xlsx = await client.post(
+        "/api/workload/purchases/receive/extract",
+        files={"file": ("bb.xlsx", handover_xlsx(), "application/octet-stream")},
+    )
+    assert [r["serial"] for r in xlsx.json()["rows"]] == ["5CD1234XYZ", "5CD1234XZZ"], xlsx.text
+    pdf = await client.post(
+        "/api/workload/purchases/receive/extract",
+        files={"file": ("bb.pdf", make_pdf(["BIEN BAN BAN GIAO", "Laptop Dell 5440 S/N: CN0AB123"]), "application/pdf")},
+    )  # fmt: skip
+    assert [r["serial"] for r in pdf.json()["rows"]] == ["CN0AB123"]
+    png = await client.post(
+        "/api/workload/purchases/receive/extract", files={"file": ("x.png", PNG, "image/png")}
+    )
+    assert png.json()["error"]["code"] == "unsupported_file"
+    await client.login("wl-mgr@test.local")
     url = f"/api/workload/purchases/{p['id']}/receive"
     bad = await client.post(url, json={"units": [{"serial": "SN-1"}]})
     assert bad.json()["error"]["code"] == "units_mismatch"
@@ -578,6 +602,21 @@ async def test_receive_creates_in_store_assets_on_sdp(client, sdp) -> None:  # t
     ]  # fmt: skip
     job = (await client.get(f"/api/core/jobs/{r.json()['receive_job']['id']}")).json()
     assert job["status"] == "completed" and job["steps"][0]["before_state"]["existing"] == {"SN-OLD": "900"}
+
+
+def handover_xlsx() -> bytes:
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["BIÊN BẢN BÀN GIAO"])
+    ws.append(["STT", "Tên thiết bị", "Số Serial", "Ghi chú"])
+    ws.append([1, "Laptop Dell 5440", "5CD1234XYZ", ""])
+    ws.append([2, "Laptop Dell 5440", "5CD1234XZZ", ""])
+    ws.append([None, "Tổng", None, None])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
 def make_pdf(lines: list[str]) -> bytes:
@@ -860,7 +899,16 @@ async def test_next_actions_queue(client, sdp) -> None:  # type: ignore[no-untyp
     keys = [i["key"] for i in q["items"]]
     assert f"evidence:{p['id']}" in keys
     overdue = [i for i in q["items"] if i["kind"] == "ticket" and i["priority"] == 1]
-    assert overdue and "trễ" in overdue[0]["title"]
+    assert len(overdue) == 1 and "quá hạn" in overdue[0]["title"]  # one reminder, not one row per task
+    assert overdue[0]["href"] == "/workload/tickets?state=overdue"
+    summary = (await client.get("/api/core/me/summary")).json()
+    assert summary["failed"] == []
+    groups = {i["key"]: i for i in summary["items"]}
+    assert {"tickets:done", "tickets:late", "tickets:soon", "tickets:open"} <= set(groups)
+    assert (
+        groups["tickets:late"]["count"] >= 1
+        and groups["tickets:open"]["count"] >= groups["tickets:late"]["count"]
+    )
     assert [i["priority"] for i in q["items"]] == sorted(i["priority"] for i in q["items"])
     assert not any(i["kind"] == "purchase_approval" for i in q["items"])  # operators do not approve
 

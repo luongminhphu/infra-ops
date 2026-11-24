@@ -156,7 +156,7 @@ export function PoTab() {
                 <Mono className="font-semibold">{po.number}</Mono>
                 <span className="tabular">{formatVnd(po.total)}</span>
                 <span className="text-sm text-muted">{po.items.length} hạng mục · chốt {formatDateTime(po.closed_at)} bởi {po.closed_by}</span>
-                {can("workload.purchase.manage") && po.items.some((p) => p.status === "ordered" && !p.receive_job) && (
+                {can("workload.purchase.receive") && po.items.some((p) => p.status === "ordered" && !p.receive_job) && (
                   <Link to={`/workload/purchases/receive?po=${po.id}`} className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-sm bg-primary px-2.5 text-sm font-medium text-on-primary hover:bg-primary-hover">
                     <PackageCheck className="size-4" aria-hidden="true" />Nhận hàng
                   </Link>

@@ -11,7 +11,7 @@ export interface WizardStep {
 /**
  * One thing at a time: a progress strip, the current step's question and content, and one primary
  * action ("Đúng – Tiếp tục"). Focus moves to the step heading when the step changes so keyboard and
- * screen-reader users land on the new question. On phones the action bar sits above the tab bar.
+ * screen-reader users land on the new question (or to the step's `[data-autofocus]` field when it has one). On phones the action bar sits above the tab bar.
  */
 export function Wizard({
   label,
@@ -42,7 +42,9 @@ export function Wizard({
       first.current = false;
       return;
     }
-    heading.current?.focus();
+    // A step can name its first field (data-autofocus, e.g. a scanner input); otherwise read the question.
+    const field = heading.current?.closest("section")?.querySelector<HTMLElement>("[data-autofocus]");
+    (field ?? heading.current)?.focus();
   }, [current]);
   const reasonId = `wizard-why-${label.replace(/\W+/g, "-")}`;
 
@@ -55,7 +57,7 @@ export function Wizard({
           <h2 ref={heading} tabIndex={-1} className="text-lg font-semibold outline-none">
             {title}
           </h2>
-          {description && <p className="mt-0.5 text-sm text-muted">{description}</p>}
+          {description && <p className="mt-0.5 text-sm text-pretty text-muted">{description}</p>}
         </div>
         <div className="px-5 py-4">{children}</div>
         {(next || onBack || aside) && (

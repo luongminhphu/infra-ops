@@ -6,7 +6,8 @@ import { useAuth } from "@/core/auth/AuthProvider";
 import { formatDate } from "@/core/lib/format";
 import { Button } from "@/core/ui/button";
 import { EmptyState, ErrorState, LoadingRows, PageHeader, Panel } from "@/core/ui/feedback";
-import { StatusBadge, type Status } from "@/core/ui/status";
+import { HelpTip } from "@/core/ui/help-tip";
+import { STATUS, StatusBadge, type Status } from "@/core/ui/status";
 import { modules } from "@/modules";
 
 export interface NextItem {
@@ -27,6 +28,73 @@ const LEVEL: Record<number, { label: string; status: Status }> = {
   3: { label: "Cần biết", status: "pending" },
   4: { label: "Gợi ý", status: "skipped" },
 };
+
+interface SummaryItem {
+  key: string;
+  group: "done" | "late" | "soon" | "open";
+  label: string;
+  count: number;
+  href: string;
+}
+
+const GROUPS: { key: SummaryItem["group"]; label: string; status: Status }[] = [
+  { key: "late", label: "Trễ hạn", status: "failed" },
+  { key: "soon", label: "Đến hạn trong 3 ngày", status: "waiting" },
+  { key: "open", label: "Đang mở", status: "in_progress" },
+  { key: "done", label: "Đã xong 7 ngày qua", status: "done" },
+];
+
+/** Counts per group across modules so the person can plan the day (what is late, what is coming, what got done). */
+function Summary() {
+  const q = useQuery({
+    queryKey: ["me", "summary"],
+    queryFn: () => api<{ items: SummaryItem[]; failed: string[] }>("/api/core/me/summary"),
+    refetchInterval: 60_000,
+  });
+  if (q.isLoading || q.isError || !q.data?.items.length) return null;
+  return (
+    <section aria-labelledby="summary-title" className="mb-6">
+      <h2 id="summary-title" className="mb-2 flex items-center gap-1 text-sm font-semibold text-muted">
+        Tổng quan
+        <HelpTip title="Tổng quan">
+          <span className="block">Đếm task SDP và Job onboard/offboard đang giao cho bạn.</span>
+          <span className="block">Trễ hạn: task quá hạn xử lý, Job đã qua ngày hiệu lực mà chưa xong. Đến hạn: trong 3 ngày tới.</span>
+        </HelpTip>
+      </h2>
+      <ul className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {GROUPS.map((g) => {
+          const rows = q.data.items.filter((i) => i.group === g.key);
+          const total = rows.reduce((n, i) => n + i.count, 0);
+          const def = STATUS[g.status];
+          const Icon = def.icon;
+          const alert = total > 0 && (g.key === "late" || g.key === "soon");
+          return (
+            <li key={g.key} className={`rounded-md border bg-surface p-3 shadow-card ${alert ? "border-current " + def.fg : "border-line"}`}>
+              <p className={`flex items-center gap-1.5 text-sm font-medium ${def.fg}`}>
+                <Icon className="size-4 shrink-0" aria-hidden="true" />
+                {g.label}
+              </p>
+              <p className="mt-1 text-2xl font-semibold text-ink tabular">{total}</p>
+              <ul className="mt-1 space-y-0.5 text-sm">
+                {rows.map((i) => (
+                  <li key={i.key}>
+                    {i.count > 0 ? (
+                      <Link to={i.href} className="text-ink underline decoration-line underline-offset-2 hover:decoration-current">
+                        <span className="tabular">{i.count}</span> {i.label}
+                      </Link>
+                    ) : (
+                      <span className="text-muted"><span className="tabular">0</span> {i.label}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
 
 export const useNextActions = () =>
   useQuery({
@@ -54,6 +122,7 @@ export function MyWorkPage() {
   return (
     <>
       <PageHeader title="Việc của tôi" description="Việc tiếp theo nằm trên cùng; làm xong, quay lại đây để sang việc kế tiếp." />
+      <Summary />
       {q.isError && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
       {q.isLoading ? (
         <LoadingRows rows={5} />

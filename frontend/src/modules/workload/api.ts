@@ -103,7 +103,7 @@ export interface Purchase {
   employee: string | null;
   kind: DeviceNeed | "new";
   item: string;
-  catalog_item: { id: string; name: string } | null;
+  catalog_item: { id: string; name: string; category?: string } | null;
   quantity: number;
   unit_price: number | null;
   amount: number | null;
