@@ -35,9 +35,10 @@ from app.modules.workload.models import (
     PurchaseOrder,
     PurchaseQuote,
     PurchaseRequest,
+    Supplier,
     Ticket,
 )
-from app.modules.workload.quotes import match_prices, needs_quotes, pdf_text, quote_problem
+from app.modules.workload.quotes import detect_supplier, match_prices, needs_quotes, pdf_text, quote_problem
 from app.modules.workload.settings import MODULE_ID, SETTINGS_KEY, WorkloadSettings
 
 router = APIRouter(tags=["workload"])
@@ -118,8 +119,10 @@ def out(
                 "id": str(q.id),
                 "vendor": q.vendor,
                 "unit_price": q.unit_price,
+                "out_of_stock": q.out_of_stock,
                 "filename": q.filename,
-                "lowest": q.unit_price == p.quote_price,
+                "mime": q.mime,
+                "lowest": q.unit_price is not None and q.unit_price == p.quote_price,
                 "created_by": q.created_by,
             }
             for q in quotes or []
@@ -128,7 +131,10 @@ def out(
         "quote_rule": {
             "required": True,
             "problem": quote_problem(
-                [q.unit_price for q in quotes or []], settings.quote_threshold_vnd, settings.quotes_required
+                [q.unit_price for q in quotes or [] if q.unit_price is not None],
+                sum(q.out_of_stock for q in quotes or []),
+                settings.quote_threshold_vnd,
+                settings.quotes_required,
             ),
             "threshold": settings.quote_threshold_vnd,
             "count": settings.quotes_required,
@@ -358,14 +364,15 @@ async def update_purchase(
             raise AppError("Chọn thiết bị trong bảng giá trước khi duyệt.", code="price_required")
         settings = await _settings(session)
         if needs_quotes(cat.category, settings.quote_categories):
-            prices = list(
-                (
-                    await session.scalars(
-                        select(PurchaseQuote.unit_price).where(PurchaseQuote.purchase_id == p.id)
-                    )
-                ).all()
+            rows = (
+                await session.scalars(select(PurchaseQuote).where(PurchaseQuote.purchase_id == p.id))
+            ).all()
+            problem = quote_problem(
+                [q.unit_price for q in rows if q.unit_price is not None],
+                sum(q.out_of_stock for q in rows),
+                settings.quote_threshold_vnd,
+                settings.quotes_required,
             )
-            problem = quote_problem(prices, settings.quote_threshold_vnd, settings.quotes_required)
             if problem:
                 raise AppError(problem, code="quotes_required")
         elif not cat.unit_price:
@@ -625,30 +632,106 @@ async def _quote_target(session: AsyncSession, purchase_id: uuid.UUID) -> Purcha
     return p
 
 
-@router.post("/purchases/{purchase_id}/quotes", status_code=201)
-async def add_quote(
+QUOTE_MIME = {"application/pdf"}
+STOCK_MIME = {"image/png", "image/jpeg", "application/pdf"}
+
+
+async def _suppliers(session: AsyncSession) -> list[Supplier]:
+    return list(
+        (await session.scalars(select(Supplier).where(Supplier.active).order_by(Supplier.name))).all()
+    )
+
+
+async def _read_upload(file: UploadFile, allowed: set[str]) -> tuple[bytes, str]:
+    data = await file.read(get_settings().max_upload_mb * 1024 * 1024 + 1)
+    check_size(data)
+    return data, sniff(data, allowed)
+
+
+async def _own_upload(
+    session: AsyncSession, user: CurrentUser, file_id: uuid.UUID, allowed: set[str]
+) -> StoredFile:
+    stored = await session.get(StoredFile, file_id)
+    if stored is None or stored.mime not in allowed or stored.uploaded_by != user.upn:
+        raise NotFound("Không tìm thấy file đã tải lên.")
+    return stored
+
+
+@router.post("/purchases/{purchase_id}/quotes/read")
+async def read_purchase_quote(
     purchase_id: uuid.UUID,
-    vendor: str = Form(min_length=2, max_length=200),
-    unit_price: int = Form(ge=1, le=10_000_000_000),
     file: UploadFile = File(...),
     user: CurrentUser = Depends(manage),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
+    """Recognise the vendor of a quote PDF and read this proposal's unit price (a suggestion to confirm)."""
+    p = await _quote_target(session, purchase_id)
+    data, _ = await _read_upload(file, QUOTE_MIME)
+    text = pdf_text(data)
+    suppliers = await _suppliers(session)
+    sup = detect_supplier(text, [{"keywords": x.keywords, "obj": x} for x in suppliers])
+    supplier = sup["obj"] if sup else None
+    cat = await session.get(CatalogItem, p.catalog_item_id) if p.catalog_item_id else None
+    names = [n for n in {cat.name if cat else "", p.item} if n]
+    found = match_prices(
+        text, [{"id": n, "name": n} for n in names], position=supplier.price_position if supplier else 0
+    )
+    name = safe_filename(file.filename or "bao-gia.pdf")
+    stored = await save_file(session, data, name, "application/pdf", user.upn)
+    await session.commit()
+    best = max(found, key=lambda f: f["score"]) if found else None
+    return {
+        "file_id": str(stored.id),
+        "filename": name,
+        "supplier": {"id": str(supplier.id), "name": supplier.name} if supplier else None,
+        "unit_price": best["price"] if best else None,
+        "line": best["line"] if best else None,
+    }
+
+
+@router.post("/purchases/{purchase_id}/quotes", status_code=201)
+async def add_quote(
+    purchase_id: uuid.UUID,
+    vendor: str = Form(min_length=2, max_length=200),
+    unit_price: int | None = Form(None, ge=1, le=10_000_000_000),
+    out_of_stock: bool = Form(False),
+    supplier_id: uuid.UUID | None = Form(None),
+    file_id: uuid.UUID | None = Form(None),
+    file: UploadFile | None = File(None),
+    user: CurrentUser = Depends(manage),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """A vendor quote (price + PDF), or "no stock" with a screenshot of the vendor's web store."""
     p = await _quote_target(session, purchase_id)
     count = await session.scalar(select(func.count()).where(PurchaseQuote.purchase_id == p.id))
     if (count or 0) >= MAX_QUOTES:
         raise AppError(f"Tối đa {MAX_QUOTES} báo giá mỗi đề xuất.", code="too_many_quotes")
-    data = await file.read(get_settings().max_upload_mb * 1024 * 1024 + 1)
-    check_size(data)
-    sniff(data, {"application/pdf"})
-    name = safe_filename(file.filename or "bao-gia.pdf")
-    stored = await save_file(session, data, name, "application/pdf", user.upn)
+    allowed = STOCK_MIME if out_of_stock else QUOTE_MIME
+    if not out_of_stock and unit_price is None:
+        raise AppError("Nhập đơn giá của báo giá.", code="price_required")
+    if file is not None:
+        data, mime = await _read_upload(file, allowed)
+        name = safe_filename(file.filename or ("het-hang.png" if out_of_stock else "bao-gia.pdf"))
+        stored = await save_file(session, data, name, mime, user.upn)
+    elif file_id is not None:  # PDF already uploaded by /quotes/read
+        stored = await _own_upload(session, user, file_id, allowed)
+        name, mime = stored.filename, stored.mime
+    else:
+        raise AppError(
+            "Đính kèm ảnh chụp website không có hàng." if out_of_stock else "Đính kèm file báo giá PDF.",
+            code="file_required",
+        )
+    if supplier_id is not None and await session.get(Supplier, supplier_id) is None:
+        raise NotFound("Không tìm thấy nhà cung cấp.")
     q = PurchaseQuote(
         purchase_id=p.id,
         vendor=vendor.strip(),
-        unit_price=unit_price,
+        supplier_id=supplier_id,
+        unit_price=None if out_of_stock else unit_price,
+        out_of_stock=out_of_stock,
         file_id=stored.id,
         filename=name,
+        mime=mime,
         created_by=user.upn,
     )
     session.add(q)
@@ -662,8 +745,9 @@ async def add_quote(
         target_type="purchase",
         target_id=str(p.id),
         target_label=p.item,
-        after={"vendor": q.vendor, "unit_price": unit_price, "filename": name, "lowest": p.quote_price},
-    )
+        after={"vendor": q.vendor, "unit_price": q.unit_price, "out_of_stock": out_of_stock, "filename": name,
+               "lowest": p.quote_price},
+    )  # fmt: skip
     await session.commit()
     return await _one(session, p, user)
 
@@ -689,16 +773,16 @@ async def delete_quote(
         target_type="purchase",
         target_id=str(p.id),
         target_label=p.item,
-        before={"vendor": q.vendor, "unit_price": q.unit_price},
+        before={"vendor": q.vendor, "unit_price": q.unit_price, "out_of_stock": q.out_of_stock},
     )
     await session.commit()
     return await _one(session, p, user)
 
 
-def _pdf_response(data: bytes, filename: str) -> Response:
+def _pdf_response(data: bytes, filename: str, mime: str = "application/pdf") -> Response:
     return Response(
         data,
-        media_type="application/pdf",
+        media_type=mime,
         headers={
             "Content-Disposition": f"inline; filename*=UTF-8''{quote(filename)}",
             "X-Content-Type-Options": "nosniff",
@@ -719,7 +803,7 @@ async def quote_file(
     if q is None or q.purchase_id != purchase_id:
         raise NotFound("Không tìm thấy báo giá.")
     _, data = await read_file(session, q.file_id)
-    return _pdf_response(data, q.filename)
+    return _pdf_response(data, q.filename, q.mime)
 
 
 @router.get("/purchases/export")
@@ -893,10 +977,17 @@ async def read_quote_pdf(
     items = [
         catalog_out(c) for c in (await session.scalars(select(CatalogItem).where(CatalogItem.active))).all()
     ]
+    sup = detect_supplier(text, [{"keywords": x.keywords, "obj": x} for x in await _suppliers(session)])
+    supplier = sup["obj"] if sup else None
     name = safe_filename(file.filename or "bao-gia.pdf")
     stored = await save_file(session, data, name, "application/pdf", user.upn)
     await session.commit()
-    return {"file_id": str(stored.id), "filename": name, "suggestions": match_prices(text, items)}
+    return {
+        "file_id": str(stored.id),
+        "filename": name,
+        "supplier": {"id": str(supplier.id), "name": supplier.name} if supplier else None,
+        "suggestions": match_prices(text, items, position=supplier.price_position if supplier else 0),
+    }
 
 
 class PriceIn(BaseModel):
@@ -960,6 +1051,94 @@ async def catalog_quote_file(
         raise NotFound("Thiết bị chưa có file báo giá.")
     stored, data = await read_file(session, c.quote_file_id)
     return _pdf_response(data, stored.filename)
+
+
+# ---------------------------------------------------------------- suppliers (quote recognition)
+def supplier_out(x: Supplier) -> dict[str, Any]:
+    return {
+        "id": str(x.id),
+        "name": x.name,
+        "keywords": x.keywords,
+        "price_position": x.price_position,
+        "website": x.website,
+        "active": x.active,
+        "updated_by": x.updated_by,
+        "updated_at": x.updated_at,
+    }
+
+
+@router.get("/suppliers")
+async def list_suppliers(
+    _: CurrentUser = Depends(price_view), session: AsyncSession = Depends(get_session)
+) -> list[dict[str, Any]]:
+    return [supplier_out(x) for x in (await session.scalars(select(Supplier).order_by(Supplier.name))).all()]
+
+
+class SupplierIn(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    keywords: list[str] = Field(default_factory=list, max_length=20)
+    price_position: int = Field(0, ge=0, le=20)
+    website: str = Field("", max_length=300)
+    active: bool = True
+
+
+async def _save_supplier(
+    session: AsyncSession, user: CurrentUser, x: Supplier, body: SupplierIn, before: dict[str, Any] | None
+) -> dict[str, Any]:
+    x.name, x.website, x.active, x.price_position = (
+        body.name.strip(),
+        body.website.strip(),
+        body.active,
+        body.price_position,
+    )
+    x.keywords = [k.strip() for k in body.keywords if len(k.strip()) >= 3]
+    if body.active and not x.keywords:
+        raise AppError(
+            "Nhập ít nhất một từ khoá nhận diện (≥ 3 ký tự), vd. mã số thuế.", code="keywords_required"
+        )
+    x.updated_by, x.updated_at = user.upn, datetime.now(UTC)
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        raise AppError("Đã có nhà cung cấp cùng tên.", code="duplicate_name") from exc
+    await record(
+        session,
+        actor=user.actor,
+        module_id=MODULE_ID,
+        action="workload.supplier_saved",
+        target_type="supplier",
+        target_id=str(x.id),
+        target_label=x.name,
+        before=before,
+        after={"keywords": x.keywords, "price_position": x.price_position, "active": x.active},
+    )
+    await session.commit()
+    return supplier_out(x)
+
+
+@router.post("/suppliers", status_code=201)
+async def create_supplier(
+    body: SupplierIn,
+    user: CurrentUser = Depends(catalog_manage),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    x = Supplier(id=uuid.uuid4())
+    session.add(x)
+    return await _save_supplier(session, user, x, body, None)
+
+
+@router.put("/suppliers/{supplier_id}")
+async def update_supplier(
+    supplier_id: uuid.UUID,
+    body: SupplierIn,
+    user: CurrentUser = Depends(catalog_manage),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    x = await session.get(Supplier, supplier_id, with_for_update=True)
+    if x is None:
+        raise NotFound("Không tìm thấy nhà cung cấp.")
+    before = {"keywords": x.keywords, "price_position": x.price_position, "active": x.active}
+    return await _save_supplier(session, user, x, body, before)
 
 
 # ---------------------------------------------------------------- purchase orders

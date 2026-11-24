@@ -130,9 +130,9 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
           <legend className="flex items-center gap-1 pt-2 text-base font-semibold">
             PO tổng và email gửi Phòng Mua hàng
             <HelpTip title="Mẫu email khi chốt PO">
-              <span className="block">Khi Supervisor bấm <b>Chốt PO</b>, hệ thống tạo file .eml (mở bằng Outlook là email nháp) theo mẫu dưới.</span>
-              <span className="block">Biến dùng được: <b>{"{{ po_number }}"}</b> số PO, <b>{"{{ date }}"}</b> ngày chốt, <b>{"{{ total }}"}</b> tổng tiền, <b>{"{{ limit }}"}</b> hạn mức, <b>{"{{ item_count }}"}</b> số hạng mục, <b>{"{{ items_text }}"}</b> danh sách hạng mục, <b>{"{{ closed_by }}"}</b> người chốt.</span>
-              <span className="block">Email luôn kèm file Excel chi tiết và bằng chứng Function Head.</span>
+              <span className="block">Khi Supervisor bấm <b>Chốt PO</b>, hệ thống tạo file .eml (mở bằng Outlook là email nháp) trình phê duyệt PO theo mẫu dưới.</span>
+              <span className="block">Biến dùng được: <b>{"{{ po_number }}"}</b> số PO, <b>{"{{ date }}"}</b> ngày chốt, <b>{"{{ total }}"}</b> tổng tiền, <b>{"{{ limit }}"}</b> hạn mức, <b>{"{{ item_count }}"}</b> số hạng mục, <b>{"{{ items_table }}"}</b> bảng hạng mục kèm các báo giá so sánh (giá được chọn, nhà cung cấp không có hàng), <b>{"{{ closed_by }}"}</b> người chốt.</span>
+              <span className="block">Email luôn kèm file Excel chi tiết, file báo giá, ảnh chụp không có hàng và bằng chứng Function Head. Mẫu cũ dùng {"{{ items_text }}"} vẫn hiện bảng trong bản HTML.</span>
             </HelpTip>
           </legend>
           <Field
@@ -163,7 +163,7 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
               <Input type="number" min={1} max={10} value={v.quotes_required} onChange={(e) => setV({ ...v, quotes_required: Number(e.target.value) })} />
             </Field>
           </div>
-          <Field label="Gửi tới" hint="Các e-mail cách nhau bằng dấu phẩy.">
+          <Field label="Gửi tới" hint="Người phê duyệt PO: Head of IT, Phòng Finance (mua hàng). Các e-mail cách nhau bằng dấu phẩy.">
             <Input value={text.po_email_to} onChange={(e) => setText({ ...text, po_email_to: e.target.value })} placeholder="muahang@congty.vn" />
           </Field>
           <Field label="CC">

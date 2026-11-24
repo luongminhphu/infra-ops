@@ -168,10 +168,37 @@ class PurchaseQuote(Base):
         UUID(as_uuid=True), ForeignKey("workload_purchase_request.id", ondelete="CASCADE"), index=True
     )
     vendor: Mapped[str] = mapped_column(String(200), nullable=False)
-    unit_price: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    supplier_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workload_supplier.id", ondelete="SET NULL")
+    )
+    # None when the vendor has no stock: the file is then a screenshot of its web store.
+    unit_price: Mapped[int | None] = mapped_column(BigInteger)
+    out_of_stock: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     file_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("core_file.id"))
     filename: Mapped[str] = mapped_column(String(200), nullable=False)
+    mime: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="application/pdf", server_default="application/pdf"
+    )
     created_by: Mapped[str] = mapped_column(String(320), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class Supplier(Base):
+    """A regular vendor (a handful of them) and how to read its quote PDFs."""
+
+    __tablename__ = "workload_supplier"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    # Text that identifies the vendor's quote (company name, tax code, domain), any one is enough.
+    keywords: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    # Which amount on an item line is the unit price: 0 = the smallest, N = the N-th amount from the left.
+    price_position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    website: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    updated_by: Mapped[str | None] = mapped_column(String(320))
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

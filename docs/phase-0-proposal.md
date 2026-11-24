@@ -937,3 +937,18 @@ Quyết định (theo trả lời của product owner):
   trên dòng (hoặc dòng kế tiếp). Chỉ là gợi ý: Supervisor xác nhận qua `POST /catalog/apply-quote` (file phải do
   chính người đó tải lên), giá + đối tác + ngày + file lưu vào Bảng giá, audit từng dòng, gom lại PO nháp.
 
+## 24. Phase 12 – Nhận diện báo giá nhà cung cấp, không có hàng, email trình duyệt PO (24/11/2026)
+
+- **Nhà cung cấp** (`workload_supplier`, quyền sửa `workload.catalog.manage`, xem `workload.price.view`): tên,
+  từ khoá nhận diện (mã số thuế, tên miền…, so khớp không dấu), `price_position` (0 = số tiền nhỏ nhất trên dòng,
+  N = số tiền thứ N từ trái theo mẫu của họ), website. Chỉ 4–5 nhà cung cấp nên chọn cấu hình theo mẫu thay vì
+  học máy. `detect_supplier` / `pick_price` là hàm thuần có test.
+- Đọc PDF: Bảng giá (`/catalog/quote-pdf`) và báo giá từng đề xuất (`/purchases/{id}/quotes/read`, gợi ý nhà cung
+  cấp + đơn giá; file được lưu và dùng lại bằng `file_id` khi thêm báo giá, chỉ người tải lên mới dùng được).
+- **Không có hàng**: `workload_purchase_quote.out_of_stock` + ảnh/PDF chụp website, `unit_price` rỗng. Tính vào số
+  báo giá bắt buộc (`quote_problem(prices, out_of_stock, …)`), vẫn cần ≥1 báo giá có giá.
+- **Email trình phê duyệt PO** (Head of IT, Finance): `.eml` có bản text và HTML; biến mới `{{ items_table }}`
+  (bản HTML là bảng so sánh báo giá, giá được chọn, không có hàng – mọi giá trị người dùng đều escape); đính kèm
+  thêm PDF báo giá và ảnh không có hàng. Mẫu mặc định đổi sang lời trình duyệt; hệ thống đã lưu mẫu cũ giữ nguyên
+  (`items_text` cũng hiện thành bảng trong bản HTML).
+
