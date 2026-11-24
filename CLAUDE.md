@@ -8,7 +8,7 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 - `backend/app/core/*` – platform core. `backend/app/modules/<id>/` – modules (manifest.py required).
 - `frontend/src/core/*` – shell, design system (`ui/`), core pages. `frontend/src/modules/<id>/` – module UI.
 - `backend/migrations/<branch>/versions` – one Alembic branch per module (`core`, …).
-- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §25).
+- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §26).
 
 ## Conventions
 
@@ -29,6 +29,8 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 - Employee IDs are strings (keep leading zeros, e.g. `003551`).
 - Job ownership: `Job.assignee_*` + `core_job_assignment` history via `engine.set_assignee` (no-op when
   unchanged). Personal pages are `portal` sections in the frontend module (rendered on `/me/work`).
+- Operator flows are step-by-step (core `Wizard`): pre-fill everything the system knows (with its source) and ask for
+  confirmation; supervisors keep the full screen. New operator flows follow this pattern.
 - Operating guidance in the UI: core `HelpTip` next to the heading/field (phrasing content only: use
   `<span className="block">` for paragraphs). Cross-module UI handoffs go through URLs (e.g. purchases `?new=1&…`).
 - Printable records: declare a `DocumentKind` in the manifest (pydantic data model + `build_context`);

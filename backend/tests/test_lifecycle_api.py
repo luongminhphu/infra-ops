@@ -255,6 +255,15 @@ async def test_allocation_plan_and_band_override(admin, configured, respx_mock) 
     stock = {s["label"]: s for s in data["stock"]}
     assert stock["Màn hình"]["in_store"] == 1 and stock["Laptop"]["to_buy"] >= 1
 
+    # The preparation wizard gets everything pre-filled: RTR details, SDP user by employee ID, devices.
+    prep = (await admin.get(f"/api/lifecycle/jobs/{req['job']['id']}/prepare")).json()
+    assert prep["request"]["employee_id"] == "003551" and prep["request"]["band"] == "B3"
+    assert prep["sdp_user"]["id"] == "u1"
+    assert {d["label"]: d["value"] for d in prep["request"]["details"]}["Phòng"] == "Kinh Doanh"
+    assert [
+        a["id"] for a in {ln["label"]: ln for ln in prep["allocation"]["lines"]}["Màn hình"]["reuse"]
+    ] == ["a2"]
+
     r = await admin.put(f"/api/lifecycle/requests/{req['id']}/band", json={"band": "B5"})
     assert r.json() == {"band": "B5", "band_source": "override"}
     r = await admin.put(f"/api/lifecycle/requests/{req['id']}/band", json={"band": ""})

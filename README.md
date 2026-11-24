@@ -29,7 +29,8 @@ Tài liệu: [kiến trúc](docs/architecture.md) · [thêm module](docs/adding-
 | 9 | **PO tổng** theo hạn mức (mặc định 200 triệu, tự mở PO tiếp theo), bảng giá do Supervisor cập nhật, bằng chứng Function Head, **Chốt PO** → email nháp .eml; **Kho & cấp phát**: band trong RTR × tiêu chuẩn cấp phát × tài sản In Store → tận dụng hoặc đề xuất mua; tooltip hướng dẫn | Xong |
 | 10 | **Nhận hàng → nhập kho SDP**: nhập serial/asset tag, worker tạo tài sản In Store trên SDP (không tạo trùng serial), Kho & cấp phát đồng bộ lại để gợi ý cho onboard | Xong |
 | 11 | Operator chỉ đề xuất thiết bị (không thấy giá); PC/Laptop định giá theo **báo giá từng đề xuất** (trên 20 triệu cần 3 báo giá, lấy giá thấp nhất); thiết bị khác **cập nhật giá từ file báo giá PDF** | Xong |
-| 12 | **Nhận diện báo giá theo nhà cung cấp** (từ khoá + cột đơn giá của từng mẫu), xác nhận **không có hàng** kèm ảnh chụp website, **email trình phê duyệt PO** cho Head of IT và Finance (bảng so sánh báo giá) | **Xong** |
+| 12 | **Nhận diện báo giá theo nhà cung cấp** (từ khoá + cột đơn giá của từng mẫu), xác nhận **không có hàng** kèm ảnh chụp website, **email trình phê duyệt PO** cho Head of IT và Finance (bảng so sánh báo giá) | Xong |
+| 13 | **Làm từng bước (wizard)**: khung Wizard dùng chung; Job Onboard/Offboard cho Operator mở thẳng dạng từng bước, dữ liệu biết trước được điền sẵn để chỉ cần xác nhận | **Xong** |
 | sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
 
 ## Chạy local
@@ -244,6 +245,17 @@ Người phụ trách Job lấy theo **technician của request RTR** trên SDP 
 Supervisor bấm **Chuyển Job** trên trang Job: worker đổi technician của request trên SDP rồi ghi lịch sử phụ trách.
 **Lưu đồ** của Job vẽ mỗi người phụ trách một làn; mũi tên nhảy làn đánh dấu lúc chuyển giao (giờ, trên SDP hay
 trong infra-ops).
+
+### Làm từng bước (Operator)
+Operator mở một Job Onboard/Offboard là vào **chế độ từng bước** (Supervisor/Manager mặc định thấy màn chi tiết
+đầy đủ; ai cũng chuyển được bằng *Làm từng bước* / *Xem chi tiết đầy đủ*):
+1. **Thông tin nhân viên** – lấy từ request RTR, chỉ cần kiểm tra (sai thì sửa trên SDP rồi đồng bộ).
+2. **User SDP** – hệ thống tìm theo Mã NV, bấm *Đúng – dùng user này* (chưa có thì bước chạy sẽ tự chờ AD đồng bộ).
+3. **Thiết bị cấp phát** (onboard) – tài sản In Store tận dụng được theo band đã chọn sẵn, thiết bị thiếu được báo
+   để đề xuất mua.
+4. **Bắt đầu** – xem trước việc hệ thống sẽ làm; ngày hiệu lực trong tương lai thì nút chính là *Chạy vào ngày
+   hiệu lực*.
+Khi Job chạy, màn hình chỉ hiện **bước hiện tại** và việc cần làm (xác nhận checklist, bằng chứng, nhập Mã NV…).
 
 ### Kho & cấp phát (Vòng đời nhân sự)
 1. **Cấu hình module → Tiêu chuẩn cấp phát thiết bị theo band**: mỗi dòng là một thiết bị (band áp dụng, loại tài
