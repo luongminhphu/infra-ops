@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, ChevronLeft, Eye, Play, RotateCcw, ShieldAlert, SkipForward, Workflow, XCircle } from "lucide-react";
+import { AlertTriangle, CalendarClock, LoaderCircle, ChevronLeft, Eye, Play, RotateCcw, ShieldAlert, SkipForward, Workflow, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
@@ -17,7 +17,7 @@ import { Flowchart } from "@/core/ui/flowchart";
 import { Stepper } from "@/core/ui/stepper";
 import { formatDate, formatDateTime } from "@/core/lib/format";
 import { cn } from "@/core/lib/cn";
-import { JOB_STATUS, STEP_STATUS, jobStatusLabel, SYSTEM_WRITE_LABEL, WORKFLOW_LABEL, useJob, type Job, type JobAsset, type JobStep } from "../jobs";
+import { JOB_STATUS, STEP_STATUS, idleText, jobStatusLabel, SYSTEM_WRITE_LABEL, WORKFLOW_LABEL, useJob, type Job, type JobAsset, type JobStep } from "../jobs";
 import { CollectAssetsForm, DocumentLink, DraftConfig, EnrollForm } from "./JobStepPanels";
 import { StepVerification } from "./StepVerification";
 import { AssignJobButton, PendingAssignment } from "./AssignJob";
@@ -67,6 +67,20 @@ function StepDetail({ job, step, act }: { job: Job; step: JobStep; act: ReturnTy
             {step.message}
           </p>
         )}
+        {isCurrent && job.status === "running" && step.kind === "auto" && ["pending", "in_progress"].includes(step.status) &&
+          (job.stalled_minutes ? (
+            <div role="alert" className="flex items-start gap-2 rounded-sm bg-waiting-soft px-3 py-2 text-sm text-waiting">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span>
+                <b className="font-semibold">Bước tự động chưa chạy sau {idleText(job.stalled_minutes)}.</b> Dịch vụ chạy nền (worker) có thể đang dừng.
+                Nhờ quản trị kiểm tra worker; Job tự chạy tiếp khi worker hoạt động lại – không cần bỏ qua bước.
+              </span>
+            </div>
+          ) : (
+            <p className="flex items-center gap-2 text-sm text-progress">
+              <LoaderCircle className="size-4 motion-safe:animate-spin" aria-hidden="true" />Hệ thống đang chạy bước này – thường xong trong vài giây, trang tự cập nhật.
+            </p>
+          ))}
         {step.status === "waiting" && step.next_run_at && step.kind === "auto" && !awaitingConfirm && (
           <p className="text-sm text-muted">Hệ thống tự kiểm tra lại lúc {formatDateTime(step.next_run_at)}.</p>
         )}
@@ -243,7 +257,7 @@ export function JobPage() {
   if (q.isLoading) return <>{back}<LoadingRows rows={8} /></>;
   if (q.isError || !job) return <>{back}<ErrorState error={q.error} onRetry={() => q.refetch()} /></>;
 
-  const js = JOB_STATUS[job.status];
+  const js = job.stalled_minutes ? { status: "warning" as const, label: "" } : JOB_STATUS[job.status];
   const canRun = can("lifecycle.job.execute");
   const step = job.steps.find((s) => s.key === selected) ?? job.steps[0]!;
   const finished = ["completed", "cancelled"].includes(job.status);
@@ -258,7 +272,9 @@ export function JobPage() {
           // Separate items (no leading "·" when the line wraps on a phone).
           <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
             <StatusBadge status={js.status} label={jobStatusLabel(job)} />
-            <span className="font-medium text-ink tabular">Bước {job.steps.find((s) => s.key === job.current_step)?.seq ?? job.progress.done}/{job.progress.total}</span>
+            <span className="font-medium text-ink tabular">
+              {job.current_step ? `Đang ở bước ${job.steps.find((s) => s.key === job.current_step)?.seq}/${job.progress.total}` : `${job.progress.total} bước`} · xong {job.progress.done}
+            </span>
             <span>Phụ trách: <strong className="font-medium text-ink">{job.assignee?.name ?? "chưa có"}</strong></span>
             <span>Request <Mono>#{job.params.request_display_id ?? job.external_ref}</Mono></span>
             <span>Hiệu lực {formatDate(eff)}</span>
@@ -298,7 +314,7 @@ export function JobPage() {
 
       <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
         {/* On phones the current step (what to do now) comes before the list of steps. */}
-        <Panel title={`Các bước (${job.progress.done}/${job.progress.total})`} bodyClassName="p-2" className="order-2 lg:order-none">
+        <Panel title={`Các bước · xong ${job.progress.done}/${job.progress.total}`} bodyClassName="p-2" className="order-2 lg:order-none">
           <Stepper
             label="Các bước của Job"
             selected={selected}

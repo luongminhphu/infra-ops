@@ -224,7 +224,8 @@ export function InventoryPage() {
       {q.isLoading || !d ? (
         !q.isError && <LoadingRows rows={6} />
       ) : (
-        <>
+        // Phone: employees to act on come first, the stock summary after them.
+        <div className="flex flex-col">
           <p className="mb-3 flex flex-wrap items-center gap-1 text-sm text-muted">
             {d.as_of ? `Theo dữ liệu kho đồng bộ lúc ${formatDateTime(d.as_of)}.` : "Chưa đồng bộ dữ liệu kho – vào Đồng bộ dữ liệu để chạy lần đầu."}
             <HelpTip title="Cách hệ thống gợi ý">
@@ -234,11 +235,11 @@ export function InventoryPage() {
               <span className="block">Dữ liệu kho theo lần đồng bộ gần nhất (menu Đồng bộ dữ liệu).</span>
             </HelpTip>
           </p>
-          <section aria-label="Tồn kho theo tiêu chuẩn" className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <section aria-label="Tồn kho theo tiêu chuẩn" className="order-last mt-5 grid gap-3 sm:order-none sm:mt-0 sm:mb-5 sm:grid-cols-2 lg:grid-cols-4">
             {d.stock.map((s) => (
-              <Panel key={s.label} title={s.label} description={s.bands.length ? `Band ${s.bands.join(", ")}` : "Mọi band"} bodyClassName="grid grid-cols-3 gap-2 p-3 text-center">
+              <Panel key={s.label} title={s.label} description={s.bands.length ? `Band ${s.bands.join(", ")}` : undefined} bodyClassName="grid grid-cols-3 gap-2 p-3 text-center">
                 <div><p className="text-xl font-semibold tabular">{s.in_store}</p><p className="text-xs text-muted">Trong kho</p></div>
-                <div><p className="text-xl font-semibold tabular">{s.planned}</p><p className="text-xs text-muted">Dự kiến dùng</p></div>
+                <div><p className="text-xl font-semibold tabular">{s.planned}</p><p className="text-xs text-muted">Sẽ dùng</p></div>
                 <div><p className={cn("text-xl font-semibold tabular", s.to_buy > 0 && "text-waiting")}>{s.to_buy}</p><p className="text-xs text-muted">Cần mua</p></div>
               </Panel>
             ))}
@@ -253,7 +254,7 @@ export function InventoryPage() {
               {d.requests.map((r) => <RequestCard key={r.id} r={r} purchases={purchases.data?.items ?? null} bands={d.bands} />)}
             </ul>
           )}
-        </>
+        </div>
       )}
     </>
   );

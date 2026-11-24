@@ -111,6 +111,8 @@ export interface Purchase {
   status: PurchaseStatus;
   note: string;
   created_by: string;
+  /** Display name of the requester (falls back to the e-mail). */
+  created_by_name: string;
   created_at: string;
   updated_at: string;
   approved_by: string | null;

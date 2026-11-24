@@ -106,7 +106,7 @@ export function MyJobsSection() {
   const by = (b: ReturnType<typeof bucket>) => jobs.filter((j) => bucket(j) === b);
   const upcoming = by("upcoming").sort((a, b) => (a.params.effective_date ?? "9").localeCompare(b.params.effective_date ?? "9"));
   return (
-    <Panel title="Onboard / Offboard" description="Job có request RTR giao cho bạn trên ServiceDesk Plus.">
+    <Panel title="Onboard / Offboard" description="Job đang giao cho bạn phụ trách.">
       {open.isError && <ErrorState error={open.error} onRetry={() => open.refetch()} />}
       {open.isLoading ? (
         <LoadingRows rows={4} />

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
+import { HelpTip } from "@/core/ui/help-tip";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { Button } from "@/core/ui/button";
 import { ErrorState, LoadingRows, Mono, Panel } from "@/core/ui/feedback";
@@ -94,6 +95,10 @@ export function MyTicketsSection() {
           <section aria-labelledby="po-suggest">
             <h3 id="po-suggest" className="flex items-center gap-2 text-base font-semibold">
               <ShoppingCart className="size-4" aria-hidden="true" />Gợi ý đề xuất mua thiết bị
+              <HelpTip title="Gợi ý đề xuất mua">
+                <span className="block">Request có từ khoá thay thế / nâng cấp / sửa chữa thiết bị hiện ở đây.</span>
+                <span className="block"><b>Lập đề xuất</b>: mở form đề xuất (kèm bằng chứng Function Head). <b>Không cần</b>: ẩn gợi ý của request này khỏi danh sách – không gửi gì lên ServiceDesk Plus.</span>
+              </HelpTip>
             </h3>
             <p className="text-sm text-muted">Request của bạn nói về thay thế, nâng cấp hoặc sửa chữa thiết bị.</p>
             {(d.suggestions ?? []).length ? (
@@ -104,7 +109,7 @@ export function MyTicketsSection() {
                     <p className="text-muted">{t.device_need ? KIND_LABEL[t.device_need] : ""} · {t.requester_name ?? "—"}</p>
                     {can("workload.purchase.create") && (
                       <div className="mt-1.5 flex gap-2">
-                        <Button size="sm" variant="primary" onClick={() => setPropose(t)}>Lập đề xuất</Button>
+                        <Button size="sm" onClick={() => setPropose(t)}>Lập đề xuất</Button>
                         <Button size="sm" loading={dismiss.isPending && dismiss.variables === t.id} onClick={() => dismiss.mutate(t.id)}>Không cần</Button>
                       </div>
                     )}

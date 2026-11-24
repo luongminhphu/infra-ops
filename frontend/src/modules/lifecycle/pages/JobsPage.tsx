@@ -88,7 +88,16 @@ export function JobsPage() {
           );
         },
       },
-      { accessorKey: "status", header: "Trạng thái", cell: (c) => <StatusBadge status={JOB_STATUS[c.row.original.status as JobStatus].status} label={jobStatusLabel(c.row.original)} /> },
+      {
+        accessorKey: "status",
+        header: "Trạng thái",
+        cell: (c) => (
+          <StatusBadge
+            status={c.row.original.stalled_minutes ? "warning" : JOB_STATUS[c.row.original.status as JobStatus].status}
+            label={jobStatusLabel(c.row.original)}
+          />
+        ),
+      },
       { accessorKey: "updated_at", header: "Cập nhật", cell: (c) => <span className="text-sm whitespace-nowrap text-muted">{formatRelative(c.row.original.updated_at)}</span> },
     ],
     [navigate],

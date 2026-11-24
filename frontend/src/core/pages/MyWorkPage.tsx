@@ -5,7 +5,7 @@ import { UserCheck } from "lucide-react";
 
 /** Operator portal: each module contributes a section about the signed-in user's own work. */
 export function MyWorkPage() {
-  const { me, can } = useAuth();
+  const { can } = useAuth();
   const sections = modules
     .flatMap((m) => m.portal ?? [])
     .filter((s) => can(s.permission))
@@ -14,7 +14,7 @@ export function MyWorkPage() {
     <>
       <PageHeader
         title="Việc của tôi"
-        description={`Những việc ${me?.display_name ?? "bạn"} đang phụ trách: cần làm ngay, đang làm, sắp tới và đã xong.`}
+        description="Việc đang giao cho bạn: cần làm ngay, đang làm, sắp tới và đã xong."
       />
       {sections.length ? (
         <div className="space-y-6">

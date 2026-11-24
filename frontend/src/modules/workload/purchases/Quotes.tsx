@@ -141,7 +141,7 @@ export function QuotesBlock({ p, onChange }: { p: Purchase; onChange: (p: Purcha
             if (f) setFile(f);
           }}
         >
-          <legend className="px-1 text-sm font-medium">Thêm</legend>
+          <legend className="px-1 text-sm font-medium">Thêm báo giá hoặc xác nhận không có hàng</legend>
           <div role="radiogroup" aria-label="Loại" className="flex flex-wrap gap-4 text-sm">
             {(
               [

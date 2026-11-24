@@ -124,7 +124,7 @@ function GettingStarted() {
     { to: "/lifecycle/sync", title: "Đồng bộ dữ liệu lần đầu", detail: "Đọc request, user, tài sản và user BioStar để bắt đầu đối soát." },
   ];
   return (
-    <Panel title="Bắt đầu sử dụng" description="Chưa có kết nối hệ thống nào, nên các số liệu bên dưới đều trống." className="mb-4">
+    <Panel title="Bắt đầu sử dụng" description="Chưa có kết nối hệ thống nào – làm 4 bước dưới đây để infra-ops đọc dữ liệu thật từ ServiceDesk Plus và BioStar." className="mb-4">
       <ol className="grid gap-3 md:grid-cols-2">
         {steps.map((s, i) => (
           <li key={s.to}>

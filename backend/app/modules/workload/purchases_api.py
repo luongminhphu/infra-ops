@@ -19,7 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit.service import record
 from app.core.auth.deps import CurrentUser, require
+from app.core.auth.models import User
 from app.core.config import get_settings
+from app.core.connections.models import ConnectionProfile
 from app.core.db import get_session
 from app.core.errors import AppError, NotFound
 from app.core.settings.service import load_settings
@@ -188,6 +190,8 @@ async def _full(
         ).all():
             quotes.setdefault(q.purchase_id, []).append(q)
     settings = await _settings(session)
+    upns = {p.created_by for p in rows}
+    names = dict((await session.execute(select(User.upn, User.display_name).where(User.upn.in_(upns)))).all()) if upns else {}  # fmt: skip
     jobs: dict[str, Job] = {}
     ordered = [str(p.id) for p in rows if p.status == "ordered"]
     if ordered:
@@ -215,6 +219,8 @@ async def _full(
         )
         for p in rows
     ]
+    for r, p in zip(result, rows, strict=True):
+        r["created_by_name"] = names.get(p.created_by) or p.created_by
     if user is not None and not user.has(PRICE):
         result = [{**r, **HIDDEN} for r in result]
     return result
@@ -332,16 +338,10 @@ class StatusIn(BaseModel):
     catalog_item_id: uuid.UUID | None = None
 
 
-@router.patch("/purchases/{purchase_id}")
-async def update_purchase(
-    purchase_id: uuid.UUID,
-    body: StatusIn,
-    user: CurrentUser = Depends(manage),
-    session: AsyncSession = Depends(get_session),
-) -> dict[str, Any]:
-    p = await session.get(PurchaseRequest, purchase_id, with_for_update=True)
-    if p is None:
-        raise NotFound("Không tìm thấy đề xuất.")
+async def _change_status(
+    session: AsyncSession, user: CurrentUser, p: PurchaseRequest, body: StatusIn
+) -> bool:
+    """Validate and apply one manual status change (audited). Returns True when POs must be re-packed."""
     if body.status not in NEXT[p.status]:
         hint = " PO được đặt mua khi Supervisor chốt PO." if body.status == "ordered" else ""
         raise AppError(
@@ -398,11 +398,55 @@ async def update_purchase(
         before={"status": before},
         after={"status": p.status, "note": body.note.strip() or None},
     )
-    if "approved" in (before, body.status):
+    return "approved" in (before, body.status)
+
+
+@router.patch("/purchases/{purchase_id}")
+async def update_purchase(
+    purchase_id: uuid.UUID,
+    body: StatusIn,
+    user: CurrentUser = Depends(manage),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    p = await session.get(PurchaseRequest, purchase_id, with_for_update=True)
+    if p is None:
+        raise NotFound("Không tìm thấy đề xuất.")
+    if await _change_status(session, user, p, body):
         await pos.repack(session, await _settings(session))
     await session.commit()
     await session.refresh(p)
     return await _one(session, p, user)
+
+
+class BulkIn(BaseModel):
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=200)
+    status: Literal["approved", "rejected"]
+    note: str = Field("", max_length=1000)
+
+
+@router.post("/purchases/bulk")
+async def bulk_status(
+    body: BulkIn, user: CurrentUser = Depends(manage), session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """Approve or reject many proposals at once. Each one is checked like a single change (evidence,
+    price, quotes); those that fail are reported and left unchanged, the others are applied."""
+    done: list[str] = []
+    failed: dict[str, str] = {}
+    repack = False
+    for pid in dict.fromkeys(body.ids):
+        try:
+            async with session.begin_nested():
+                p = await session.get(PurchaseRequest, pid, with_for_update=True)
+                if p is None:
+                    raise NotFound("Không tìm thấy đề xuất.")
+                repack |= await _change_status(session, user, p, StatusIn(status=body.status, note=body.note))
+            done.append(str(pid))
+        except AppError as exc:
+            failed[str(pid)] = exc.message
+    if repack:
+        await pos.repack(session, await _settings(session))
+    await session.commit()
+    return {"done": done, "failed": failed}
 
 
 class UnitIn(BaseModel):
@@ -413,6 +457,26 @@ class UnitIn(BaseModel):
 class ReceiveIn(BaseModel):
     units: list[UnitIn] = Field(default_factory=list, max_length=500)
     note: str = Field("", max_length=1000)
+
+
+@router.get("/purchases/receive-target")
+async def receive_target(
+    _: CurrentUser = Depends(manage), session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """Which SDP connection "Nhập kho SDP" will write to (shown before the user confirms)."""
+    settings = await _settings(session)
+    stmt = select(ConnectionProfile).where(ConnectionProfile.system_type == "sdp")
+    if settings.sdp_profile_id:
+        stmt = stmt.where(ConnectionProfile.id == settings.sdp_profile_id)
+    else:
+        stmt = stmt.where(ConnectionProfile.environment == "prod", ConnectionProfile.enabled.is_(True))
+    prof = (await session.scalars(stmt.order_by(ConnectionProfile.created_at).limit(1))).first()
+    return {
+        "connection": {"name": prof.name, "environment": prof.environment, "enabled": prof.enabled}
+        if prof
+        else None,
+        "state": settings.asset_state_in_store,
+    }
 
 
 @router.post("/purchases/{purchase_id}/receive")
@@ -1180,6 +1244,8 @@ async def list_pos(
     waiting = await session.scalar(select(func.count()).where(PurchaseRequest.status == "proposed"))
     return {
         "limit": settings.po_limit_vnd,
+        "email_to": settings.po_email_to,
+        "email_cc": settings.po_email_cc,
         "open": [await po_out(session, o) for o in open_rows],
         "closed": [await po_out(session, o) for o in closed],
         "proposed_waiting": waiting or 0,

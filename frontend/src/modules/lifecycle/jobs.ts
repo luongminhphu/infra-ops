@@ -95,6 +95,8 @@ export interface Job {
   close_reason: string | null;
   version: number;
   progress: { done: number; total: number };
+  /** Running but not advanced by the worker for this many minutes (worker down / step stuck). */
+  stalled_minutes: number | null;
   /** Checklist version frozen at start; null = no step verification. */
   checklist_version: number | null;
   assignee: { user_id: string | null; name: string } | null;
@@ -124,7 +126,15 @@ export const STEP_STATUS: Record<StepStatus, { label: string; status: Status }> 
 };
 
 /** Job state for people: a waiting job says what it waits for and at which step. */
-export function jobStatusLabel(job: Pick<Job, "status" | "current_step" | "steps">): string {
+export function idleText(minutes: number): string {
+  return minutes >= 60 * 24 ? `${Math.floor(minutes / 1440)} ngày` : minutes >= 60 ? `${Math.floor(minutes / 60)} giờ` : `${minutes} phút`;
+}
+
+export function jobStatusLabel(job: Pick<Job, "status" | "current_step" | "steps"> & { stalled_minutes?: number | null }): string {
+  if (job.stalled_minutes) {
+    const cur = job.steps.find((x) => x.key === job.current_step);
+    return `Đứng yên ${idleText(job.stalled_minutes)}${cur ? ` ở bước ${cur.seq}` : ""}`;
+  }
   const s = job.status === "waiting" ? job.steps.find((x) => x.key === job.current_step) : undefined;
   if (!s) return JOB_STATUS[job.status].label;
   const at = `bước ${s.seq}`;

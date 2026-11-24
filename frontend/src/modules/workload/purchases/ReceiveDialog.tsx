@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { PackageCheck } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
@@ -14,6 +14,18 @@ export function ReceiveDialog({ p, onClose, onDone }: { p: Purchase; onClose: ()
   const tracked = !!p.sdp_product;
   const [units, setUnits] = useState(() => Array.from({ length: tracked ? p.quantity : 0 }, () => ({ serial: "", asset_tag: "" })));
   const [note, setNote] = useState("");
+  const target = useQuery({
+    queryKey: ["workload", "receive-target"],
+    queryFn: () => api<{ connection: { name: string; environment: string; enabled: boolean } | null; state: string }>("/api/workload/purchases/receive-target"),
+    enabled: tracked,
+  });
+  const conn = target.data?.connection;
+  // Barcode scanners send Enter after each serial: move to the next field instead of submitting.
+  const nextOnEnter = (i: number) => (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    document.getElementById(`serial-${p.id}-${i + 1}`)?.focus();
+  };
   const [tried, setTried] = useState(false);
   const serials = units.map((u) => u.serial.trim().toLowerCase());
   const bad = (i: number) => serials[i]!.length < 2 || serials.indexOf(serials[i]!) !== i;
@@ -52,6 +64,21 @@ export function ReceiveDialog({ p, onClose, onDone }: { p: Purchase; onClose: ()
       }
     >
       {tracked && (
+        <p className={`mb-3 rounded-sm px-3 py-2 text-sm ${conn?.enabled ? "bg-surface-2" : "bg-waiting-soft text-waiting"}`}>
+          {conn ? (
+            <>
+              Sẽ tạo <b>{p.quantity} tài sản</b> trạng thái “{target.data?.state}” trên kết nối <b>{conn.name}</b> ({conn.environment === "prod" ? "Production" : "Test"})
+              {p.po?.number && <> · theo <b>{p.po.number}</b></>}. Tài sản đã tạo không tự xoá được – nhập sai thì sửa trực tiếp trên ServiceDesk Plus.
+              {!conn.enabled && " Kết nối này đang tắt – bật lại trong Kết nối hệ thống trước khi nhập kho."}
+            </>
+          ) : target.isLoading ? (
+            "Đang kiểm tra kết nối ServiceDesk Plus…"
+          ) : (
+            "Chưa có kết nối ServiceDesk Plus – thêm trong Hệ thống → Kết nối hệ thống trước khi nhập kho."
+          )}
+        </p>
+      )}
+      {tracked && (
         <fieldset>
           <legend className="mb-2 flex items-center gap-1 text-sm font-medium">
             Serial và asset tag từng thiết bị
@@ -66,7 +93,14 @@ export function ReceiveDialog({ p, onClose, onDone }: { p: Purchase; onClose: ()
               <li key={i} className="grid items-start gap-2 sm:grid-cols-[2rem_1fr_1fr]">
                 <span className="pt-2 text-sm text-muted tabular" aria-hidden="true">{i + 1}.</span>
                 <Field label={`Serial thiết bị ${i + 1}`} required error={serials[i] && serials.indexOf(serials[i]!) !== i ? "Serial bị trùng." : "Nhập serial."} showError={tried && bad(i)}>
-                  <Input data-autofocus={i === 0} value={u.serial} maxLength={100} onChange={(e) => set(i, { serial: e.target.value })} />
+                  <Input
+                    id={`serial-${p.id}-${i}`}
+                    data-autofocus={i === 0}
+                    value={u.serial}
+                    maxLength={100}
+                    onKeyDown={nextOnEnter(i)}
+                    onChange={(e) => set(i, { serial: e.target.value })}
+                  />
                 </Field>
                 <Field label={`Asset tag ${i + 1}`}>
                   <Input value={u.asset_tag} maxLength={100} onChange={(e) => set(i, { asset_tag: e.target.value })} />

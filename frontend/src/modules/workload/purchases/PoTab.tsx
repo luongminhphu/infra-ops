@@ -16,6 +16,8 @@ import { sourceLabel } from "./ProposalsTab";
 
 interface PosResponse {
   limit: number;
+  email_to: string[];
+  email_cc: string[];
   open: PurchaseOrder[];
   closed: PurchaseOrder[];
   proposed_waiting: number;
@@ -38,6 +40,9 @@ function Usage({ po }: { po: PurchaseOrder }) {
         <span className="tabular font-semibold">{formatVnd(po.total)}</span>
         <span className="tabular text-muted">/ hạn mức {formatVnd(po.limit)} · {pct}%</span>
       </div>
+      {!po.over_limit && pct >= 90 && (
+        <p className="mb-1 text-xs text-muted">Còn {formatVnd(po.limit - po.total)} – đề xuất duyệt tiếp theo lớn hơn số này sẽ vào PO mới.</p>
+      )}
       <div role="meter" aria-label="Giá trị PO so với hạn mức" aria-valuemin={0} aria-valuemax={po.limit} aria-valuenow={po.total} aria-valuetext={`${pct}% hạn mức`} className="h-2 overflow-hidden rounded-full bg-surface-2">
         <div className={cn("h-full rounded-full", po.over_limit ? "bg-failed" : pct >= 90 ? "bg-waiting" : "bg-primary")} style={{ width: `${Math.min(100, pct)}%` }} />
       </div>
@@ -179,6 +184,16 @@ export function PoTab() {
           <li>Các đề xuất chuyển sang <b>Đã đặt mua</b>; đề xuất duyệt sau sẽ vào PO mới.</li>
           <li>Trình duyệt tải về file <b>.eml</b> – mở bằng Outlook là thành email nháp theo mẫu (cấu hình ở Cấu hình công việc), kèm bảng chi tiết Excel và bằng chứng Function Head. Kiểm tra rồi bấm Gửi.</li>
         </ul>
+        <p className={`mt-3 rounded-sm px-3 py-2 text-sm ${q.data?.email_to.length ? "bg-surface-2" : "bg-waiting-soft text-waiting"}`}>
+          {q.data?.email_to.length ? (
+            <>
+              Email trình duyệt gửi tới: <b>{q.data.email_to.join(", ")}</b>
+              {q.data.email_cc.length > 0 && <> · CC: {q.data.email_cc.join(", ")}</>}
+            </>
+          ) : (
+            "Chưa cấu hình người nhận (Head of IT, Finance) – email nháp sẽ để trống ô Gửi tới. Điền trong Cấu hình công việc."
+          )}
+        </p>
         {closing?.over_limit && <p role="alert" className="mt-3 rounded-sm bg-failed-soft px-3 py-2 text-sm text-failed">PO này vượt hạn mức.</p>}
       </Dialog>
     </div>

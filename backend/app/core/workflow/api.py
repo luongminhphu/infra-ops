@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 from urllib.parse import quote
 
@@ -33,6 +33,16 @@ def _wf(job: Job) -> WorkflowDefinition:
     return engine.workflow_or_404(job.workflow_key)[1]
 
 
+STALLED_AFTER = timedelta(minutes=10)
+
+
+def _stalled_minutes(job: Job) -> int | None:
+    if job.status != "running" or job.updated_at is None:
+        return None
+    idle = datetime.now(UTC) - job.updated_at
+    return int(idle.total_seconds() // 60) if idle > STALLED_AFTER else None
+
+
 def job_out(
     job: Job, wf: WorkflowDefinition | None = None, events: list[JobEvent] | None = None
 ) -> dict[str, Any]:
@@ -59,6 +69,9 @@ def job_out(
         "close_reason": job.close_reason,
         "version": job.version,
         "progress": {"done": done, "total": len(job.steps)},
+        # A running job is advanced by the worker every few seconds; no change for this long = stalled
+        # (worker down, or a step stuck). Surfaced in the UI instead of a silent "Đang chạy".
+        "stalled_minutes": _stalled_minutes(job),
         "checklist_version": job.checklist_version,
         "assignee": {
             "user_id": str(job.assignee_user_id) if job.assignee_user_id else None,
