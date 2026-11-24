@@ -988,3 +988,14 @@ Quyết định:
 - `GET /api/lifecycle/jobs/{id}/prepare`: thông tin RTR, user SDP khớp Mã NV (snapshot), kế hoạch cấp phát của
   request (`build_plan` dùng chung với Kho & cấp phát).
 
+## 27. Phase 14 – Đề xuất mua từng bước (24/11/2026)
+
+- Trang `/workload/purchases/new` (core `Wizard`) thay hộp thoại đề xuất: Thiết bị → Người dùng & lý do → Bằng chứng
+  Function Head → Xem lại & gửi; màn “Đã gửi” chỉ việc tiếp theo. Không có giá (Supervisor định giá khi duyệt).
+- Điền sẵn qua URL (không import chéo module): `ticket`, `ref`, `item` (tiêu đề request), `kind`, `employee`
+  (người yêu cầu), `reason`; từ Kho & cấp phát: `source=onboard`, `ref`, `item`, `catalog`, `qty`, `employee`.
+  Link cũ `?new=1&…` chuyển hướng sang trang mới.
+- Bằng chứng: nút chính bị khoá đến khi có file (lý do gắn vào nút); lối phụ “Chưa có – bổ sung sau” vẫn gửi được
+  và màn xem lại/đã gửi nhắc bổ sung. Hàm hỗ trợ bằng chứng chuyển sang `workload/evidence.tsx`.
+- Sửa lỗi: danh sách file đọc sau khi đã xoá giá trị input (file chọn bị mất) – sao chép trước khi xoá.
+

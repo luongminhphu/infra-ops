@@ -30,7 +30,8 @@ Tài liệu: [kiến trúc](docs/architecture.md) · [thêm module](docs/adding-
 | 10 | **Nhận hàng → nhập kho SDP**: nhập serial/asset tag, worker tạo tài sản In Store trên SDP (không tạo trùng serial), Kho & cấp phát đồng bộ lại để gợi ý cho onboard | Xong |
 | 11 | Operator chỉ đề xuất thiết bị (không thấy giá); PC/Laptop định giá theo **báo giá từng đề xuất** (trên 20 triệu cần 3 báo giá, lấy giá thấp nhất); thiết bị khác **cập nhật giá từ file báo giá PDF** | Xong |
 | 12 | **Nhận diện báo giá theo nhà cung cấp** (từ khoá + cột đơn giá của từng mẫu), xác nhận **không có hàng** kèm ảnh chụp website, **email trình phê duyệt PO** cho Head of IT và Finance (bảng so sánh báo giá) | Xong |
-| 13 | **Làm từng bước (wizard)**: khung Wizard dùng chung; Job Onboard/Offboard cho Operator mở thẳng dạng từng bước, dữ liệu biết trước được điền sẵn để chỉ cần xác nhận | **Xong** |
+| 13 | **Làm từng bước (wizard)**: khung Wizard dùng chung; Job Onboard/Offboard cho Operator mở thẳng dạng từng bước, dữ liệu biết trước được điền sẵn để chỉ cần xác nhận | Xong |
+| 14 | **Đề xuất mua từng bước**: Thiết bị → Người dùng & lý do → Bằng chứng Function Head → Xem lại & gửi, điền sẵn từ request/onboard | **Xong** |
 | sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
 
 ## Chạy local
@@ -256,6 +257,10 @@ Operator mở một Job Onboard/Offboard là vào **chế độ từng bước**
 4. **Bắt đầu** – xem trước việc hệ thống sẽ làm; ngày hiệu lực trong tương lai thì nút chính là *Chạy vào ngày
    hiệu lực*.
 Khi Job chạy, màn hình chỉ hiện **bước hiện tại** và việc cần làm (xác nhận checklist, bằng chứng, nhập Mã NV…).
+
+**Đề xuất mua thiết bị** cũng làm từng bước (*Lập đề xuất* ở Việc của tôi, *Lập đề xuất mua* ở Kho & cấp phát, hoặc
+*Đề xuất mới*): **Thiết bị** (mô tả, loại, số lượng điền sẵn từ request/onboard) → **Người dùng & lý do** →
+**Bằng chứng Function Head** (chọn file hoặc dán ảnh; *Chưa có – bổ sung sau* nếu cần) → **Xem lại & gửi**.
 
 ### Kho & cấp phát (Vòng đời nhân sự)
 1. **Cấu hình module → Tiêu chuẩn cấp phát thiết bị theo band**: mỗi dòng là một thiết bị (band áp dụng, loại tài
