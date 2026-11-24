@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Pencil, Plus, Tags } from "lucide-react";
+import { FileSearch, FileText, Pencil, Plus, Tags } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
@@ -15,6 +15,7 @@ import { Field, Input, Switch, Textarea } from "@/core/ui/field";
 import { HelpTip } from "@/core/ui/help-tip";
 import { StatusBadge } from "@/core/ui/status";
 import { useCatalog, type CatalogItem } from "../api";
+import { PdfImportDialog } from "./PdfImportDialog";
 
 const digits = (s: string) => s.replace(/\D/g, "");
 const group = (s: string) => (s ? new Intl.NumberFormat("vi-VN").format(Number(s)) : "");
@@ -97,6 +98,7 @@ export function CatalogTab() {
   const manage = can("workload.catalog.manage");
   const q = useCatalog();
   const [editing, setEditing] = useState<CatalogItem | null | "new">(null);
+  const [importing, setImporting] = useState(false);
   const columns = useMemo<ColumnDef<CatalogItem, unknown>[]>(
     () => [
       {
@@ -111,7 +113,23 @@ export function CatalogTab() {
         ),
       },
       { accessorKey: "category", header: "Nhóm" },
-      { accessorKey: "unit_price", header: "Đơn giá", cell: (c) => <span className="tabular whitespace-nowrap">{formatVnd(c.row.original.unit_price, "Chưa có giá")}</span> },
+      {
+        accessorKey: "unit_price",
+        header: "Đơn giá",
+        cell: (c) =>
+          c.row.original.needs_quotes ? (
+            <span className="text-sm text-muted">Theo báo giá từng đề xuất</span>
+          ) : (
+            <span className="block whitespace-nowrap">
+              <span className="tabular">{formatVnd(c.row.original.unit_price, "Chưa có giá")}</span>
+              {c.row.original.quote_file && (
+                <a className="mt-0.5 flex items-center gap-1 text-xs text-primary underline-offset-2 hover:underline" href={`/api/workload/catalog/${c.row.original.id}/quote-file`} target="_blank" rel="noreferrer">
+                  <FileText className="size-3.5" aria-hidden="true" />File báo giá
+                </a>
+              )}
+            </span>
+          ),
+      },
       { accessorKey: "vendor", header: "Đối tác", cell: (c) => c.row.original.vendor || "—" },
       { accessorKey: "quoted_at", header: "Ngày báo giá", cell: (c) => <span className="tabular">{formatDate(c.row.original.quoted_at)}</span> },
       { accessorKey: "updated_by", header: "Cập nhật", cell: (c) => <span className="text-xs text-muted">{c.row.original.updated_by ?? "—"}<br />{formatDate(c.row.original.updated_at)}</span> },
@@ -141,13 +159,17 @@ export function CatalogTab() {
         <p className="flex items-center gap-1 text-sm text-muted">
           Đơn giá dùng để tính giá trị PO.
           <HelpTip title="Cập nhật bảng giá">
-            <span className="block">Sau khi đối tác báo giá, <b>Supervisor</b> bấm <b>Sửa</b> và nhập đơn giá mới (đã gồm VAT), đối tác và ngày báo giá.</span>
+            <span className="block">Có file báo giá PDF của đối tác: bấm <b>Cập nhật giá từ PDF</b>, hệ thống đọc file và gợi ý giá từng thiết bị để bạn xác nhận. Hoặc bấm <b>Sửa</b> để nhập giá tay.</span>
+            <span className="block">Nhóm PC/Laptop không dùng giá ở đây: mỗi đề xuất được định giá bằng báo giá riêng (trên 20 triệu cần 3 báo giá, lấy giá thấp nhất).</span>
             <span className="block">Giá mới áp dụng ngay cho các PO nháp (hệ thống gom lại theo hạn mức). PO đã chốt giữ giá lúc chốt.</span>
             <span className="block">Thiết bị ngừng dùng thì tắt “Đang dùng” thay vì xoá, để lịch sử đề xuất vẫn đúng.</span>
           </HelpTip>
         </p>
         {manage && (
-          <Button className="ml-auto" variant="primary" onClick={() => setEditing("new")}><Plus className="size-4" aria-hidden="true" />Thêm thiết bị</Button>
+          <span className="ml-auto flex flex-wrap gap-2">
+            <Button onClick={() => setImporting(true)}><FileSearch className="size-4" aria-hidden="true" />Cập nhật giá từ PDF</Button>
+            <Button variant="primary" onClick={() => setEditing("new")}><Plus className="size-4" aria-hidden="true" />Thêm thiết bị</Button>
+          </span>
         )}
       </div>
       {q.isError && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
@@ -162,6 +184,7 @@ export function CatalogTab() {
           empty={<EmptyState icon={Tags} title="Chưa có thiết bị trong bảng giá">{manage ? "Bấm “Thêm thiết bị” và nhập đơn giá theo báo giá của đối tác." : "Supervisor sẽ nhập bảng giá sau khi có báo giá."}</EmptyState>}
         />
       )}
+      {importing && <PdfImportDialog onClose={() => setImporting(false)} />}
       {editing && <EditDialog item={editing === "new" ? null : editing} onClose={() => setEditing(null)} />}
     </>
   );

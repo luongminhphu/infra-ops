@@ -393,7 +393,7 @@ async def test_portal_accounts_and_purchase_flow(admin, client, sdp) -> None:  #
     assert no_price.json()["error"]["code"] == "price_required"
     cat = await client.post(
         "/api/workload/catalog",
-        json={"name": "Laptop Dell Latitude 5440", "category": "Laptop", "unit_price": 25_000_000},
+        json={"name": "Laptop Dell Latitude 5440", "category": "Thiết bị khác", "unit_price": 25_000_000},
     )
     assert cat.status_code == 201, cat.text
     r = await client.patch(
@@ -573,3 +573,120 @@ async def test_receive_creates_in_store_assets_on_sdp(client, sdp) -> None:  # t
     ]  # fmt: skip
     job = (await client.get(f"/api/core/jobs/{r.json()['receive_job']['id']}")).json()
     assert job["status"] == "completed" and job["steps"][0]["before_state"]["existing"] == {"SN-OLD": "900"}
+
+
+def make_pdf(lines: list[str]) -> bytes:
+    """Minimal one-page text PDF (ASCII), enough for pypdf text extraction."""
+    text = "BT /F1 11 Tf 40 800 Td 14 TL " + " ".join(f"({ln}) Tj T*" for ln in lines) + " ET"
+    objs = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        f"<< /Length {len(text)} >>\nstream\n{text}\nendstream",
+    ]
+    out, offsets = b"%PDF-1.4\n", []
+    for i, o in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += f"{i} 0 obj\n{o}\nendobj\n".encode()
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
+    out += "".join(f"{o:010d} 00000 n \n" for o in offsets).encode()
+    out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF".encode()
+    return out
+
+
+def test_quote_rules_and_pdf_price_matching() -> None:
+    from app.modules.workload.quotes import match_prices, needs_quotes, pdf_text, quote_problem
+
+    assert needs_quotes("laptop ", ["PC", "Laptop"]) and not needs_quotes("Màn hình", ["PC", "Laptop"])
+    assert quote_problem([], 20_000_000, 3)
+    assert quote_problem([25_000_000, 21_000_000], 20_000_000, 3)  # above threshold: 3 needed
+    assert quote_problem([25_000_000, 21_000_000, 22_000_000], 20_000_000, 3) is None
+    assert quote_problem([19_500_000], 20_000_000, 3) is None  # one quote enough under the threshold
+    text = pdf_text(make_pdf(["STT Ten hang SL Don gia Thanh tien", "1 Chuot Logitech M90 10 145,000 1,450,000",
+                              "2 Man hinh Dell P2422H 2 4.150.000 8.300.000", "Tong cong 9.750.000"]))  # fmt: skip
+    found = match_prices(
+        text,
+        [{"id": "a", "name": "Chuột Logitech M90"}, {"id": "b", "name": "Màn hình Dell P2422H"},
+         {"id": "c", "name": "Laptop Dell XPS 13"}],
+    )  # fmt: skip
+    assert {f["id"]: f["price"] for f in found} == {"a": 145_000, "b": 4_150_000}
+
+
+async def test_operator_sees_no_prices_and_3_quote_process(client) -> None:  # type: ignore[no-untyped-def]
+    await client.login("wl-mgr@test.local")
+    laptop = (
+        await client.post("/api/workload/catalog", json={"name": "Laptop báo giá", "category": "Laptop"})
+    ).json()
+    mouse = (
+        await client.post(
+            "/api/workload/catalog", json={"name": "Chuột Logitech M90", "category": "Phụ kiện"}
+        )
+    ).json()
+
+    # Operator: requests a device only and never sees prices, quotes or POs.
+    await client.login("wl-op1@test.local")
+    cat = (await client.get("/api/workload/catalog")).json()
+    assert cat and all("unit_price" not in c and "vendor" not in c for c in cat)
+    p = (
+        await client.post(
+            "/api/workload/purchases",
+            json={"kind": "new", "item": "Laptop", "quantity": 2, "catalog_item_id": laptop["id"]},
+        )
+    ).json()
+    assert p["unit_price"] is None and p["quotes"] == [] and p["quote_rule"] is None
+    await client.post(
+        f"/api/workload/purchases/{p['id']}/evidence", files={"file": ("ok.png", PNG, "image/png")}
+    )
+    assert (await client.get("/api/workload/pos")).status_code == 403
+    assert (await client.post(f"/api/workload/purchases/{p['id']}/quotes", data={"vendor": "X", "unit_price": "1"},
+                              files={"file": ("q.pdf", make_pdf(["x"]), "application/pdf")})).status_code == 403  # fmt: skip
+
+    # Supervisor: 3-quote process, lowest quote wins.
+    await client.login("wl-mgr@test.local")
+    url = f"/api/workload/purchases/{p['id']}"
+    not_pdf = await client.post(f"{url}/quotes", data={"vendor": "FPT", "unit_price": "25000000"},
+                                files={"file": ("q.pdf", PNG, "application/pdf")})  # fmt: skip
+    assert not_pdf.json()["error"]["code"] == "unsupported_file"
+    for vendor, price in (("FPT", 25_000_000), ("Phong Vũ", 24_000_000)):
+        r = await client.post(f"{url}/quotes", data={"vendor": vendor, "unit_price": str(price)},
+                              files={"file": (f"{vendor}.pdf", make_pdf([vendor]), "application/pdf")})  # fmt: skip
+        assert r.status_code == 201, r.text
+    assert r.json()["quote_rule"]["problem"] and r.json()["unit_price"] == 24_000_000
+    blocked = await client.patch(url, json={"status": "approved"})
+    assert blocked.json()["error"]["code"] == "quotes_required"
+    r = await client.post(f"{url}/quotes", data={"vendor": "An Phát", "unit_price": "23500000"},
+                          files={"file": ("ap.pdf", make_pdf(["AP"]), "application/pdf")})  # fmt: skip
+    assert r.json()["quote_rule"]["problem"] is None
+    assert [q["lowest"] for q in r.json()["quotes"]] == [True, False, False]
+    ok = await client.patch(url, json={"status": "approved"})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["unit_price"] == 23_500_000 and ok.json()["amount"] == 47_000_000
+    qid = ok.json()["quotes"][0]["id"]
+    assert (await client.get(f"{url}/quotes/{qid}")).content.startswith(b"%PDF")
+    assert (await client.delete(f"{url}/quotes/{qid}")).json()["error"]["code"] == "quotes_locked"
+
+    # Other items: price list updated from the vendor's PDF quote.
+    up = await client.post(
+        "/api/workload/catalog/quote-pdf",
+        files={
+            "file": ("bg.pdf", make_pdf(["1 Chuot Logitech M90 10 145.000 1.450.000"]), "application/pdf")
+        },
+    )
+    assert up.status_code == 200, up.text
+    sug = [x for x in up.json()["suggestions"] if x["id"] == mouse["id"]]
+    assert sug and sug[0]["price"] == 145_000
+    applied = await client.post(
+        "/api/workload/catalog/apply-quote",
+        json={"file_id": up.json()["file_id"], "vendor": "Phong Vũ", "quoted_at": "2026-11-24",
+              "prices": [{"id": mouse["id"], "unit_price": sug[0]["price"]}]},
+    )  # fmt: skip
+    assert applied.status_code == 200 and applied.json()[0]["unit_price"] == 145_000
+    assert (await client.get(f"/api/workload/catalog/{mouse['id']}/quote-file")).content.startswith(b"%PDF")
+    await client.login("wl-op1@test.local")
+    assert (await client.get(f"/api/workload/catalog/{mouse['id']}/quote-file")).status_code == 403
+    mine = next(
+        x for x in (await client.get("/api/workload/purchases")).json()["items"] if x["id"] == p["id"]
+    )
+    assert mine["status"] == "approved" and mine["amount"] is None and mine["po"] is None

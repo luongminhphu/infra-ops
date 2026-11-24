@@ -922,3 +922,18 @@ Product owner chọn khép vòng mua sắm của phase 9:
 - Không tự gán tài sản mới cho onboard: engine cấp phát phase 9 đã gợi ý tận dụng sau khi đồng bộ; Operator vẫn
   xác nhận bằng “Chọn tài sản tận dụng vào Job”.
 
+## 23. Phase 11 – Báo giá: 3 báo giá PC/Laptop, giá từ PDF, Operator không thấy giá (24/11/2026)
+
+Quyết định (theo trả lời của product owner):
+- **Operator chỉ đề xuất thiết bị.** Quyền mới `workload.price.view` (manager, supervisor): đơn giá, thành tiền,
+  báo giá, PO (`/pos`, cột PO), Bảng giá có giá và cột giá trong Excel chỉ dành cho người có quyền này; API ẩn ở
+  serializer (`_full(..., user)`), danh sách Bảng giá của Operator chỉ còn tên/nhóm/quy cách.
+- **3 báo giá theo từng đề xuất**: nhóm `quote_categories` (mặc định PC, Laptop, Desktop, Workstation) được định giá
+  bằng `workload_purchase_quote` (đối tác, đơn giá, file PDF magic-byte). `quote_price` = giá thấp nhất, dùng cho
+  PO/gom PO. Duyệt cần ≥1 báo giá; giá thấp nhất > `quote_threshold_vnd` (20 triệu) cần ≥ `quotes_required` (3).
+  Báo giá chỉ sửa khi đề xuất chưa duyệt; file đính kèm email chốt PO. Quy tắc là hàm thuần `quote_problem`.
+- **Giá từ PDF** cho thiết bị khác: `POST /catalog/quote-pdf` đọc lớp chữ bằng pypdf (PDF scan → báo lỗi
+  `pdf_no_text`), `match_prices` (hàm thuần, có test) khớp tên thiết bị (bỏ dấu, ≥60% từ) và lấy số tiền nhỏ nhất
+  trên dòng (hoặc dòng kế tiếp). Chỉ là gợi ý: Supervisor xác nhận qua `POST /catalog/apply-quote` (file phải do
+  chính người đó tải lên), giá + đối tác + ngày + file lưu vào Bảng giá, audit từng dòng, gom lại PO nháp.
+

@@ -21,6 +21,9 @@ interface Values {
   auto_create_users: boolean;
   device_keywords: Record<"replace" | "upgrade" | "repair", string[]>;
   po_limit_vnd: number;
+  quote_categories: string[];
+  quote_threshold_vnd: number;
+  quotes_required: number;
   po_email_to: string[];
   po_email_cc: string[];
   po_email_subject: string;
@@ -46,6 +49,7 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
     kw_upgrade: data.values.device_keywords.upgrade.join("\n"),
     kw_repair: data.values.device_keywords.repair.join("\n"),
     po_email_to: data.values.po_email_to.join(", "),
+    quote_categories: data.values.quote_categories.join(", "),
     po_email_cc: data.values.po_email_cc.join(", "),
   });
   const lookbackBad = !(v.lookback_days >= 30 && v.lookback_days <= 1100);
@@ -64,6 +68,7 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
           on_hold_statuses: lines(text.on_hold_statuses),
           device_keywords: { replace: lines(text.kw_replace), upgrade: lines(text.kw_upgrade), repair: lines(text.kw_repair) },
           po_email_to: emails(text.po_email_to),
+          quote_categories: text.quote_categories.split(",").map((x) => x.trim()).filter(Boolean),
           po_email_cc: emails(text.po_email_cc),
         },
       }),
@@ -143,6 +148,21 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
             />
           </Field>
           <div />
+          <Field label="Nhóm thiết bị định giá theo báo giá" hint="Nhóm trong Bảng giá, cách nhau dấu phẩy (vd. PC, Laptop). Các nhóm khác dùng giá trong Bảng giá.">
+            <Input value={text.quote_categories} onChange={(e) => setText({ ...text, quote_categories: e.target.value })} />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Ngưỡng cần nhiều báo giá (đ)" hint={formatVnd(v.quote_threshold_vnd)}>
+              <Input
+                inputMode="numeric"
+                value={new Intl.NumberFormat("vi-VN").format(v.quote_threshold_vnd)}
+                onChange={(e) => setV({ ...v, quote_threshold_vnd: Number(e.target.value.replace(/\D/g, "").slice(0, 12)) || 0 })}
+              />
+            </Field>
+            <Field label="Số báo giá bắt buộc" hint="Khi giá thấp nhất vượt ngưỡng.">
+              <Input type="number" min={1} max={10} value={v.quotes_required} onChange={(e) => setV({ ...v, quotes_required: Number(e.target.value) })} />
+            </Field>
+          </div>
           <Field label="Gửi tới" hint="Các e-mail cách nhau bằng dấu phẩy.">
             <Input value={text.po_email_to} onChange={(e) => setText({ ...text, po_email_to: e.target.value })} placeholder="muahang@congty.vn" />
           </Field>

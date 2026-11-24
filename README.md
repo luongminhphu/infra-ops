@@ -27,7 +27,8 @@ Tài liệu: [kiến trúc](docs/architecture.md) · [thêm module](docs/adding-
 | 7 | Giao diện “Phòng điều khiển”: rail phân hệ + menu con, màu cobalt, font Inter, cho toàn app | Xong |
 | 8 | **Việc của tôi** cho Operator (task SDP theo trạng thái, Job onboard/offboard, việc cần chuẩn bị), tự tạo tài khoản Operator, Job theo technician request RTR + chuyển Job (ghi sang SDP), lưu đồ swimlane theo người, đề xuất mua thiết bị | Xong |
 | 9 | **PO tổng** theo hạn mức (mặc định 200 triệu, tự mở PO tiếp theo), bảng giá do Supervisor cập nhật, bằng chứng Function Head, **Chốt PO** → email nháp .eml; **Kho & cấp phát**: band trong RTR × tiêu chuẩn cấp phát × tài sản In Store → tận dụng hoặc đề xuất mua; tooltip hướng dẫn | Xong |
-| 10 | **Nhận hàng → nhập kho SDP**: nhập serial/asset tag, worker tạo tài sản In Store trên SDP (không tạo trùng serial), Kho & cấp phát đồng bộ lại để gợi ý cho onboard | **Xong** |
+| 10 | **Nhận hàng → nhập kho SDP**: nhập serial/asset tag, worker tạo tài sản In Store trên SDP (không tạo trùng serial), Kho & cấp phát đồng bộ lại để gợi ý cho onboard | Xong |
+| 11 | Operator chỉ đề xuất thiết bị (không thấy giá); PC/Laptop định giá theo **báo giá từng đề xuất** (trên 20 triệu cần 3 báo giá, lấy giá thấp nhất); thiết bị khác **cập nhật giá từ file báo giá PDF** | **Xong** |
 | sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
 
 ## Chạy local
@@ -202,7 +203,14 @@ Kết nối hệ thống và người dùng/phân quyền chỉ Quản trị tha
    - Gợi ý từ request có từ khoá thay thế / nâng cấp / sửa chữa (ở **Việc của tôi**) và từ **Kho & cấp phát**
      (onboard thiếu thiết bị). Operator **Lập đề xuất**: chọn thiết bị trong bảng giá, số lượng, người dùng, lý do và
      đính kèm **bằng chứng Function Head đã duyệt** (PNG/JPG/PDF, dán ảnh Ctrl+V).
-   - **Bảng giá**: Supervisor nhập/cập nhật đơn giá sau mỗi lần đối tác báo giá.
+   - Operator chỉ chọn thiết bị cần cấp – **không thấy giá**, PO tổng hay Bảng giá (quyền `workload.price.view`
+     chỉ có ở Supervisor/Manager; file Excel xuất ra của Operator cũng không có cột giá).
+   - **PC/Laptop** (nhóm cấu hình được) định giá theo **báo giá cho từng đề xuất**: khi duyệt, Supervisor thêm báo
+     giá của đối tác (tên, đơn giá, file PDF); hệ thống lấy **giá thấp nhất**. Giá thấp nhất trên 20.000.000 đ
+     (cấu hình được) thì cần đủ **3 báo giá** mới duyệt được. File báo giá được đính kèm email khi chốt PO.
+   - **Thiết bị khác**: Bảng giá → **Cập nhật giá từ PDF**: tải file báo giá của đối tác, hệ thống đọc chữ trong PDF,
+     tìm thiết bị có trong Bảng giá và gợi ý đơn giá (số tiền nhỏ nhất trên dòng, tức đơn giá); Supervisor kiểm tra,
+     sửa, bỏ chọn rồi **Cập nhật**. File PDF lưu kèm từng thiết bị. PDF bản scan (ảnh) không đọc được – nhập tay.
    - **Duyệt** (Supervisor/Manager) cần bằng chứng và thiết bị có giá; đề xuất đã duyệt tự vào **PO tổng** đang mở
      theo thứ tự duyệt, PO không đủ chỗ dưới **hạn mức** (Cấu hình công việc, mặc định 200.000.000 đ) thì hệ thống
      tự mở PO tiếp theo. Đổi giá/hạn mức thì các PO nháp được gom lại.
