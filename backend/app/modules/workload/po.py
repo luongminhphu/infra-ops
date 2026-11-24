@@ -16,7 +16,13 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.storage.service import read_file
-from app.modules.workload.models import CatalogItem, PurchaseEvidence, PurchaseOrder, PurchaseRequest
+from app.modules.workload.models import (
+    CatalogItem,
+    PurchaseEvidence,
+    PurchaseOrder,
+    PurchaseQuote,
+    PurchaseRequest,
+)
 from app.modules.workload.settings import WorkloadSettings
 
 TZ = ZoneInfo("Asia/Ho_Chi_Minh")
@@ -69,7 +75,7 @@ async def repack(session: AsyncSession, settings: WorkloadSettings) -> None:
         )
     ).all()
     pending = [(p, price) for p, price in rows if p.po_id is None or p.po_id in open_ids]
-    amount = {p.id: (price or 0) * p.quantity for p, price in pending}
+    amount = {p.id: (p.quote_price or price or 0) * p.quantity for p, price in pending}
     by_id = {p.id: p for p, _ in pending}
     groups = pack([(p.id, amount[p.id]) for p, _ in pending], settings.po_limit_vnd)
     while len(open_pos) < len(groups):
@@ -107,7 +113,12 @@ async def po_items(
 
 
 def price_of(p: PurchaseRequest, c: CatalogItem | None) -> int | None:
-    return p.unit_price if p.unit_price is not None else (c.unit_price if c else None)
+    """Frozen price (closed PO), else the lowest vendor quote, else the price list."""
+    if p.unit_price is not None:
+        return p.unit_price
+    if p.quote_price is not None:
+        return p.quote_price
+    return c.unit_price if c else None
 
 
 def items_workbook(items: list[tuple[PurchaseRequest, CatalogItem | None]], title: str) -> bytes:
@@ -202,5 +213,16 @@ async def build_eml(session: AsyncSession, settings: WorkloadSettings, po: Purch
         main, sub = ev.mime.split("/", 1)
         msg.add_attachment(
             data, maintype=main, subtype=sub, filename=f"duyet-{display[ev.purchase_id]}-{ev.filename}"
+        )
+    quotes = (
+        await session.scalars(select(PurchaseQuote).where(PurchaseQuote.purchase_id.in_(ids)).order_by(PurchaseQuote.unit_price))
+    ).all() if ids else []  # fmt: skip
+    for q in quotes:
+        _, data = await read_file(session, q.file_id)
+        msg.add_attachment(
+            data,
+            maintype="application",
+            subtype="pdf",
+            filename=f"bao-gia-{display[q.purchase_id]}-{q.filename}",
         )
     return bytes(msg)

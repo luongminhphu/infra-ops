@@ -3,7 +3,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Paperclip, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
-import { formatVnd } from "@/core/lib/format";
 import { Button } from "@/core/ui/button";
 import { Dialog } from "@/core/ui/dialog";
 import { Field, Input, Select, Textarea } from "@/core/ui/field";
@@ -129,15 +128,15 @@ export function PurchaseDialog({ ticket, prefill, onClose }: { ticket?: Ticket; 
     >
       <div className="grid gap-3 sm:grid-cols-[1fr_8rem_8rem]" onPaste={(e) => { const f = pastedImage(e); if (f) addFiles([f]); }}>
         <Field
-          label="Thiết bị trong bảng giá"
-          hint={cat ? `Đơn giá ${formatVnd(cat.unit_price)}${cat.unit_price ? ` · thành tiền ${formatVnd(cat.unit_price * quantity)}` : ""}` : "Chưa có trong bảng giá? Nhập tên bên dưới, Supervisor sẽ chọn khi duyệt."}
+          label="Thiết bị cần cấp"
+          hint="Chỉ cần chọn thiết bị cần cấp – Supervisor lấy báo giá và định giá khi duyệt. Không có trong danh sách? Mô tả ở ô bên dưới."
           className="sm:col-span-3"
         >
           <Select data-autofocus value={catId} onChange={(e) => setCatalogId(e.target.value)}>
             <option value="">— Chưa chọn —</option>
             {active.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name}{c.unit_price ? ` – ${formatVnd(c.unit_price)}` : " – chưa có giá"}
+                {c.name}
               </option>
             ))}
           </Select>

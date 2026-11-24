@@ -9,7 +9,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import Response
 from openpyxl import Workbook
 from pydantic import BaseModel, Field
@@ -23,6 +23,7 @@ from app.core.config import get_settings
 from app.core.db import get_session
 from app.core.errors import AppError, NotFound
 from app.core.settings.service import load_settings
+from app.core.storage.models import StoredFile
 from app.core.storage.service import check_size, read_file, safe_filename, save_file, sniff
 from app.core.workflow.engine import create_job, start_job
 from app.core.workflow.models import Job
@@ -32,9 +33,11 @@ from app.modules.workload.models import (
     CatalogItem,
     PurchaseEvidence,
     PurchaseOrder,
+    PurchaseQuote,
     PurchaseRequest,
     Ticket,
 )
+from app.modules.workload.quotes import match_prices, needs_quotes, pdf_text, quote_problem
 from app.modules.workload.settings import MODULE_ID, SETTINGS_KEY, WorkloadSettings
 
 router = APIRouter(tags=["workload"])
@@ -43,6 +46,8 @@ create = require("workload.purchase.create")
 manage = require("workload.purchase.manage")
 catalog_manage = require("workload.catalog.manage")
 po_close = require("workload.po.close")
+PRICE = "workload.price.view"
+price_view = require(PRICE)
 EVIDENCE_MIME = {"image/png", "image/jpeg", "application/pdf"}
 MAX_EVIDENCE = 10
 
@@ -72,8 +77,11 @@ def out(
     evidence: list[PurchaseEvidence] | None = None,
     po: PurchaseOrder | None = None,
     job: Job | None = None,
+    quotes: list[PurchaseQuote] | None = None,
+    settings: WorkloadSettings | None = None,
 ) -> dict[str, Any]:
     price = pos.price_of(p, cat)
+    by_quote = bool(cat and settings and needs_quotes(cat.category, settings.quote_categories))
     return {
         "id": str(p.id),
         "ticket_id": p.ticket_id,
@@ -105,6 +113,28 @@ def out(
             for e in evidence or []
         ],
         "po": {"id": str(po.id), "number": po.number, "status": po.status} if po else None,
+        "quotes": [
+            {
+                "id": str(q.id),
+                "vendor": q.vendor,
+                "unit_price": q.unit_price,
+                "filename": q.filename,
+                "lowest": q.unit_price == p.quote_price,
+                "created_by": q.created_by,
+            }
+            for q in quotes or []
+        ],
+        # PC/Laptop-type items: priced from vendor quotes; problem = what blocks approval (None = ok).
+        "quote_rule": {
+            "required": True,
+            "problem": quote_problem(
+                [q.unit_price for q in quotes or []], settings.quote_threshold_vnd, settings.quotes_required
+            ),
+            "threshold": settings.quote_threshold_vnd,
+            "count": settings.quotes_required,
+        }
+        if by_quote and settings
+        else None,
         "next": sorted(NEXT[p.status]),
         "sdp_product": cat.sdp_product if cat else "",
         "received_assets": p.received_assets,
@@ -118,8 +148,15 @@ def out(
     }
 
 
-async def _full(session: AsyncSession, rows: list[PurchaseRequest]) -> list[dict[str, Any]]:
-    """Serialize proposals with their catalog item, evidence and PO (three queries, no N+1)."""
+HIDDEN = {"unit_price": None, "amount": None, "po": None, "quotes": [], "quote_rule": None}
+
+
+async def _full(
+    session: AsyncSession, rows: list[PurchaseRequest], user: CurrentUser | None = None
+) -> list[dict[str, Any]]:
+    """Serialize proposals with catalog item, evidence, quotes, PO and receive job (no N+1).
+
+    Prices, quotes and POs are only for price viewers (supervisors); operators request devices only."""
     cat_ids = {p.catalog_item_id for p in rows if p.catalog_item_id}
     po_ids = {p.po_id for p in rows if p.po_id}
     cats = {c.id: c for c in (await session.scalars(select(CatalogItem).where(CatalogItem.id.in_(cat_ids)))).all()} if cat_ids else {}  # fmt: skip
@@ -134,6 +171,17 @@ async def _full(session: AsyncSession, rows: list[PurchaseRequest]) -> list[dict
             )
         ).all():
             ev.setdefault(e.purchase_id, []).append(e)
+    quotes: dict[uuid.UUID, list[PurchaseQuote]] = {}
+    if rows:
+        for q in (
+            await session.scalars(
+                select(PurchaseQuote)
+                .where(PurchaseQuote.purchase_id.in_([p.id for p in rows]))
+                .order_by(PurchaseQuote.unit_price)
+            )
+        ).all():
+            quotes.setdefault(q.purchase_id, []).append(q)
+    settings = await _settings(session)
     jobs: dict[str, Job] = {}
     ordered = [str(p.id) for p in rows if p.status == "ordered"]
     if ordered:
@@ -149,14 +197,25 @@ async def _full(session: AsyncSession, rows: list[PurchaseRequest]) -> list[dict
             )
         ).all():
             jobs[j.external_ref] = j  # type: ignore[index]
-    return [
-        out(p, cats.get(p.catalog_item_id), ev.get(p.id, []), po_rows.get(p.po_id), jobs.get(str(p.id)))  # type: ignore[arg-type]
+    result = [
+        out(
+            p,
+            cats.get(p.catalog_item_id),  # type: ignore[arg-type]
+            ev.get(p.id, []),
+            po_rows.get(p.po_id),  # type: ignore[arg-type]
+            jobs.get(str(p.id)),
+            quotes.get(p.id, []),
+            settings,
+        )
         for p in rows
     ]
+    if user is not None and not user.has(PRICE):
+        result = [{**r, **HIDDEN} for r in result]
+    return result
 
 
-async def _one(session: AsyncSession, p: PurchaseRequest) -> dict[str, Any]:
-    return (await _full(session, [p]))[0]
+async def _one(session: AsyncSession, p: PurchaseRequest, user: CurrentUser | None = None) -> dict[str, Any]:
+    return (await _full(session, [p], user))[0]
 
 
 async def _settings(session: AsyncSession) -> WorkloadSettings:
@@ -194,7 +253,7 @@ async def list_purchases(
     counts = dict(
         (await session.execute(select(scoped.c.status, func.count()).group_by(scoped.c.status))).all()
     )
-    return {"items": await _full(session, list(rows)), "counts": counts}
+    return {"items": await _full(session, list(rows), user), "counts": counts}
 
 
 class PurchaseIn(BaseModel):
@@ -257,7 +316,7 @@ async def create_purchase(
     )
     await session.commit()
     await session.refresh(p)
-    return await _one(session, p)
+    return await _one(session, p, user)
 
 
 class StatusIn(BaseModel):
@@ -295,9 +354,23 @@ async def update_purchase(
                 code="evidence_required",
             )
         cat = await session.get(CatalogItem, p.catalog_item_id) if p.catalog_item_id else None
-        if cat is None or not cat.unit_price:
+        if cat is None:
+            raise AppError("Chọn thiết bị trong bảng giá trước khi duyệt.", code="price_required")
+        settings = await _settings(session)
+        if needs_quotes(cat.category, settings.quote_categories):
+            prices = list(
+                (
+                    await session.scalars(
+                        select(PurchaseQuote.unit_price).where(PurchaseQuote.purchase_id == p.id)
+                    )
+                ).all()
+            )
+            problem = quote_problem(prices, settings.quote_threshold_vnd, settings.quotes_required)
+            if problem:
+                raise AppError(problem, code="quotes_required")
+        elif not cat.unit_price:
             raise AppError(
-                "Chưa có đơn giá: chọn thiết bị trong bảng giá (Supervisor cập nhật giá sau khi có báo giá).",
+                "Chưa có đơn giá: cập nhật giá thiết bị trong Bảng giá (từ file báo giá của đối tác).",
                 code="price_required",
             )
         p.approved_by, p.approved_at = user.upn, datetime.now(UTC)
@@ -322,7 +395,7 @@ async def update_purchase(
         await pos.repack(session, await _settings(session))
     await session.commit()
     await session.refresh(p)
-    return await _one(session, p)
+    return await _one(session, p, user)
 
 
 class UnitIn(BaseModel):
@@ -378,7 +451,7 @@ async def receive(
             after={"status": "received", "sdp_assets": False},
         )
         await session.commit()
-        return await _one(session, p)
+        return await _one(session, p, user)
 
     serials = [u.serial.strip() for u in body.units]
     if len(serials) != p.quantity:
@@ -414,7 +487,7 @@ async def receive(
         after={"serials": serials, "product": cat.sdp_product},
     )
     await session.commit()
-    return await _one(session, p)
+    return await _one(session, p, user)
 
 
 # ---------------------------------------------------------------- Function Head approval evidence
@@ -459,7 +532,7 @@ async def add_evidence(
         after={"filename": name, "mime": mime},
     )
     await session.commit()
-    return await _one(session, p)
+    return await _one(session, p, user)
 
 
 @router.delete("/purchases/{purchase_id}/evidence/{evidence_id}")
@@ -485,7 +558,7 @@ async def delete_evidence(
         before={"filename": ev.filename},
     )
     await session.commit()
-    return await _one(session, p)
+    return await _one(session, p, user)
 
 
 @router.get("/purchases/{purchase_id}/evidence/{evidence_id}")
@@ -532,50 +605,173 @@ async def dismiss_suggestion(
     await session.commit()
 
 
+# ---------------------------------------------------------------- vendor quotes (3-quote process)
+MAX_QUOTES = 10
+
+
+async def _set_quote_price(session: AsyncSession, p: PurchaseRequest) -> None:
+    await session.flush()
+    p.quote_price = await session.scalar(
+        select(func.min(PurchaseQuote.unit_price)).where(PurchaseQuote.purchase_id == p.id)
+    )
+
+
+async def _quote_target(session: AsyncSession, purchase_id: uuid.UUID) -> PurchaseRequest:
+    p = await session.get(PurchaseRequest, purchase_id, with_for_update=True)
+    if p is None:
+        raise NotFound("Không tìm thấy đề xuất.")
+    if p.status != "proposed":
+        raise AppError("Chỉ sửa báo giá khi đề xuất chưa được duyệt.", code="quotes_locked")
+    return p
+
+
+@router.post("/purchases/{purchase_id}/quotes", status_code=201)
+async def add_quote(
+    purchase_id: uuid.UUID,
+    vendor: str = Form(min_length=2, max_length=200),
+    unit_price: int = Form(ge=1, le=10_000_000_000),
+    file: UploadFile = File(...),
+    user: CurrentUser = Depends(manage),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    p = await _quote_target(session, purchase_id)
+    count = await session.scalar(select(func.count()).where(PurchaseQuote.purchase_id == p.id))
+    if (count or 0) >= MAX_QUOTES:
+        raise AppError(f"Tối đa {MAX_QUOTES} báo giá mỗi đề xuất.", code="too_many_quotes")
+    data = await file.read(get_settings().max_upload_mb * 1024 * 1024 + 1)
+    check_size(data)
+    sniff(data, {"application/pdf"})
+    name = safe_filename(file.filename or "bao-gia.pdf")
+    stored = await save_file(session, data, name, "application/pdf", user.upn)
+    q = PurchaseQuote(
+        purchase_id=p.id,
+        vendor=vendor.strip(),
+        unit_price=unit_price,
+        file_id=stored.id,
+        filename=name,
+        created_by=user.upn,
+    )
+    session.add(q)
+    await _set_quote_price(session, p)
+    p.updated_at = datetime.now(UTC)
+    await record(
+        session,
+        actor=user.actor,
+        module_id=MODULE_ID,
+        action="workload.quote_added",
+        target_type="purchase",
+        target_id=str(p.id),
+        target_label=p.item,
+        after={"vendor": q.vendor, "unit_price": unit_price, "filename": name, "lowest": p.quote_price},
+    )
+    await session.commit()
+    return await _one(session, p, user)
+
+
+@router.delete("/purchases/{purchase_id}/quotes/{quote_id}")
+async def delete_quote(
+    purchase_id: uuid.UUID,
+    quote_id: uuid.UUID,
+    user: CurrentUser = Depends(manage),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    p = await _quote_target(session, purchase_id)
+    q = await session.get(PurchaseQuote, quote_id)
+    if q is None or q.purchase_id != p.id:
+        raise NotFound("Không tìm thấy báo giá.")
+    await session.delete(q)
+    await _set_quote_price(session, p)
+    await record(
+        session,
+        actor=user.actor,
+        module_id=MODULE_ID,
+        action="workload.quote_removed",
+        target_type="purchase",
+        target_id=str(p.id),
+        target_label=p.item,
+        before={"vendor": q.vendor, "unit_price": q.unit_price},
+    )
+    await session.commit()
+    return await _one(session, p, user)
+
+
+def _pdf_response(data: bytes, filename: str) -> Response:
+    return Response(
+        data,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"inline; filename*=UTF-8''{quote(filename)}",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'",
+            "Cache-Control": "private, no-store",
+        },
+    )
+
+
+@router.get("/purchases/{purchase_id}/quotes/{quote_id}")
+async def quote_file(
+    purchase_id: uuid.UUID,
+    quote_id: uuid.UUID,
+    _: CurrentUser = Depends(price_view),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    q = await session.get(PurchaseQuote, quote_id)
+    if q is None or q.purchase_id != purchase_id:
+        raise NotFound("Không tìm thấy báo giá.")
+    _, data = await read_file(session, q.file_id)
+    return _pdf_response(data, q.filename)
+
+
 @router.get("/purchases/export")
 async def export_purchases(
     user: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
 ) -> Response:
     rows = await _full(
-        session, list((await session.scalars(_scoped(user).order_by(PurchaseRequest.created_at))).all())
+        session, list((await session.scalars(_scoped(user).order_by(PurchaseRequest.created_at))).all()), user
     )
+    priced = user.has(PRICE)
+    keep = (lambda r: r) if priced else (lambda r: [v for i, v in enumerate(r) if i not in (6, 7, 10)])
     wb = Workbook()
     ws = wb.active
     ws.title = "De xuat mua thiet bi"
     ws.append(
-        [
-            "Ngày",
-            "Nguồn",
-            "Người dùng",
-            "Loại",
-            "Thiết bị",
-            "Số lượng",
-            "Đơn giá (đ)",
-            "Thành tiền (đ)",
-            "Lý do",
-            "Trạng thái",
-            "PO",
-            "Ghi chú",
-            "Người đề xuất",
-        ]
+        keep(
+            [
+                "Ngày",
+                "Nguồn",
+                "Người dùng",
+                "Loại",
+                "Thiết bị",
+                "Số lượng",
+                "Đơn giá (đ)",
+                "Thành tiền (đ)",
+                "Lý do",
+                "Trạng thái",
+                "PO",
+                "Ghi chú",
+                "Người đề xuất",
+            ]
+        )
     )
     for p in rows:
         ws.append(
-            [
-                p["created_at"].astimezone(pos.TZ).strftime("%d/%m/%Y"),
-                f"#{p['ticket_display_id']}" if p["ticket_display_id"] else (p["source_ref"] or ""),
-                p["employee"] or "",
-                KIND_LABEL.get(p["kind"], p["kind"]),
-                p["catalog_item"]["name"] if p["catalog_item"] else p["item"],
-                p["quantity"],
-                p["unit_price"],
-                p["amount"],
-                p["reason"],
-                STATUS_LABEL.get(p["status"], p["status"]),
-                (p["po"]["number"] or "PO nháp") if p["po"] else "",
-                p["note"],
-                p["created_by"],
-            ]
+            keep(
+                [
+                    p["created_at"].astimezone(pos.TZ).strftime("%d/%m/%Y"),
+                    f"#{p['ticket_display_id']}" if p["ticket_display_id"] else (p["source_ref"] or ""),
+                    p["employee"] or "",
+                    KIND_LABEL.get(p["kind"], p["kind"]),
+                    p["catalog_item"]["name"] if p["catalog_item"] else p["item"],
+                    p["quantity"],
+                    p["unit_price"],
+                    p["amount"],
+                    p["reason"],
+                    STATUS_LABEL.get(p["status"], p["status"]),
+                    (p["po"]["number"] or "PO nháp") if p["po"] else "",
+                    p["note"],
+                    p["created_by"],
+                ]
+            )
         )
     buf = io.BytesIO()
     wb.save(buf)
@@ -595,6 +791,7 @@ def catalog_out(c: CatalogItem) -> dict[str, Any]:
         "spec": c.spec,
         "unit_price": c.unit_price,
         "sdp_product": c.sdp_product,
+        "quote_file": bool(c.quote_file_id),
         "vendor": c.vendor,
         "quoted_at": c.quoted_at,
         "active": c.active,
@@ -605,10 +802,14 @@ def catalog_out(c: CatalogItem) -> dict[str, Any]:
 
 @router.get("/catalog")
 async def list_catalog(
-    _: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
+    user: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
 ) -> list[dict[str, Any]]:
     rows = (await session.scalars(select(CatalogItem).order_by(CatalogItem.category, CatalogItem.name))).all()
-    return [catalog_out(c) for c in rows]
+    if user.has(PRICE):
+        cats = (await _settings(session)).quote_categories
+        return [{**catalog_out(c), "needs_quotes": needs_quotes(c.category, cats)} for c in rows]
+    # Operators pick a device by name only.
+    return [{k: catalog_out(c)[k] for k in ("id", "name", "category", "spec", "active")} for c in rows]
 
 
 class CatalogIn(BaseModel):
@@ -678,6 +879,89 @@ async def update_catalog_item(
     return await _save_catalog(session, user, c, body, before)
 
 
+# PDF price import: upload a vendor quote, review the matched prices, then apply the confirmed ones.
+@router.post("/catalog/quote-pdf")
+async def read_quote_pdf(
+    file: UploadFile = File(...),
+    user: CurrentUser = Depends(catalog_manage),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    data = await file.read(get_settings().max_upload_mb * 1024 * 1024 + 1)
+    check_size(data)
+    sniff(data, {"application/pdf"})
+    text = pdf_text(data)
+    items = [
+        catalog_out(c) for c in (await session.scalars(select(CatalogItem).where(CatalogItem.active))).all()
+    ]
+    name = safe_filename(file.filename or "bao-gia.pdf")
+    stored = await save_file(session, data, name, "application/pdf", user.upn)
+    await session.commit()
+    return {"file_id": str(stored.id), "filename": name, "suggestions": match_prices(text, items)}
+
+
+class PriceIn(BaseModel):
+    id: uuid.UUID
+    unit_price: int = Field(ge=1, le=10_000_000_000)
+
+
+class ApplyQuoteIn(BaseModel):
+    file_id: uuid.UUID
+    vendor: str = Field(min_length=2, max_length=200)
+    quoted_at: date | None = None
+    prices: list[PriceIn] = Field(min_length=1, max_length=500)
+
+
+@router.post("/catalog/apply-quote")
+async def apply_quote(
+    body: ApplyQuoteIn,
+    user: CurrentUser = Depends(catalog_manage),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict[str, Any]]:
+    stored = await session.get(StoredFile, body.file_id)
+    if stored is None or stored.mime != "application/pdf" or stored.uploaded_by != user.upn:
+        raise NotFound("Không tìm thấy file báo giá đã tải lên.")
+    now = datetime.now(UTC)
+    changed = []
+    for row in body.prices:
+        c = await session.get(CatalogItem, row.id, with_for_update=True)
+        if c is None:
+            raise NotFound("Không tìm thấy thiết bị trong bảng giá.")
+        before = {"unit_price": c.unit_price, "vendor": c.vendor}
+        c.unit_price, c.vendor, c.quoted_at, c.quote_file_id = (
+            row.unit_price,
+            body.vendor.strip(),
+            body.quoted_at,
+            stored.id,
+        )
+        c.updated_by, c.updated_at = user.upn, now
+        await record(
+            session,
+            actor=user.actor,
+            module_id=MODULE_ID,
+            action="workload.catalog_saved",
+            target_type="catalog_item",
+            target_id=str(c.id),
+            target_label=c.name,
+            before=before,
+            after={"unit_price": c.unit_price, "vendor": c.vendor, "quote_file": stored.filename},
+        )
+        changed.append(catalog_out(c))
+    await pos.repack(session, await _settings(session))
+    await session.commit()
+    return changed
+
+
+@router.get("/catalog/{item_id}/quote-file")
+async def catalog_quote_file(
+    item_id: uuid.UUID, _: CurrentUser = Depends(price_view), session: AsyncSession = Depends(get_session)
+) -> Response:
+    c = await session.get(CatalogItem, item_id)
+    if c is None or c.quote_file_id is None:
+        raise NotFound("Thiết bị chưa có file báo giá.")
+    stored, data = await read_file(session, c.quote_file_id)
+    return _pdf_response(data, stored.filename)
+
+
 # ---------------------------------------------------------------- purchase orders
 async def po_out(session: AsyncSession, po: PurchaseOrder) -> dict[str, Any]:
     items = await pos.po_items(session, po)
@@ -698,7 +982,7 @@ async def po_out(session: AsyncSession, po: PurchaseOrder) -> dict[str, Any]:
 
 @router.get("/pos")
 async def list_pos(
-    _: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
+    _: CurrentUser = Depends(price_view), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
     settings = await _settings(session)
     open_rows = (

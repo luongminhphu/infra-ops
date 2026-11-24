@@ -16,6 +16,7 @@ import { HelpTip } from "@/core/ui/help-tip";
 import { StatusBadge } from "@/core/ui/status";
 import { useCatalog, type Purchase, type PurchaseStatus } from "../api";
 import { KIND_LABEL, PURCHASE_STATUS } from "../labels";
+import { QuotesBlock } from "./Quotes";
 import { ReceiveDialog } from "./ReceiveDialog";
 import { EVIDENCE_ACCEPT, EvidenceHelp, pastedImage, uploadEvidence } from "../PurchaseDialog";
 
@@ -94,13 +95,18 @@ function ReceiveState({ p, onRetried }: { p: Purchase; onRetried: () => void }) 
 }
 
 function DetailDialog({ p, onClose, onChange }: { p: Purchase; onClose: () => void; onChange: (p: Purchase) => void }) {
+  const priced = useAuth().can("workload.price.view");
   return (
     <Dialog open onClose={onClose} title={p.catalog_item?.name ?? p.item} description={`${KIND_LABEL[p.kind]} × ${p.quantity} · ${sourceLabel(p)}${p.employee ? ` · ${p.employee}` : ""}`} footer={<Button onClick={onClose}>Đóng</Button>}>
       <dl className="mb-4 grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 text-sm">
         <dt className="text-muted">Trạng thái</dt><dd><StatusBadge {...PURCHASE_STATUS[p.status]!} /></dd>
-        <dt className="text-muted">Đơn giá</dt><dd className="tabular">{formatVnd(p.unit_price)}</dd>
-        <dt className="text-muted">Thành tiền</dt><dd className="tabular">{formatVnd(p.amount)}</dd>
-        <dt className="text-muted">PO</dt><dd>{p.po ? (p.po.number ?? "PO nháp (chưa chốt)") : "—"}</dd>
+        {priced && (
+          <>
+            <dt className="text-muted">Đơn giá</dt><dd className="tabular">{formatVnd(p.unit_price)}{p.quotes.length > 0 && ` (thấp nhất trong ${p.quotes.length} báo giá)`}</dd>
+            <dt className="text-muted">Thành tiền</dt><dd className="tabular">{formatVnd(p.amount)}</dd>
+            <dt className="text-muted">PO</dt><dd>{p.po ? (p.po.number ?? "PO nháp (chưa chốt)") : "—"}</dd>
+          </>
+        )}
         <dt className="text-muted">Người đề xuất</dt><dd>{p.created_by} · {formatDate(p.created_at)}</dd>
         {p.approved_by && (<><dt className="text-muted">Người duyệt</dt><dd>{p.approved_by}</dd></>)}
         {p.reason && (<><dt className="text-muted">Lý do</dt><dd className="whitespace-pre-line">{p.reason}</dd></>)}
@@ -114,8 +120,9 @@ function DetailDialog({ p, onClose, onChange }: { p: Purchase; onClose: () => vo
   );
 }
 
-function ApproveDialog({ p, onClose, onDone }: { p: Purchase; onClose: () => void; onDone: () => void }) {
+function ApproveDialog({ p: initial, onClose, onDone }: { p: Purchase; onClose: () => void; onDone: () => void }) {
   const catalog = useCatalog();
+  const [p, setP] = useState(initial);
   const [catId, setCatId] = useState(p.catalog_item?.id ?? "");
   const cat = catalog.data?.find((c) => c.id === catId);
   const approve = useMutation({
@@ -126,45 +133,56 @@ function ApproveDialog({ p, onClose, onDone }: { p: Purchase; onClose: () => voi
     },
     onError: (e) => toast.error(errorMessage(e)),
   });
+  const byQuote = !!cat?.needs_quotes;
+  const price = byQuote ? (p.quotes.find((q) => q.lowest)?.unit_price ?? null) : (cat?.unit_price ?? null);
   const noEvidence = p.evidence.length === 0;
-  const noPrice = !cat?.unit_price;
   return (
     <Dialog
       open
+      size={byQuote ? "lg" : "md"}
       onClose={onClose}
       title={`Duyệt đề xuất “${p.item}”?`}
       description="Sau khi duyệt, đề xuất tự được xếp vào PO đang mở; PO vượt hạn mức thì hệ thống mở PO tiếp theo."
       footer={
         <>
           <Button onClick={onClose}>Huỷ</Button>
-          <Button variant="primary" disabled={noEvidence || noPrice} loading={approve.isPending} onClick={() => approve.mutate()}>
-            Duyệt{cat?.unit_price ? ` – ${formatVnd(cat.unit_price * p.quantity)}` : ""}
+          <Button variant="primary" disabled={noEvidence || !price || (byQuote && !!p.quote_rule?.problem)} loading={approve.isPending} onClick={() => approve.mutate()}>
+            Duyệt{price ? ` – ${formatVnd(price * p.quantity)}` : ""}
           </Button>
         </>
       }
     >
-      <div className="space-y-3">
+      <div className="space-y-4">
         <Field
           label="Thiết bị trong bảng giá"
           required
-          hint={noPrice ? "Cần thiết bị có đơn giá. Chưa có? Thêm/cập nhật giá ở thẻ Bảng giá." : `Đơn giá ${formatVnd(cat!.unit_price)} × ${p.quantity}`}
-          error="Chọn thiết bị có đơn giá."
-          showError={!!catId && noPrice}
+          hint={
+            !cat
+              ? "Chọn thiết bị để định giá."
+              : byQuote
+                ? `Định giá theo báo giá cho đề xuất này (× ${p.quantity}).`
+                : cat.unit_price
+                  ? `Đơn giá ${formatVnd(cat.unit_price)} × ${p.quantity} (theo bảng giá)`
+                  : "Chưa có đơn giá – cập nhật ở thẻ Bảng giá (từ file báo giá PDF)."
+          }
         >
           <Select data-autofocus value={catId} onChange={(e) => setCatId(e.target.value)}>
             <option value="">— Chọn —</option>
             {(catalog.data ?? []).filter((c) => c.active).map((c) => (
-              <option key={c.id} value={c.id}>{c.name}{c.unit_price ? ` – ${formatVnd(c.unit_price)}` : " – chưa có giá"}</option>
+              <option key={c.id} value={c.id}>
+                {c.name}{c.needs_quotes ? " – theo báo giá" : c.unit_price ? ` – ${formatVnd(c.unit_price)}` : " – chưa có giá"}
+              </option>
             ))}
           </Select>
         </Field>
+        {byQuote && <QuotesBlock p={p} onChange={setP} />}
         {noEvidence ? (
           <p role="alert" className="rounded-sm bg-waiting-soft px-3 py-2 text-sm text-waiting">Chưa có bằng chứng Function Head duyệt – nhờ người đề xuất đính kèm trước.</p>
         ) : (
           <p className="text-sm">
-            Bằng chứng:{" "}
+            Bằng chứng Function Head:{" "}
             {p.evidence.map((e, i) => (
-              <span key={e.id}>{i > 0 && ", "}<a className="text-primary underline-offset-2 hover:underline" href={`/api/workload/purchases/${p.id}/evidence/${e.id}`} target="_blank" rel="noreferrer">{e.filename}</a></span>
+              <span key={e.id}>{i > 0 && ", "}<a className="text-primary underline underline-offset-2" href={`/api/workload/purchases/${p.id}/evidence/${e.id}`} target="_blank" rel="noreferrer">{e.filename}</a></span>
             ))}
           </p>
         )}
@@ -200,6 +218,7 @@ export function ProposalsTab() {
   const counts = q.data?.counts ?? {};
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const manage = can("workload.purchase.manage");
+  const priced = can("workload.price.view");
 
   const columns = useMemo<ColumnDef<Purchase, unknown>[]>(
     () => [
@@ -217,7 +236,9 @@ export function ProposalsTab() {
           );
         },
       },
-      { accessorKey: "amount", header: "Thành tiền", cell: (c) => <span className="tabular whitespace-nowrap">{formatVnd(c.row.original.amount, "Chưa có giá")}</span> },
+      ...(priced
+        ? [{ accessorKey: "amount", header: "Thành tiền", cell: (c: { row: { original: Purchase } }) => <span className="tabular whitespace-nowrap">{formatVnd(c.row.original.amount, "Chưa có giá")}</span> } as ColumnDef<Purchase, unknown>]
+        : []),
       { id: "source", header: "Nguồn", accessorFn: (p) => sourceLabel(p), cell: (c) => <Mono>{sourceLabel(c.row.original)}</Mono> },
       {
         id: "evidence",
@@ -232,7 +253,9 @@ export function ProposalsTab() {
           );
         },
       },
-      { id: "po", header: "PO", accessorFn: (p) => p.po?.number ?? "", cell: (c) => (c.row.original.po ? <Mono>{c.row.original.po.number ?? "PO nháp"}</Mono> : "—") },
+      ...(priced
+        ? [{ id: "po", header: "PO", accessorFn: (p: Purchase) => p.po?.number ?? "", cell: (c: { row: { original: Purchase } }) => (c.row.original.po ? <Mono>{c.row.original.po.number ?? "PO nháp"}</Mono> : "—") } as ColumnDef<Purchase, unknown>]
+        : []),
       { accessorKey: "created_by", header: "Người đề xuất", cell: (c) => <span className="whitespace-nowrap">{c.row.original.created_by}</span> },
       {
         accessorKey: "status",
@@ -277,7 +300,7 @@ export function ProposalsTab() {
         : []),
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [manage, move.isPending, move.variables],
+    [manage, priced, move.isPending, move.variables],
   );
 
   return (
@@ -292,7 +315,7 @@ export function ProposalsTab() {
         </div>
         <HelpTip title="Vòng đời một đề xuất">
           <span className="block"><b>Đã đề xuất</b> → Operator đính kèm bằng chứng Function Head duyệt.</span>
-          <span className="block"><b>Đã duyệt</b> → Supervisor chọn thiết bị có giá trong bảng giá; đề xuất tự vào PO đang mở.</span>
+          <span className="block"><b>Đã duyệt</b> → Supervisor định giá: PC/Laptop theo báo giá của đối tác (trên 20 triệu cần 3 báo giá, lấy giá thấp nhất), thiết bị khác theo Bảng giá; đề xuất tự vào PO đang mở.</span>
           <span className="block"><b>Đã đặt mua</b> → khi Supervisor chốt PO chứa đề xuất.</span>
           <span className="block"><b>Đã nhận hàng</b> → bấm khi thiết bị về kho. <b>Từ chối</b> cần lý do và có thể mở lại.</span>
         </HelpTip>

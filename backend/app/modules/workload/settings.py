@@ -52,6 +52,11 @@ class WorkloadSettings(BaseModel):
     )
     # SDP asset state given to devices created when purchased goods are received.
     asset_state_in_store: str = Field("In Store", min_length=1, max_length=64)
+    # 3-quote process: items of these price-list groups are priced per proposal from vendor quotes;
+    # when the lowest quote is above the threshold, this many quotes are required.
+    quote_categories: list[str] = Field(default_factory=lambda: ["PC", "Laptop", "Desktop", "Workstation"])
+    quote_threshold_vnd: int = Field(20_000_000, ge=0, le=100_000_000_000)
+    quotes_required: int = Field(3, ge=1, le=10)
     # Purchase orders: approved proposals are packed into POs whose value stays within this limit (VND).
     po_limit_vnd: int = Field(200_000_000, ge=1_000_000, le=100_000_000_000)
     # Draft e-mail generated when a PO is closed (.eml, opens in Outlook as an unsent draft).

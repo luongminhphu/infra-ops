@@ -80,6 +80,8 @@ class PurchaseRequest(Base):
     )
     # Price per unit frozen when the PO is closed; while open the live catalog price applies.
     unit_price: Mapped[int | None] = mapped_column(BigInteger)
+    # Lowest vendor quote (PC/Laptop items are priced per proposal from quotes, not from the price list).
+    quote_price: Mapped[int | None] = mapped_column(BigInteger)
     po_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workload_po.id", ondelete="SET NULL"), index=True
     )
@@ -111,6 +113,8 @@ class CatalogItem(Base):
     # SDP product name used to create the asset on receipt; empty = not tracked as an SDP asset (e.g. RAM).
     sdp_product: Mapped[str] = mapped_column(String(300), nullable=False, default="", server_default="")
     vendor: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    # Vendor PDF the current price was taken from.
+    quote_file_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("core_file.id"))
     quoted_at: Mapped[date | None] = mapped_column(Date)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     updated_by: Mapped[str | None] = mapped_column(String(320))
@@ -152,3 +156,22 @@ class PurchaseOrder(Base):
     )
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     closed_by: Mapped[str | None] = mapped_column(String(320))
+
+
+class PurchaseQuote(Base):
+    """A vendor quotation for one proposal (3-quote process); the lowest price is used."""
+
+    __tablename__ = "workload_purchase_quote"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    purchase_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workload_purchase_request.id", ondelete="CASCADE"), index=True
+    )
+    vendor: Mapped[str] = mapped_column(String(200), nullable=False)
+    unit_price: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    file_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("core_file.id"))
+    filename: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(320), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

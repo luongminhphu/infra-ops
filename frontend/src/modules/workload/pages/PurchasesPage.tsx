@@ -10,7 +10,7 @@ import { CatalogTab } from "../purchases/CatalogTab";
 import { PoTab } from "../purchases/PoTab";
 import { ProposalsTab } from "../purchases/ProposalsTab";
 
-const TABS = [
+const ALL_TABS = [
   { key: "proposals", label: "Đề xuất" },
   { key: "pos", label: "PO tổng" },
   { key: "catalog", label: "Bảng giá" },
@@ -35,6 +35,8 @@ function prefillFrom(params: URLSearchParams): PurchasePrefill | null {
 export function PurchasesPage() {
   const { can } = useAuth();
   const [params, setParams] = useSearchParams();
+  // Prices, POs and the price list are for supervisors; operators only request devices.
+  const TABS = can("workload.price.view") ? ALL_TABS : ALL_TABS.slice(0, 1);
   const tab = TABS.some((t) => t.key === params.get("tab")) ? params.get("tab")! : "proposals";
   const prefill = prefillFrom(params);
   const update = (patch: Record<string, string | null>) =>
@@ -52,7 +54,7 @@ export function PurchasesPage() {
     <>
       <PageHeader
         title="Đề xuất mua thiết bị"
-        description="Operator đề xuất kèm bằng chứng Function Head duyệt → Supervisor duyệt → hệ thống gom PO tổng theo hạn mức → Supervisor chốt PO và gửi email cho Phòng Mua hàng. Không ghi lên ServiceDesk Plus."
+        description="Operator đề xuất thiết bị cần cấp kèm bằng chứng Function Head duyệt → Supervisor định giá (báo giá đối tác / bảng giá) và duyệt → hệ thống gom PO tổng theo hạn mức → Supervisor chốt PO và gửi email cho Phòng Mua hàng."
         actions={
           <>
             <a className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-line-strong bg-surface px-3 font-medium hover:bg-surface-2" href="/api/workload/purchases/export">

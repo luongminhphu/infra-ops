@@ -63,6 +63,11 @@ manifest = ModuleManifest(
             ("manager", "supervisor"),
         ),
         Permission("workload.po.close", "Chốt PO tổng và tạo email nháp", ("manager", "supervisor")),
+        Permission(
+            "workload.price.view",
+            "Xem đơn giá, báo giá, PO tổng và bảng giá (Operator chỉ đề xuất thiết bị, không thấy giá)",
+            ("manager", "supervisor"),
+        ),
         Permission("workload.sync.run", "Đồng bộ task từ SDP ngay", ("manager", "supervisor", "operator")),
         Permission(
             "workload.settings.manage", "Cấu hình module và liên kết Operator ↔ technician", ("manager",)

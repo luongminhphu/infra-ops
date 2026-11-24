@@ -120,6 +120,18 @@ export interface Purchase {
   sdp_product: string;
   received_assets: { id: string; serial: string; asset_tag: string | null }[];
   receive_job: { id: string; status: string; error: string | null } | null;
+  /** Only for price viewers (supervisor/manager); empty/null for operators. */
+  quotes: Quote[];
+  quote_rule: { required: boolean; problem: string | null; threshold: number; count: number } | null;
+}
+
+export interface Quote {
+  id: string;
+  vendor: string;
+  unit_price: number;
+  filename: string;
+  lowest: boolean;
+  created_by: string;
 }
 
 export interface CatalogItem {
@@ -127,13 +139,16 @@ export interface CatalogItem {
   name: string;
   category: string;
   spec: string;
-  unit_price: number | null;
-  sdp_product: string;
-  vendor: string;
-  quoted_at: string | null;
+  // Price fields are omitted for operators (they request devices, not prices).
+  unit_price?: number | null;
+  sdp_product?: string;
+  quote_file?: boolean;
+  needs_quotes?: boolean;
+  vendor?: string;
+  quoted_at?: string | null;
   active: boolean;
-  updated_by: string | null;
-  updated_at: string;
+  updated_by?: string | null;
+  updated_at?: string;
 }
 
 export interface PurchaseOrder {
