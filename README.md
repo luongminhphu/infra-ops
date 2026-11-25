@@ -165,8 +165,9 @@ ra Internet và xử lý sự cố: xem **[docs/install-ubuntu-docker.md](docs/i
    (migration chạy tự động bằng Job trước mỗi lần cài/nâng cấp; chart tạo 3 Deployment: api, worker, web).
 4. Tạo quản trị viên đầu tiên:
    `kubectl exec -it deploy/infra-ops-api -- python -m app.cli create-admin --username admin`.
-5. File (mẫu, PDF, bản ký) lưu trên PVC `infra-ops-files` (giữ lại khi gỡ chart). Nếu chạy nhiều replica
-   api, đặt `storage.accessMode: ReadWriteMany`.
+5. File (mẫu, PDF, bản ký) lưu trên PVC `infra-ops-files` (giữ lại khi gỡ chart), dùng chung cho api và
+   worker. Với `ReadWriteOnce`, api và worker phải chạy trên cùng một node; nếu không (hoặc chạy nhiều
+   replica api), đặt `storage.accessMode: ReadWriteMany`.
 6. Font: mẫu biên bản dùng font **Aptos**. Image có font thay thế (Inter/DejaVu); để PDF giống hệt bản Word,
    tạo Secret chứa file font Aptos (từ bản quyền Office của công ty) và đặt `fontsSecret`.
 7. Nếu SDP/BioStar dùng chứng chỉ CA nội bộ: tạo ConfigMap có key `ca.crt` (bundle CA đầy đủ)

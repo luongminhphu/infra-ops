@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
@@ -30,10 +31,13 @@ async def _bootstrap(session: AsyncSession, settings: Settings, user: User) -> N
 async def login_local(
     session: AsyncSession, settings: Settings, username: str, password: str, ip: str | None
 ) -> User:
-    user = await find_user_by_upn(session, username)
+    # Row lock: parallel attempts must not lose failed-login increments (lockout bypass).
+    user = await session.scalar(
+        select(User).where(func.lower(User.upn) == username.strip().lower()).with_for_update()
+    )
     now = datetime.now(UTC)
     if user is None or user.password_hash is None:
-        verify_password(password, DUMMY_HASH)  # equalise timing
+        await asyncio.to_thread(verify_password, password, DUMMY_HASH)  # equalise timing
         await record(
             session,
             actor=Actor(None, username[:320], ip),
@@ -54,7 +58,7 @@ async def login_local(
         )
         minutes = max(1, int((user.locked_until - now).total_seconds() // 60) + 1)
         raise NotAuthenticated(f"Tài khoản tạm khoá do đăng nhập sai nhiều lần. Thử lại sau {minutes} phút.")
-    if not user.is_active or not verify_password(password, user.password_hash):
+    if not user.is_active or not await asyncio.to_thread(verify_password, password, user.password_hash):
         user.failed_logins += 1
         if user.failed_logins >= settings.local_max_failed_logins:
             user.locked_until = now + timedelta(minutes=settings.local_lockout_minutes)
@@ -81,6 +85,19 @@ async def login_oidc(session: AsyncSession, settings: Settings, ident: OidcIdent
     if user is None:
         # Admins may pre-create users by UPN to assign roles before first login.
         user = await find_user_by_upn(session, ident.upn)
+        if user is not None and user.entra_oid is not None:
+            # The UPN belongs to another Entra identity (e.g. a recycled UPN): never take over that account.
+            await record(
+                session,
+                actor=Actor(user.id, user.upn, ip),
+                module_id="core",
+                action="auth.login",
+                result="denied",
+                message="upn linked to another entra oid",
+            )
+            raise NotAuthenticated(
+                "Tài khoản này đã gắn với một danh tính Microsoft khác. Vui lòng liên hệ Quản trị viên."
+            )
         if user is None:
             user = User(upn=ident.upn, display_name=ident.display_name, email=ident.email)
             session.add(user)

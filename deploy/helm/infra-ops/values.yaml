@@ -37,7 +37,8 @@ web:
     requests: { cpu: 20m, memory: 32Mi }
     limits: { memory: 128Mi }
 
-# Files: templates, generated PDFs and signed scans. Use ReadWriteMany if api.replicas > 1.
+# Files: templates, generated PDFs and signed scans. Mounted by api AND worker: with ReadWriteOnce
+# both pods must run on the same node (e.g. podAffinity); otherwise use ReadWriteMany.
 storage:
   size: 10Gi
   storageClass: ""

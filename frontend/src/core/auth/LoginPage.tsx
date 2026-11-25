@@ -18,7 +18,7 @@ export function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [submitted, setSubmitted] = useState(false);
-  const [error, setError] = useState(params.get("error") === "sso" ? "Đăng nhập Microsoft không thành công. Thử lại." : "");
+  const [error, setError] = useState(params.get("error") === "sso" ? "Đăng nhập Microsoft không thành công. Thử lại hoặc liên hệ Quản trị viên nếu lỗi lặp lại." : "");
   const [busy, setBusy] = useState(false);
 
   if (me) return <Navigate to={next} replace />;

@@ -111,6 +111,8 @@ export interface ConnectionProfile {
   credentials: Record<Purpose, CredentialSummary | null>;
   status: ConnectionStatus;
   status_text: string;
+  /** Set by PATCH when the server address changed and the stored credentials were deleted. */
+  credentials_cleared?: boolean;
 }
 
 export interface AuditEntry {

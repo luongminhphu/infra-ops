@@ -28,11 +28,21 @@ spec:
           {{- include "infraops.podSecurity" . | nindent 10 }}
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
+            - { name: files, mountPath: /data/files }
+            {{- if .Values.fontsSecret }}
+            - { name: fonts, mountPath: /usr/share/fonts/custom, readOnly: true }
+            {{- end }}
             {{- if .Values.internalCaConfigMap }}
             - { name: ca, mountPath: /etc/infraops/ca }
             {{- end }}
       volumes:
         - { name: tmp, emptyDir: {} }
+        - name: files
+          persistentVolumeClaim: { claimName: {{ .Values.storage.existingClaim | default (printf "%s-files" (include "infraops.name" .)) }} }
+        {{- if .Values.fontsSecret }}
+        - name: fonts
+          secret: { secretName: {{ .Values.fontsSecret }} }
+        {{- end }}
         {{- if .Values.internalCaConfigMap }}
         - name: ca
           configMap: { name: {{ .Values.internalCaConfigMap }}, items: [{ key: ca.crt, path: ca-bundle.crt }] }

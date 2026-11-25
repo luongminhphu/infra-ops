@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime
 
@@ -277,11 +278,11 @@ async def _check_roles(session: AsyncSession, role_ids: list[uuid.UUID]) -> None
             raise AppError("Vai trò không tồn tại.", code="unknown_role")
 
 
-def _check_password(password: str) -> str:
+async def _check_password(password: str) -> str:
     problems = password_problems(password, get_settings().local_min_password_length)
     if problems:
         raise AppError(" ".join(problems), code="weak_password")
-    return hash_password(password)
+    return await asyncio.to_thread(hash_password, password)
 
 
 @router.post("/users", response_model=UserOut, status_code=201)
@@ -296,7 +297,7 @@ async def create_user(
     if settings.auth_mode == "local" and not body.password:
         raise AppError("Cần đặt mật khẩu ban đầu cho tài khoản.", code="password_required")
     if body.password and settings.local_login:  # SSO + local accounts: the password is optional
-        new.password_hash = _check_password(body.password)
+        new.password_hash = await _check_password(body.password)
     session.add(new)
     await session.flush()
     await set_user_roles(session, new.id, body.role_ids)
@@ -342,7 +343,7 @@ async def update_user(
     if body.password:
         if target.password_hash is None and not get_settings().local_login:
             raise AppError("Tài khoản SSO không có mật khẩu trong infra-ops.", code="not_local")
-        target.password_hash = _check_password(body.password)
+        target.password_hash = await _check_password(body.password)
         await destroy_user_sessions(session, target.id)
     if body.unlock:
         target.locked_until = None

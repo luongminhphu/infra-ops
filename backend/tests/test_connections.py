@@ -156,7 +156,7 @@ async def test_export_import_roundtrip_without_secrets(admin) -> None:  # type: 
             "/api/core/connections/import", json={"format": exported["format"], "connections": [item]}
         )
     ).json()
-    assert result == {"created": ["SDP Imported"], "updated": [], "errors": []}
+    assert result == {"created": ["SDP Imported"], "updated": [], "errors": [], "credentials_cleared": []}
     again = (
         await admin.post(
             "/api/core/connections/import", json={"format": exported["format"], "connections": [item]}
@@ -204,3 +204,43 @@ async def test_dashboard_widgets(admin) -> None:  # type: ignore[no-untyped-def]
     keys = [w["key"] for w in widgets]
     assert {"core.connections", "core.expiring_secrets", "lifecycle.reconciliation"} <= set(keys)
     assert all(w["error"] is None for w in widgets)
+
+
+async def test_changing_host_deletes_credentials(admin) -> None:  # type: ignore[no-untyped-def]
+    # Stored secrets must never be sent to a new host (e.g. via "Kiểm tra kết nối" after an edit).
+    profile = await _create(admin, "SDP Move")
+    url = f"/api/core/connections/{profile['id']}"
+    put = await admin.put(
+        f"{url}/credentials/read", json={"auth_type": "api_key", "secrets": {"api_key": SECRET}}
+    )
+    same_host = await admin.patch(
+        url, json={"version": put.json()["version"], "base_url": "https://sdp.example.local:8080/api/"}
+    )
+    assert same_host.json()["credentials_cleared"] is False
+    assert same_host.json()["credentials"]["read"] is not None
+    moved = await admin.patch(
+        url, json={"version": same_host.json()["version"], "base_url": "https://evil.example.com:8080"}
+    )
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["credentials_cleared"] is True
+    assert moved.json()["credentials"] == {"read": None, "write": None}
+    async with get_sessionmaker()() as s:
+        entry = await s.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "connection.credentials_cleared", AuditLog.target_id == profile["id"]
+            )
+        )
+        assert entry is not None
+
+    # Import that moves an existing profile to another host clears its credentials too.
+    await admin.put(f"{url}/credentials/read", json={"auth_type": "api_key", "secrets": {"api_key": SECRET}})
+    exported = (await admin.get("/api/core/connections/export")).json()
+    item = next(c for c in exported["connections"] if c["name"] == "SDP Move")
+    item["base_url"] = "https://other.example.com"
+    result = (
+        await admin.post(
+            "/api/core/connections/import", json={"format": exported["format"], "connections": [item]}
+        )
+    ).json()
+    assert result["credentials_cleared"] == ["SDP Move"]
+    assert (await admin.get(url)).json()["credentials"]["read"] is None
