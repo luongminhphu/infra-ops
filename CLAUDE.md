@@ -8,7 +8,7 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 - `backend/app/core/*` – platform core. `backend/app/modules/<id>/` – modules (manifest.py required).
 - `frontend/src/core/*` – shell, design system (`ui/`), core pages. `frontend/src/modules/<id>/` – module UI.
 - `backend/migrations/<branch>/versions` – one Alembic branch per module (`core`, …).
-- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §32).
+- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §33).
 
 ## Conventions
 
@@ -20,7 +20,10 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
   Row-level scoping (e.g. operators see only their own tasks) is enforced in the API with a `*.view_all` permission.
 - Every state change by a user: `audit.record(...)` in the same transaction. Never log or return secrets.
 - External systems only via `open_connection(session, system_type, Purpose.READ|WRITE)`; credentials
-  never come from env. Connectors must not write data in `test_connection()`.
+  never come from env. Connectors must not write data in `test_connection()`. Work a person is responsible for
+  (their Jobs, receiving goods, reassigning, attaching documents) passes `as_user=` so SDP is read/written with that
+  person's own API key ("Khoá API của tôi"); a missing key raises `PersonalCredentialMissing` and job steps wait (never
+  fall back to the shared key). Background sync keeps the shared Read credential.
 - Errors: raise `AppError` subclasses with a Vietnamese message + stable English `code`.
 - Module configuration: a pydantic model persisted with `core.settings.service` (load/save, audited);
   periodic work: `ScheduledTask` in the manifest, run by the worker (never inside API requests).

@@ -979,9 +979,10 @@ async def test_unlinked_operator_is_told_first(admin, client, sdp) -> None:  # t
     q = (await client.get("/api/core/me/next")).json()
     top = {i["key"]: i for i in q["items"] if i["priority"] == 0}
     assert top["tickets:unlinked"]["passive"] is True
-    # A new operator has no personal SDP key yet: asked for it once (lifecycle + workload sources dedupe).
+    # A new operator has no personal SDP key yet: asked once per SDP connection in use (sources dedupe by key).
     keys = [i for i in q["items"] if i["kind"] == "personal_key"]
-    assert len(keys) == 1 and keys[0]["href"] == "/me/credentials" and not keys[0].get("passive")
+    assert keys and len({k["key"] for k in keys}) == len(keys)
+    assert any("SDP WL" in k["title"] for k in keys) and all(k["href"] == "/me/credentials" for k in keys)
     await client.login("wl-mgr@test.local")  # sees all tasks: no notice
     assert all(
         i["key"] != "tickets:unlinked" for i in (await client.get("/api/core/me/next")).json()["items"]

@@ -358,6 +358,12 @@ Lưu ý:
 2. Đăng nhập SDP bằng technician đó → avatar → **Generate API Key** (đặt ngày hết hạn).
 3. Trong infra-ops: Base URL `https://sdp.congty.local:8080`, phương thức **API key / Auth token**,
    nhập ngày hết hạn để Dashboard cảnh báo trước.
+4. **Key cá nhân của từng người (bắt buộc cho thao tác ghi):** credential Read chung chỉ dùng cho đồng bộ nền. Job
+   onboard/offboard (đọc + ghi, theo người phụ trách Job), nhận hàng, chuyển việc và đính kèm biên bản chạy bằng
+   **API key SDP của chính người thực hiện**, nên SDP ghi nhận đúng ai làm. Mỗi người vào menu tài khoản →
+   **Khoá API của tôi**, dán API key technician của mình (SDP: ảnh đại diện → Hồ sơ cá nhân → tạo API key), bấm
+   **Kiểm tra**. Key mã hoá khi lưu, không ai xem lại được (kể cả quản trị). Chưa nhập key thì bước Job dừng ở trạng
+   thái chờ và tự chạy lại sau khi lưu; "Việc của tôi" nhắc "Nhập API key cá nhân".
 
 ### Module Vòng đời nhân sự – đối soát
 1. Tạo 2 kết nối trên (ít nhất credential **Read**).
