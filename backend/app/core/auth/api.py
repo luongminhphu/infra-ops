@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+
+import httpx
+import jwt
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
@@ -15,15 +19,18 @@ from app.core.auth.sessions import (
     clear_session_cookie,
     create_session,
     destroy_session,
+    destroy_user_sessions,
     set_session_cookie,
 )
 from app.core.config import get_settings
 from app.core.db import get_session
 from app.core.errors import AppError, NotAuthenticated
+from app.core.logging import get_logger
 from app.core.modules.registry import get_registry
 from app.core.rbac.service import role_codes_for_user
 
 router = APIRouter(tags=["auth"])
+log = get_logger(__name__)
 
 
 class AuthConfig(BaseModel):
@@ -98,12 +105,25 @@ async def oidc_callback(
     session: AsyncSession = Depends(get_session),
 ) -> RedirectResponse:
     settings = get_settings()
+    failed = RedirectResponse("/login?error=sso", status_code=302)
+    failed.delete_cookie(oidc.STATE_COOKIE, path="/api/core/auth/oidc")
     if error or not code:
-        return RedirectResponse("/login?error=sso", status_code=302)
-    state_data = oidc.read_state(settings, request.cookies.get(oidc.STATE_COOKIE), state)
-    ident = await oidc.exchange_code(settings, code, state_data)
+        log.warning("oidc_callback_error", error=error[:200])
+        return failed
     ip = client_ip(request)
-    user = await login_oidc(session, settings, ident, ip)
+    try:
+        state_data = oidc.read_state(settings, request.cookies.get(oidc.STATE_COOKIE), state)
+        ident = await oidc.exchange_code(settings, code, state_data)
+    # ValueError: a token response that is not JSON.
+    except (AppError, httpx.HTTPError, jwt.PyJWTError, ValueError) as exc:
+        log.warning("oidc_callback_failed", error=type(exc).__name__, detail=str(exc)[:200])
+        return failed
+    try:
+        user = await login_oidc(session, settings, ident, ip)
+    except NotAuthenticated as exc:
+        await session.commit()  # keep the denied-login audit entry
+        log.warning("oidc_login_denied", upn=ident.upn, detail=exc.message)
+        return failed
     token, _ = await create_session(session, settings, user, ip, request.headers.get("user-agent"))
     await session.commit()
     resp = RedirectResponse(state_data.get("next", "/"), status_code=302)
@@ -168,6 +188,7 @@ class ChangePasswordBody(BaseModel):
 @router.post("/me/password", status_code=204)
 async def change_password(
     body: ChangePasswordBody,
+    request: Request,
     user: CurrentUser = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> None:
@@ -175,12 +196,16 @@ async def change_password(
     model = await session.get(User, user.id)
     if model is None or model.password_hash is None:
         raise AppError("Tài khoản SSO không đổi mật khẩu tại đây.", code="not_local")
-    if not verify_password(body.current_password, model.password_hash):
+    if not await asyncio.to_thread(verify_password, body.current_password, model.password_hash):
         raise AppError("Mật khẩu hiện tại không đúng.", code="invalid_password")
     problems = password_problems(body.new_password, settings.local_min_password_length)
     if problems:
         raise AppError(" ".join(problems), code="weak_password")
-    model.password_hash = hash_password(body.new_password)
+    model.password_hash = await asyncio.to_thread(hash_password, body.new_password)
+    # Sign out every other device; keep the session making this request.
+    await destroy_user_sessions(
+        session, user.id, keep_token=request.cookies.get(settings.session_cookie_name)
+    )
     await record(
         session,
         actor=user.actor,

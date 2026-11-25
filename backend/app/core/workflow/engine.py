@@ -135,7 +135,8 @@ async def create_job(
 
 
 async def get_job(session: AsyncSession, job_id: Any, *, for_update: bool = False) -> Job:
-    job = await session.get(Job, job_id, with_for_update=for_update)
+    # populate_existing: a locked re-read must not keep stale attributes from the identity map.
+    job = await session.get(Job, job_id, with_for_update=for_update, populate_existing=for_update)
     if job is None:
         raise NotFound("Không tìm thấy Job.")
     return job
@@ -535,14 +536,25 @@ def _apply(step: JobStep, outcome: StepOutcome, actor: str | None) -> None:
     step.message = outcome.message
     if outcome.output:
         step.output = {**(step.output or {}), **outcome.output}
-    if outcome.before_state is not None and step.before_state is None:
-        step.before_state = outcome.before_state
+    _merge_before(step, outcome.before_state)
     if outcome.status in ("done", "skipped"):
         step.status = outcome.status
         step.finished_at = now()
         step.actor = actor
         step.next_run_at = None
         step.waiting_since = None
+
+
+def _merge_before(step: JobStep, before: dict[str, Any] | None) -> None:
+    """Keep the first-seen state across retries: existing keys win, nested dicts merged one level deep."""
+    if before is None:
+        return
+    old = step.before_state or {}
+    merged = {**before, **old}
+    for k, v in before.items():
+        if isinstance(v, dict) and isinstance(old.get(k), dict):
+            merged[k] = {**v, **old[k]}
+    step.before_state = merged
 
 
 def _blocked_by_earlier(job: Job, step: JobStep) -> bool:
@@ -622,6 +634,7 @@ async def advance(session: AsyncSession, job: Job, worker_actor: Actor) -> None:
             step.message = outcome.message
             if outcome.output:
                 step.output = {**(step.output or {}), **outcome.output}
+            _merge_before(step, outcome.before_state)
             event(session, job, f"Lỗi ở bước “{step.title}”: {outcome.message}", step=step.key, level="error")
             await record(
                 session,
@@ -663,7 +676,7 @@ async def advance(session: AsyncSession, job: Job, worker_actor: Actor) -> None:
     event(session, job, "Job đã hoàn tất.")
 
 
-async def pump(session: AsyncSession, limit: int = 20) -> dict[str, Any]:
+async def pump(session: AsyncSession) -> dict[str, Any]:
     """Scheduled task: start due scheduled jobs and advance active ones (one transaction per job)."""
     ids = (
         await session.scalars(
@@ -674,13 +687,18 @@ async def pump(session: AsyncSession, limit: int = 20) -> dict[str, Any]:
                     (Job.status == "scheduled") & (Job.scheduled_for <= today_vn()),
                 )
             )
+            # No LIMIT: jobs waiting on people never change, so a capped oldest-first page starves new ones.
             .order_by(Job.updated_at)
-            .limit(limit)
         )
     ).all()
     advanced = 0
     for job_id in ids:
-        job = await session.scalar(select(Job).where(Job.id == job_id).with_for_update(skip_locked=True))
+        job = await session.scalar(
+            select(Job)
+            .where(Job.id == job_id)
+            .with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True)
+        )
         if job is None:
             continue
         if job.status == "scheduled":

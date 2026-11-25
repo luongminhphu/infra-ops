@@ -1054,3 +1054,15 @@ Quyết định:
   chứng chỉ). Máy chủ đã cài theo cách cũ: sửa `INFRAOPS_HTTP_BIND` trong `.env` (bỏ `8080` hoặc giữ
   `127.0.0.1:8080` nếu vẫn dùng nginx máy chủ) và thêm `INFRAOPS_HTTPS_BIND`.
 
+## 32. Audit toàn repo và sửa lỗi (25/11/2026)
+
+- Audit (ponytail-audit) 3 phần: core (auth, kết nối, triển khai), Công việc Helpdesk (đề xuất, PO, nhận hàng),
+  workflow + Vòng đời nhân sự. Đã sửa toàn bộ 28 phát hiện, mỗi phát hiện có test.
+- Đáng chú ý: worker gắn volume `files` (bước đóng request đọc được biên bản đã ký); pump workflow không còn giới hạn
+  20 Job (Job mới không bị kẹt sau Job chờ người); tổng quan Việc của tôi không lỗi khi có Job hoàn tất; PO không chốt
+  được khi còn hạng mục chưa có giá và phải đúng danh sách hạng mục đã xem; Operator chạy lại được Job nhận hàng;
+  serial không dùng cho hai đề xuất; đổi máy chủ của kết nối thì xoá credential; SSO không chiếm tài khoản đã gắn
+  danh tính Microsoft khác; khoá tài khoản đếm đúng khi đăng nhập sai song song; đổi mật khẩu đăng xuất các phiên khác;
+  IP trong nhật ký không giả mạo được; đóng request SDP không đính kèm/ghi chú trùng khi chạy lại; dữ liệu thô của
+  đồng bộ chỉ giữ cho vài lần gần nhất.
+

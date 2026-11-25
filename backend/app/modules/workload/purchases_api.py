@@ -3,6 +3,7 @@ device, kept in infra-ops and exported for the purchasing team (nothing is writt
 
 from __future__ import annotations
 
+import asyncio
 import io
 import uuid
 from datetime import UTC, date, datetime, timedelta
@@ -13,11 +14,12 @@ from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import Response
 from openpyxl import Workbook
 from pydantic import BaseModel, Field
-from sqlalchemy import exists, func, select
+from sqlalchemy import String, exists, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit.service import record
+from app.core.audit.models import AuditLog
+from app.core.audit.service import Actor, record
 from app.core.auth.deps import CurrentUser, require
 from app.core.auth.models import User
 from app.core.config import get_settings
@@ -26,7 +28,7 @@ from app.core.db import get_session
 from app.core.errors import AppError, NotFound
 from app.core.settings.service import load_settings
 from app.core.storage.models import StoredFile
-from app.core.storage.service import check_size, read_file, safe_filename, save_file, sniff
+from app.core.storage.service import check_size, get_storage, read_file, safe_filename, save_file, sniff
 from app.core.workflow.engine import create_job, start_job
 from app.core.workflow.models import Job
 from app.modules.workload import handover
@@ -271,6 +273,18 @@ async def list_purchases(
     return {"items": await _full(session, list(rows), user), "counts": counts}
 
 
+async def _own_ticket(session: AsyncSession, user: CurrentUser, ticket_id: str) -> Ticket:
+    """The ticket, if the user may act on it: without view_all only tickets assigned to them."""
+    ticket = await session.get(Ticket, ticket_id)
+    if ticket is not None and not user.has(VIEW_ALL):
+        me = await _my_technician(session, user)
+        if me is None or ticket.technician_id != me.id:
+            ticket = None
+    if ticket is None:
+        raise NotFound("Không tìm thấy request.")
+    return ticket
+
+
 class PurchaseIn(BaseModel):
     ticket_id: str | None = Field(None, max_length=32)
     source: Literal["ticket", "onboard", "manual"] = "manual"
@@ -298,10 +312,7 @@ async def create_purchase(
 ) -> dict[str, Any]:
     display = None
     if body.ticket_id:
-        ticket = await session.get(Ticket, body.ticket_id)
-        if ticket is None:
-            raise NotFound("Không tìm thấy request.")
-        display = ticket.display_id
+        display = (await _own_ticket(session, user, body.ticket_id)).display_id
     await _catalog(session, body.catalog_item_id)
     p = PurchaseRequest(
         ticket_id=body.ticket_id,
@@ -411,6 +422,7 @@ async def update_purchase(
     user: CurrentUser = Depends(manage),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
+    await pos.lock_pos(session)  # PO lock before the row lock, in the same order as close_po (no deadlock)
     p = await session.get(PurchaseRequest, purchase_id, with_for_update=True)
     if p is None:
         raise NotFound("Không tìm thấy đề xuất.")
@@ -436,6 +448,7 @@ async def bulk_status(
     done: list[str] = []
     failed: dict[str, str] = {}
     repack = False
+    await pos.lock_pos(session)  # PO lock before the row locks, in the same order as close_po
     for pid in dict.fromkeys(body.ids):
         try:
             async with session.begin_nested():
@@ -512,15 +525,35 @@ async def receivable(
 async def extract_serials(file: UploadFile, _: CurrentUser = Depends(receiver)) -> dict[str, Any]:
     """Serials (and asset tags) read from the vendor's handover document, to pre-fill the receive form.
     Nothing is stored or written; the person reviews every value."""
-    data = await file.read()
-    check_size(data)
-    mime = sniff(data, HANDOVER_MIME)
-    rows = handover.read_handover(data, mime)
+    data, mime = await _read_upload(file, HANDOVER_MIME)
+    rows = await asyncio.to_thread(handover.read_handover, data, mime)
     if not rows:
         raise AppError(
             "Không tìm thấy cột/nhãn Serial trong file – kiểm tra file hoặc nhập tay.", code="no_serials"
         )
     return {"rows": rows}
+
+
+# Serials of other purchases: already received, or in a receive job that is not cancelled.
+_USED_SERIAL = text(
+    """
+    SELECT u->>'serial' FROM workload_purchase_request p, jsonb_array_elements(p.received_assets) u
+    WHERE p.id <> :pid AND lower(u->>'serial') = ANY(:serials)
+    UNION ALL
+    SELECT u->>'serial' FROM core_job j, jsonb_array_elements(j.params->'units') u
+    WHERE j.workflow_key = 'workload.receive' AND j.status <> 'cancelled'
+      AND j.external_ref <> :ref AND lower(u->>'serial') = ANY(:serials)
+    LIMIT 1
+    """
+)
+
+
+async def _serial_used(session: AsyncSession, purchase_id: uuid.UUID, serials: list[str]) -> str | None:
+    # Serialise receives so two requests cannot take the same serial at once.
+    await session.execute(text("SELECT pg_advisory_xact_lock(hashtext('workload.receive'))"))
+    return await session.scalar(
+        _USED_SERIAL, {"pid": purchase_id, "ref": str(purchase_id), "serials": [x.lower() for x in serials]}
+    )
 
 
 @router.post("/purchases/{purchase_id}/receive")
@@ -573,6 +606,9 @@ async def receive(
         raise AppError(f"Nhập đủ serial cho {p.quantity} thiết bị.", code="units_mismatch")
     if len({x.lower() for x in serials}) != len(serials):
         raise AppError("Serial bị trùng.", code="duplicate_serial")
+    used = await _serial_used(session, p.id, serials)
+    if used:
+        raise AppError(f"Serial {used} đã được nhận cho đề xuất khác.", code="serial_used")
     settings = await _settings(session)
     job, _ = await create_job(
         session,
@@ -704,9 +740,7 @@ async def evidence_file(
 async def dismiss_suggestion(
     ticket_id: str, user: CurrentUser = Depends(create), session: AsyncSession = Depends(get_session)
 ) -> None:
-    ticket = await session.get(Ticket, ticket_id)
-    if ticket is None:
-        raise NotFound("Không tìm thấy request.")
+    ticket = await _own_ticket(session, user, ticket_id)
     ticket.po_dismissed = True
     await record(
         session,
@@ -741,6 +775,7 @@ async def _quote_target(session: AsyncSession, purchase_id: uuid.UUID) -> Purcha
 
 
 QUOTE_MIME = {"application/pdf"}
+QUOTE_FILE_READ = "workload.quote_file_read"  # audit action; also finds the files to clean up
 STOCK_MIME = {"image/png", "image/jpeg", "application/pdf"}
 
 
@@ -765,6 +800,71 @@ async def _own_upload(
     return stored
 
 
+async def _save_read_quote(
+    session: AsyncSession, user: CurrentUser, data: bytes, filename: str | None
+) -> StoredFile:
+    """Keep a quote PDF read by "Đọc báo giá" so the confirm step can attach it (file_id).
+    Unattached ones are removed after a week by the workload.quote_files_cleanup task."""
+    stored = await save_file(
+        session, data, safe_filename(filename or "bao-gia.pdf"), "application/pdf", user.upn
+    )
+    await record(
+        session,
+        actor=user.actor,
+        module_id=MODULE_ID,
+        action=QUOTE_FILE_READ,
+        target_type="file",
+        target_id=str(stored.id),
+        target_label=stored.filename,
+        after={"size": stored.size},
+    )
+    return stored
+
+
+QUOTE_FILE_DAYS = 7
+
+
+async def cleanup_quote_files(session: AsyncSession) -> dict[str, Any]:
+    """Daily: delete quote PDFs read by "Đọc báo giá" over a week ago and never attached to a quote
+    or price-list item (files are recognised by their audit entry, so other uploads are never touched)."""
+    read = select(AuditLog.target_id).where(
+        AuditLog.module_id == MODULE_ID, AuditLog.action == QUOTE_FILE_READ, AuditLog.target_type == "file"
+    )
+    rows = (
+        await session.scalars(
+            select(StoredFile)
+            .where(
+                StoredFile.created_at < datetime.now(UTC) - timedelta(days=QUOTE_FILE_DAYS),
+                StoredFile.id.cast(String).in_(read),
+                ~exists().where(PurchaseQuote.file_id == StoredFile.id),
+                ~exists().where(CatalogItem.quote_file_id == StoredFile.id),
+                ~exists().where(PurchaseEvidence.file_id == StoredFile.id),
+            )
+            .limit(500)
+        )
+    ).all()
+    if not rows:
+        return {"deleted": 0}
+    keys = [f.storage_key for f in rows]
+    for f in rows:
+        await session.delete(f)
+    await record(
+        session,
+        actor=Actor(None, "system"),
+        module_id=MODULE_ID,
+        action="workload.quote_files_cleaned",
+        target_type="file",
+        after={"deleted": len(rows), "files": [str(f.id) for f in rows]},
+    )
+    await session.commit()
+    # Bytes go only once the rows are gone for good.
+    # shortcut: uses the storage's private path helper; switch to a core delete helper once there is one.
+    storage = get_storage()
+    for key in keys:
+        await asyncio.to_thread(storage._path(key).unlink, missing_ok=True)
+    return {"deleted": len(rows)}
+
+
 @router.post("/purchases/{purchase_id}/quotes/read")
 async def read_purchase_quote(
     purchase_id: uuid.UUID,
@@ -775,7 +875,7 @@ async def read_purchase_quote(
     """Recognise the vendor of a quote PDF and read this proposal's unit price (a suggestion to confirm)."""
     p = await _quote_target(session, purchase_id)
     data, _ = await _read_upload(file, QUOTE_MIME)
-    text = pdf_text(data)
+    text = await asyncio.to_thread(pdf_text, data)
     suppliers = await _suppliers(session)
     sup = detect_supplier(text, [{"keywords": x.keywords, "obj": x} for x in suppliers])
     supplier = sup["obj"] if sup else None
@@ -784,8 +884,8 @@ async def read_purchase_quote(
     found = match_prices(
         text, [{"id": n, "name": n} for n in names], position=supplier.price_position if supplier else 0
     )
-    name = safe_filename(file.filename or "bao-gia.pdf")
-    stored = await save_file(session, data, name, "application/pdf", user.upn)
+    stored = await _save_read_quote(session, user, data, file.filename)
+    name = stored.filename
     await session.commit()
     best = max(found, key=lambda f: f["score"]) if found else None
     return {
@@ -1078,17 +1178,15 @@ async def read_quote_pdf(
     user: CurrentUser = Depends(catalog_manage),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    data = await file.read(get_settings().max_upload_mb * 1024 * 1024 + 1)
-    check_size(data)
-    sniff(data, {"application/pdf"})
-    text = pdf_text(data)
+    data, _ = await _read_upload(file, QUOTE_MIME)
+    text = await asyncio.to_thread(pdf_text, data)
     items = [
         catalog_out(c) for c in (await session.scalars(select(CatalogItem).where(CatalogItem.active))).all()
     ]
     sup = detect_supplier(text, [{"keywords": x.keywords, "obj": x} for x in await _suppliers(session)])
     supplier = sup["obj"] if sup else None
-    name = safe_filename(file.filename or "bao-gia.pdf")
-    stored = await save_file(session, data, name, "application/pdf", user.upn)
+    stored = await _save_read_quote(session, user, data, file.filename)
+    name = stored.filename
     await session.commit()
     return {
         "file_id": str(stored.id),
@@ -1250,9 +1348,11 @@ async def update_supplier(
 
 
 # ---------------------------------------------------------------- purchase orders
-async def po_out(session: AsyncSession, po: PurchaseOrder) -> dict[str, Any]:
-    items = await pos.po_items(session, po)
-    rows = await _full(session, [p for p, _ in items])
+async def po_out(
+    session: AsyncSession, po: PurchaseOrder, rows: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    if rows is None:
+        rows = await _full(session, [p for p, _ in await pos.po_items(session, po)])
     return {
         "id": str(po.id),
         "number": po.number,
@@ -1286,18 +1386,32 @@ async def list_pos(
         )
     ).all()
     waiting = await session.scalar(select(func.count()).where(PurchaseRequest.status == "proposed"))
+    # All items of the listed POs in one pass (po_out per PO would run ~8 queries each).
+    po_ids = [o.id for o in (*open_rows, *closed)]
+    items = (
+        await session.scalars(
+            select(PurchaseRequest)
+            .where(PurchaseRequest.po_id.in_(po_ids))
+            .order_by(PurchaseRequest.approved_at, PurchaseRequest.created_at)
+        )
+    ).all()
+    by_po: dict[uuid.UUID, list[dict[str, Any]]] = {}
+    for p, row in zip(items, await _full(session, list(items)), strict=True):
+        by_po.setdefault(p.po_id, []).append(row)  # type: ignore[arg-type]
     return {
         "limit": settings.po_limit_vnd,
         "email_to": settings.po_email_to,
         "email_cc": settings.po_email_cc,
-        "open": [await po_out(session, o) for o in open_rows],
-        "closed": [await po_out(session, o) for o in closed],
+        "open": [await po_out(session, o, by_po.get(o.id, [])) for o in open_rows],
+        "closed": [await po_out(session, o, by_po.get(o.id, [])) for o in closed],
         "proposed_waiting": waiting or 0,
     }
 
 
 class CloseIn(BaseModel):
-    version_total: int = Field(ge=0)  # total the supervisor saw; refuses if the PO changed meanwhile
+    # What the supervisor saw; refuses if the PO changed meanwhile (same total with other items too).
+    version_total: int = Field(ge=0)
+    item_ids: list[uuid.UUID] = Field(max_length=1000)
 
 
 @router.post("/pos/{po_id}/close")
@@ -1311,13 +1425,17 @@ async def close_po(
     po = await session.get(PurchaseOrder, po_id, with_for_update=True)
     if po is None or po.status != "open":
         raise NotFound("PO không còn mở (đã chốt hoặc đã được gom lại).")
-    if po.total != body.version_total:
+    items = await pos.po_items(session, po)
+    if po.total != body.version_total or {p.id for p, _ in items} != set(body.item_ids):
         raise AppError(
             "Giá trị PO vừa thay đổi (giá hoặc đề xuất mới) – xem lại rồi chốt.", code="po_changed"
         )
-    items = await pos.po_items(session, po)
     if not items:
         raise AppError("PO chưa có hạng mục.", code="po_empty")
+    if any(pos.price_of(p, c) is None for p, c in items):
+        raise AppError(
+            "Có hạng mục chưa có đơn giá – cập nhật Bảng giá trước khi chốt.", code="price_required"
+        )
     now = datetime.now(UTC)
     po.number = await pos.next_number(session, now)
     po.status, po.closed_at, po.closed_by = "closed", now, user.upn

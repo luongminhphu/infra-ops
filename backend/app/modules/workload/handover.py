@@ -67,8 +67,13 @@ def rows_from_xlsx(data: bytes) -> list[dict[str, str]]:
     for ws in wb.worksheets:
         cols: tuple[int, int | None] | None = None
         for raw in ws.iter_rows(values_only=True):
+            if len(rows) >= MAX_ROWS:
+                break
             cells = [_cell(c) for c in raw]
             if cols is None:
+                # A header row has several columns; a lone title ("DANH SÁCH SERIAL …") is not one.
+                if sum(1 for c in cells if c) < 2:
+                    continue
                 si = next((k for k, c in enumerate(cells) if c and _is_head(c, _SERIAL_HEAD)), None)
                 if si is not None:
                     ti = next(
@@ -90,12 +95,15 @@ def rows_from_text(text: str) -> list[dict[str, str]]:
     """Serials from PDF text: labeled values ("S/N: …") first; otherwise, below a "Serial" header,
     one serial-like token per line – tokens repeated on several lines are model names, not serials."""
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    rows = [
-        {"serial": m.group(1), "asset_tag": "", "text": ln}
-        for ln in lines
-        for m in _LABELED.finditer(ln)
-        if _valid(m.group(1)) and any(c.isdigit() for c in m.group(1))
-    ]
+    rows: list[dict[str, str]] = []
+    for ln in lines:
+        if len(rows) >= MAX_ROWS:
+            break
+        rows += [
+            {"serial": m.group(1), "asset_tag": "", "text": ln}
+            for m in _LABELED.finditer(ln)
+            if _valid(m.group(1)) and any(c.isdigit() for c in m.group(1))
+        ]
     if rows:
         return _dedupe(rows)
     start = next((k for k, ln in enumerate(lines) if _is_head(ln, ("serial", "s/n", "so seri"))), None)
@@ -104,6 +112,8 @@ def rows_from_text(text: str) -> list[dict[str, str]]:
     body = lines[start + 1 :]
     seen = Counter(t for ln in body for t in set(_TOKEN.findall(ln)))
     for ln in body:
+        if len(rows) >= MAX_ROWS:
+            break
         unique = [t for t in _TOKEN.findall(ln) if seen[t] == 1]
         if unique:
             rows.append({"serial": unique[-1], "asset_tag": "", "text": ln})

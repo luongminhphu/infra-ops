@@ -163,7 +163,33 @@ async def run_sync(
     run = SyncRun(trigger=trigger, requested_by=requested_by, status="running", stats={}, errors={}, notes=[])
     session.add(run)
     await session.commit()
+    run_id = run.id  # rollback expires `run`
+    try:
+        return await _sync(session, run, settings, requested_by=requested_by, today=today)
+    except (Exception, asyncio.CancelledError) as exc:  # CancelledError: the scheduler's timeout
+        # Never leave the run "running" forever: close it in a fresh transaction, then re-raise.
+        try:
+            await session.rollback()
+        except Exception:
+            log.exception("lifecycle_sync_rollback_failed", run_id=str(run_id))
+        async with AsyncSession(session.bind, expire_on_commit=False) as s:
+            failed = await s.get(SyncRun, run_id)
+            if failed is not None:
+                failed.status = "failure"
+                failed.finished_at = datetime.now(UTC)
+                failed.errors = {"crash": f"{type(exc).__name__}: {exc}"[:500]}
+                await s.commit()
+        raise
 
+
+async def _sync(
+    session: AsyncSession,
+    run: SyncRun,
+    settings: LifecycleSettings,
+    *,
+    requested_by: str | None,
+    today: date | None,
+) -> dict[str, Any]:
     sources = {"sdp": False, "assets": False, "biostar": False}
     errors: dict[str, str] = {}
     stats: dict[str, Any] = {}
@@ -281,10 +307,18 @@ async def run_sync(
         else ("failure" if not any(sources.values()) else "partial")
     )
 
-    # Retention: drop old snapshot details, keep run summaries for trend/history.
+    # Retention: raw snapshots are only read for the latest data run (queries.latest_run), so keep the
+    # two newest data runs (the previous one for readers still on it); ReconRow keeps the configured
+    # retention for history, and run summaries are kept for trends.
+    keep = (
+        select(SyncRun.id)
+        .where(SyncRun.finished_at.is_not(None), SyncRun.status.in_(["success", "partial"]))
+        .order_by(SyncRun.started_at.desc())
+        .limit(2)
+    )
+    await session.execute(delete(Snapshot).where(Snapshot.run_id != run.id, Snapshot.run_id.not_in(keep)))
     cutoff = datetime.now(UTC) - timedelta(days=settings.snapshot_retention_days)
     old_runs = select(SyncRun.id).where(SyncRun.started_at < cutoff)
-    await session.execute(delete(Snapshot).where(Snapshot.run_id.in_(old_runs)))
     await session.execute(delete(ReconRow).where(ReconRow.run_id.in_(old_runs)))
 
     await record(

@@ -121,9 +121,10 @@ async def auto_create_jobs(session: AsyncSession) -> int:
     existing = set(
         (await session.scalars(select(Job.idempotency_key).where(Job.module_id == MODULE_ID))).all()
     )
+    closed = {s.lower() for s in settings.sdp_closed_statuses}
     created = 0
     for r in reqs:
-        if r.parse_errors or f"lifecycle:{r.kind}:{r.id}" in existing:
+        if r.parse_errors or (r.status or "").lower() in closed or f"lifecycle:{r.kind}:{r.id}" in existing:
             continue
         _, new = await create_job_for_request(session, Actor(None, "system (đồng bộ)"), r)
         created += int(new)

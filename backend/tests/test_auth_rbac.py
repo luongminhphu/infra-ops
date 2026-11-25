@@ -160,3 +160,143 @@ async def test_local_login_and_lockout(client, settings, monkeypatch) -> None:  
         "/api/core/auth/login", json={"username": "local@test.local", "password": "Good-Password-1"}
     )
     assert ok.status_code == 204
+
+
+def test_client_ip_is_clipped_to_column_size() -> None:
+    from starlette.requests import Request
+
+    from app.core.auth.deps import client_ip
+
+    assert client_ip(Request({"type": "http", "client": ("1" * 300, 1)})) == "1" * 64
+
+
+async def _local_user(upn: str, password: str) -> None:
+    async with get_sessionmaker()() as s:
+        s.add(User(upn=upn, display_name=upn, password_hash=hash_password(password)))
+        await s.commit()
+
+
+async def test_parallel_failed_logins_all_counted(app, settings, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import asyncio
+
+    import httpx
+
+    monkeypatch.setattr(settings, "auth_mode", "local")
+    monkeypatch.setattr(settings, "local_max_failed_logins", 4)
+    await _local_user("parallel@test.local", "Good-Password-1")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
+        bad = {"username": "PARALLEL@test.local", "password": "x"}
+        results = await asyncio.gather(*(c.post("/api/core/auth/login", json=bad) for _ in range(4)))
+    assert all(r.status_code == 401 for r in results)
+    async with get_sessionmaker()() as s:
+        user = await s.scalar(select(User).where(User.upn == "parallel@test.local"))
+        assert user is not None and user.locked_until is not None  # no lost increments
+
+
+async def test_password_change_signs_out_other_sessions(app, settings, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import httpx
+
+    monkeypatch.setattr(settings, "auth_mode", "local")
+    await _local_user("rotate@test.local", "Good-Password-1")
+    creds = {"username": "rotate@test.local", "password": "Good-Password-1"}
+
+    def make() -> httpx.AsyncClient:
+        return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+
+    async with make() as a, make() as b:
+        for c in (a, b):
+            assert (await c.post("/api/core/auth/login", json=creds)).status_code == 204
+        a.headers["X-CSRF-Token"] = (await a.get("/api/core/me")).json()["csrf_token"]
+        resp = await a.post(
+            "/api/core/me/password",
+            json={"current_password": "Good-Password-1", "new_password": "New-Password-22"},
+        )
+        assert resp.status_code == 204, resp.text
+        assert (await a.get("/api/core/me")).status_code == 200
+        assert (await b.get("/api/core/me")).status_code == 401
+
+
+# --- SSO callback (Entra ID mocked: token endpoint via respx, JWKS from a local RSA key) ---
+
+
+def _oidc_setup(settings, monkeypatch):  # type: ignore[no-untyped-def]
+    import json
+
+    import jwt
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    from app.core.auth import oidc
+
+    monkeypatch.setattr(settings, "auth_mode", "oidc")
+    monkeypatch.setattr(settings, "oidc_tenant_id", "tenant-1")
+    monkeypatch.setattr(settings, "oidc_client_id", "client-1")
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    jwk = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(key.public_key()))
+    jwk.update(kid="k1", use="sig", alg="RS256")
+    monkeypatch.setattr(jwt.PyJWKClient, "fetch_data", lambda self: {"keys": [jwk]})
+    monkeypatch.setattr(oidc, "_jwks_clients", {})  # drop keys cached by earlier tests
+    return key
+
+
+async def _sso_login(client, settings, key, oid: str, upn: str):  # type: ignore[no-untyped-def]
+    import time
+    from urllib.parse import parse_qs, urlsplit
+
+    import httpx
+    import jwt
+    import respx
+
+    start = await client.get("/api/core/auth/oidc/login", params={"next": "/me/work"})
+    assert start.status_code == 302
+    q = parse_qs(urlsplit(start.headers["location"]).query)
+    now = int(time.time())
+    claims = {
+        "iss": settings.oidc_issuer,
+        "aud": "client-1",
+        "iat": now,
+        "exp": now + 300,
+        "nonce": q["nonce"][0],
+        "oid": oid,
+        "preferred_username": upn,
+        "name": "SSO User",
+    }
+    id_token = jwt.encode(claims, key, algorithm="RS256", headers={"kid": "k1"})
+    token_url = f"{settings.oidc_authority_host}/tenant-1/oauth2/v2.0/token"
+    with respx.mock(assert_all_called=True) as mock:
+        mock.post(token_url).mock(return_value=httpx.Response(200, json={"id_token": id_token}))
+        return await client.get("/api/core/auth/oidc/callback", params={"code": "c1", "state": q["state"][0]})
+
+
+async def test_sso_callback_bad_state_redirects(client, settings, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    _oidc_setup(settings, monkeypatch)
+    resp = await client.get("/api/core/auth/oidc/callback", params={"code": "c1", "state": "forged"})
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/login?error=sso"
+
+
+async def test_sso_callback_first_login_creates_viewer(client, settings, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    key = _oidc_setup(settings, monkeypatch)
+    resp = await _sso_login(client, settings, key, "oid-cb-1", "sso.cb@test.local")
+    assert resp.status_code == 302, resp.text
+    assert resp.headers["location"] == "/me/work"
+    me = (await client.get("/api/core/me")).json()
+    assert me["upn"] == "sso.cb@test.local" and me["roles"] == ["viewer"]
+
+
+async def test_sso_recycled_upn_does_not_take_over_account(client, settings, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from app.core.audit.models import AuditLog
+
+    key = _oidc_setup(settings, monkeypatch)
+    async with get_sessionmaker()() as s:
+        s.add(User(upn="recycled@test.local", display_name="Old Person", entra_oid="oid-old"))
+        await s.commit()
+    resp = await _sso_login(client, settings, key, "oid-new", "recycled@test.local")
+    assert resp.headers["location"] == "/login?error=sso"
+    assert (await client.get("/api/core/me")).status_code == 401
+    async with get_sessionmaker()() as s:
+        user = await s.scalar(select(User).where(User.upn == "recycled@test.local"))
+        assert user is not None and user.entra_oid == "oid-old"
+        denied = await s.scalar(
+            select(AuditLog).where(AuditLog.actor_upn == "recycled@test.local", AuditLog.result == "denied")
+        )
+        assert denied is not None

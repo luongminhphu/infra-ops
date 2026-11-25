@@ -30,6 +30,12 @@ async def _sync(session: AsyncSession) -> dict[str, Any]:
     return await scheduled_sync(session)
 
 
+async def _cleanup_quote_files(session: AsyncSession) -> dict[str, Any]:
+    from app.modules.workload.purchases_api import cleanup_quote_files
+
+    return await cleanup_quote_files(session)
+
+
 async def _empty(_: AsyncSession) -> dict[str, Any]:
     return {}
 
@@ -111,6 +117,12 @@ manifest = ModuleManifest(
             _sync,
             interval_seconds=600,
             timeout_seconds=1800,
+        ),
+        ScheduledTask(
+            "workload.quote_files_cleanup",
+            "Xoá file báo giá đã đọc nhưng không dùng (quá 7 ngày)",
+            _cleanup_quote_files,
+            interval_seconds=86_400,
         ),
     ],
     migrations_branch="workload",

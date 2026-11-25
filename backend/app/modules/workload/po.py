@@ -50,7 +50,7 @@ def vnd(amount: int | None) -> str:
     return "—" if amount is None else f"{amount:,}".replace(",", ".") + " đ"
 
 
-async def _lock(session: AsyncSession) -> None:
+async def lock_pos(session: AsyncSession) -> None:
     await session.execute(text("SELECT pg_advisory_xact_lock(hashtext('workload.po'))"))
 
 
@@ -58,7 +58,7 @@ async def repack(session: AsyncSession, settings: WorkloadSettings) -> None:
     """Rebuild the open POs from the approved proposals not yet in a closed PO (by approval time).
 
     Called after approvals, rejections, price changes and limit changes; closed POs never change."""
-    await _lock(session)
+    await lock_pos(session)
     open_pos = list(
         (
             await session.scalars(

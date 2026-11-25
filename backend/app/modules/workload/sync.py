@@ -30,6 +30,7 @@ SYNC_TASK_KEY = "workload.sync"
 OVERLAP_MS = 3_600_000
 # shortcut: one sync reads at most this many requests; raise it if a backfill ever hits the cap.
 MAX_ROWS = 50_000
+PAGE = 500  # tickets loaded per query when merging a sync
 
 
 async def sync_technicians(
@@ -158,14 +159,19 @@ async def sync_tickets(session: AsyncSession, client: SdpClient, settings: Workl
     if len(rows) >= MAX_ROWS:
         log.warning("workload_sync_truncated", rows=len(rows))
     now = datetime.now(UTC)
-    for raw in rows:
-        data = normalize_ticket(raw, settings)
-        ticket = await session.get(Ticket, data["id"]) or Ticket(id=data["id"])
-        for k, v in data.items():
-            setattr(ticket, k, v)
-        ticket.synced_at = now
-        session.add(ticket)
-    await session.flush()
+    for start in range(0, len(rows), PAGE):
+        page = [normalize_ticket(raw, settings) for raw in rows[start : start + PAGE]]
+        ids = [d["id"] for d in page]
+        known = {t.id: t for t in (await session.scalars(select(Ticket).where(Ticket.id.in_(ids)))).all()}
+        for data in page:
+            ticket = known.get(data["id"])
+            if ticket is None:  # also catches an id repeated within the page
+                ticket = known[data["id"]] = Ticket(id=data["id"])
+            for k, v in data.items():
+                setattr(ticket, k, v)
+            ticket.synced_at = now
+            session.add(ticket)
+        await session.flush()
     return len(rows)
 
 

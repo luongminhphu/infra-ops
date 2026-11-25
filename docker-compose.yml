@@ -39,6 +39,9 @@ services:
     build: ./backend
     restart: unless-stopped
     command: ["python", "-m", "app.worker"]
+    volumes:
+      - files:/data/files          # workflow steps read/write the same files as the api
+      # - ./fonts:/usr/share/fonts/custom:ro   # optional: company fonts (e.g. Aptos)
     healthcheck:
       disable: true   # the image healthcheck probes the API port; the worker serves no HTTP
     env_file: .env

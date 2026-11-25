@@ -84,7 +84,7 @@ export function PoTab() {
   const [closing, setClosing] = useState<PurchaseOrder | null>(null);
   const q = useQuery({ queryKey: ["workload", "pos"], queryFn: () => api<PosResponse>("/api/workload/pos") });
   const close = useMutation({
-    mutationFn: (po: PurchaseOrder) => api<PurchaseOrder>(`/api/workload/pos/${po.id}/close`, { method: "POST", json: { version_total: po.total } }),
+    mutationFn: (po: PurchaseOrder) => api<PurchaseOrder>(`/api/workload/pos/${po.id}/close`, { method: "POST", json: { version_total: po.total, item_ids: po.items.map((p) => p.id) } }),
     onSuccess: (po) => {
       setClosing(null);
       const msg = `Đã chốt ${po.number} – ${formatVnd(po.total)}. Đang tải email nháp, mở file .eml bằng Outlook để kiểm tra và gửi.`;

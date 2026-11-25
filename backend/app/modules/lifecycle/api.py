@@ -138,7 +138,14 @@ async def reconciliation_detail(
     if row is None:
         raise NotFound(f"Không có dữ liệu cho Mã NV {employee_id} trong lần đồng bộ gần nhất.")
     data = row.data
-    snaps = (await session.scalars(select(Snapshot).where(Snapshot.run_id == row.run_id))).all()
+    wanted = [*data.get("sdp_user_ids", []), *data.get("asset_ids", [])]
+    if data.get("biostar_user_id"):
+        wanted.append(data["biostar_user_id"])
+    snaps = (
+        await session.scalars(
+            select(Snapshot).where(Snapshot.run_id == row.run_id, Snapshot.external_id.in_(wanted))
+        )
+    ).all()
     sdp_users = [
         s.data for s in snaps if s.system == "sdp_user" and s.external_id in data.get("sdp_user_ids", [])
     ]
