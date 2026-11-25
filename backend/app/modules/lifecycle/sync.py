@@ -234,6 +234,7 @@ async def _sync(
         if s.profile_id != main.get("profile_id")  # an extra source chosen as main is read once, as main
     ]
     read_users: list[dict[str, Any]] = []
+    retired_groups = {g.strip().lower() for g in settings.biostar_retired_groups if g.strip()}
     for err_key, which, prefix, prefix_to in reads:
         try:
             profile, ctx = await open_connection(session, "biostar", Purpose.READ, **which)
@@ -241,6 +242,8 @@ async def _sync(
                 for u in await client.list_users():
                     n = normalize.biostar_user(u)
                     n["employee_id"] = normalize.map_employee_id(n["user_id"], prefix, prefix_to)
+                    if (n.get("group") or "").strip().lower() in retired_groups:
+                        n["retired"], n["active"] = True, False  # moved to the "left" group = offboarded
                     n["source"] = profile.name
                     # Snapshot key: the raw user id is only unique within one BioStar system.
                     n["ref"] = (

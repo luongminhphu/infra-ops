@@ -246,3 +246,17 @@ def test_biostar_employee_id_prefix_and_merge() -> None:
     assert merge_biostar_users([new, old]) == [old]  # an active user anywhere wins (offboard checks)
     both_off = {**old, "active": False}
     assert merge_biostar_users([new, both_off]) == [new]  # otherwise the main system (read first)
+
+
+def test_retired_biostar_group_is_not_reconciled() -> None:
+    requests, users, assets, bs = _data()
+    # 002100 offboarded and moved to the "left" group (still enabled): no offboard_biostar_active issue.
+    moved = [
+        {**b, "retired": True, "active": False} if b["user_id"] in ("002100", "009999") else b for b in bs
+    ]
+    result = reconcile(requests, users, assets, moved, S, date(2026, 11, 16))
+    rules, row = _issues(result, "002100")
+    assert "offboard_biostar_active" not in rules
+    assert row.cells["biostar"]["label"] == "Nhóm nghỉ việc"
+    # A user only on BioStar in that group is not a row ("not in SDP" check skipped).
+    assert "009999" not in {r.employee_id for r in result.rows}

@@ -372,6 +372,10 @@ Lưu ý:
    *Tiền tố trên BioStar* = `1`, *Thay bằng* = `0`. Mỗi lần đồng bộ đọc cả hai và gộp theo Mã NV; người có user ở cả hai
    nơi thì user đang hoạt động được ưu tiên (để phát hiện người đã nghỉ còn quyền ra vào). Một hệ thống đọc lỗi thì cả
    cột BioStar được bỏ qua lần đó, không kết luận sai.
+6. **Nhóm nghỉ việc trên BioStar**: nếu quy trình là chuyển user nghỉ việc vào một nhóm (vd. `0.NGHIVIEC`) thay vì xoá,
+   nhập tên nhóm ở **Cấu hình module → Kết nối sử dụng**. User trong nhóm đó coi như đã nghỉ việc: không đối soát với
+   SDP (không báo “Mã NV trên BioStar không có trong SDP”), không báo “còn hoạt động” khi offboard; ô BioStar ghi
+   *Nhóm nghỉ việc*.
 
 ### Biên bản Bàn giao / Thu hồi
 - **Vòng đời nhân sự → Biên bản → Lập biên bản…**: nhập Mã NV để điền sẵn từ request RTR và thiết bị đang gán

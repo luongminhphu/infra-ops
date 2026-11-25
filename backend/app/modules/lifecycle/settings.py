@@ -86,6 +86,9 @@ class LifecycleSettings(BaseModel):
     biostar_profile_id: uuid.UUID | None = None
     # More BioStar systems read for reconciliation (each with its own employee-ID prefix rule).
     biostar_sources: list[BioStarSource] = Field(default_factory=list, max_length=5)
+    # BioStar user groups that mean "left the company" (users are moved there instead of deleted): treated as
+    # offboarded and not reconciled against SDP.
+    biostar_retired_groups: list[str] = Field(default_factory=list, max_length=20)
 
     # RTR requests in ServiceDesk Plus
     rtr_requester_name: str = Field("RTR", min_length=1, max_length=200)

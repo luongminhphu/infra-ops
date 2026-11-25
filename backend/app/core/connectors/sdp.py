@@ -115,8 +115,12 @@ class SdpClient:
         page_size: int = 100,
         max_rows: int = 20000,
     ) -> list[dict[str, Any]]:
-        """Read every page of a v3 list endpoint (``list_info.has_more_rows``)."""
+        """Read every page of a v3 list endpoint (``list_info.has_more_rows``).
+
+        Rows are de-duplicated by ``id``: offset paging over a list whose order shifts between pages (records
+        updated meanwhile, no stable sort) can return the same record twice."""
         rows: list[dict[str, Any]] = []
+        seen: set[str] = set()
         start = 1
         while len(rows) < max_rows:
             info: dict[str, Any] = {"row_count": page_size, "start_index": start}
@@ -129,7 +133,12 @@ class SdpClient:
                 info["fields_required"] = fields_required
             data = await self.get(path, info)
             page = data.get(collection) or []
-            rows.extend(page)
+            for r in page:
+                rid = str(r.get("id")) if isinstance(r, dict) and r.get("id") is not None else None
+                if rid is None or rid not in seen:
+                    rows.append(r)
+                    if rid is not None:
+                        seen.add(rid)
             if not (data.get("list_info") or {}).get("has_more_rows") or not page:
                 break
             start += len(page)
