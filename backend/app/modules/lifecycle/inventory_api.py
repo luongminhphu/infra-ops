@@ -21,6 +21,7 @@ from app.core.settings.service import load_settings
 from app.core.workflow.models import Job
 from app.modules.lifecycle.allocation import Line, Need, allocate, matches
 from app.modules.lifecycle.models import LifecycleRequest, Snapshot
+from app.modules.lifecycle.parsing import fold
 from app.modules.lifecycle.queries import latest_run
 from app.modules.lifecycle.settings import FIELD_TITLES, MODULE_ID, SETTINGS_KEY, LifecycleSettings
 
@@ -57,6 +58,10 @@ async def allocation(
     _: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
     return await build_plan(session)
+
+
+# Friendlier card titles for common SDP product types outside the allocation standard.
+OTHER_LABELS = {"workstation": "PC", "desktop": "PC"}
 
 
 async def build_plan(session: AsyncSession) -> dict[str, Any]:
@@ -136,6 +141,30 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
                     ),
                     key=lambda x: ((x["product"] or ""), (x["name"] or "")),
                 ),
+                "standard": True,
+            }
+        )
+    # In Store devices outside the allocation standard (PC, UPS, …): counted per SDP product type.
+    covered = {fold(t) for i in settings.allocation_standard for t in i.product_types}
+    others: dict[str, list[dict[str, Any]]] = {}
+    for a in stock:
+        ptype = a.get("product_type") or "Khác"
+        if fold(ptype) not in covered:
+            others.setdefault(ptype, []).append(a)
+    for ptype, found in sorted(others.items(), key=lambda kv: kv[0].lower()):
+        summary.append(
+            {
+                "label": OTHER_LABELS.get(fold(ptype), ptype),
+                "bands": [],
+                "product_types": [ptype],
+                "in_store": len(found),
+                "planned": 0,
+                "to_buy": 0,
+                "items": sorted(
+                    ({**_asset(a), "serial": a.get("serial"), "reserved_for": None} for a in found),
+                    key=lambda x: ((x["product"] or ""), (x["name"] or "")),
+                ),
+                "standard": False,
             }
         )
     out = []

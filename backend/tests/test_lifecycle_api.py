@@ -118,7 +118,7 @@ async def test_end_to_end_sync_and_reconciliation(admin, configured, respx_mock)
     summary = await _sync()
     assert summary["status"] == "success", summary
     assert summary["requests_fetched"] == 3 and summary["sdp_users"] == 3 and summary["biostar_users"] == 3
-    assert summary["assets"] == 2  # printer filtered out by product types
+    assert summary["assets"] == 3  # printer filtered out by product types
     assert summary["jobs_created"] == 2  # onboard 003551 + offboard 002100 (1003 has parse errors)
     jobs = (await admin.get("/api/core/jobs", params={"status": "draft"})).json()["items"]
     assert {(j["workflow_key"], j["subject_key"]) for j in jobs} >= {
@@ -254,6 +254,10 @@ async def test_allocation_plan_and_band_override(admin, configured, respx_mock) 
     assert lines["Laptop"]["buy"] == 1 and req["status"] == "buy"
     stock = {s["label"]: s for s in data["stock"]}
     assert stock["Màn hình"]["in_store"] == 1 and stock["Laptop"]["to_buy"] >= 1
+    # Devices outside the standard still get a stock card (Workstation shown as "PC").
+    assert (
+        stock["PC"]["in_store"] == 1 and not stock["PC"]["standard"] and stock["PC"]["items"][0]["id"] == "a4"
+    )
     # Stock detail: the In Store monitor, set aside for the onboard that reuses it.
     [monitor] = stock["Màn hình"]["items"]
     assert monitor["id"] == "a2" and monitor["reserved_for"] == {

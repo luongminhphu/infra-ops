@@ -106,6 +106,13 @@ ASSETS = [
         "state": {"name": "In Store"},
     },
     {
+        "id": "a4",
+        "name": "HSC-PC-0001",
+        "asset_tag": "PC0001",
+        "product": {"name": "Dell OptiPlex 7010", "product_type": {"name": "Workstation"}},
+        "state": {"name": "In Store"},
+    },
+    {
         "id": "a3",
         "name": "Printer-01",
         "asset_tag": "PR01",
