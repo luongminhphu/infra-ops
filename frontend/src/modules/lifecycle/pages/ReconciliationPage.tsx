@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ChevronDown, Download, FilterX, GitCompareArrows, RefreshCw, TriangleAlert } from "lucide-react";
+import { CheckCheck, ChevronDown, Download, FilterX, GitCompareArrows, Play, RefreshCw, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { Button, buttonVariants } from "@/core/ui/button";
 import { DataTable, type Density } from "@/core/ui/data-table";
 import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
-import { Field, Input, Select } from "@/core/ui/field";
+import { Dialog } from "@/core/ui/dialog";
+import { Field, Input, Select, Textarea } from "@/core/ui/field";
 import { HelpTip } from "@/core/ui/help-tip";
 import { Menu, MenuItem } from "@/core/ui/menu";
 import { StatusBadge } from "@/core/ui/status";
@@ -69,6 +70,48 @@ function SyncBanner({ data }: { data: ReconResponse }) {
   );
 }
 
+/** Acknowledge the open mismatches of several employees at once (one rule when the list is filtered on it). */
+function BulkAckDialog({ rows, rule, ruleTitle, onClose, onDone }: { rows: ReconRow[]; rule: string; ruleTitle?: string; onClose: () => void; onDone: () => void }) {
+  const qc = useQueryClient();
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const issues = rows.flatMap((r) => r.issues.filter((i) => !i.acked && (!rule || i.rule === rule)).map((i) => ({ emp: r.employee_id, rule: i.rule })));
+  const run = async () => {
+    setBusy(true);
+    let failed = 0;
+    for (const i of issues) {
+      try {
+        await api(`/api/lifecycle/reconciliation/${encodeURIComponent(i.emp)}/ack`, { method: "POST", json: { rule: i.rule, note } });
+      } catch {
+        failed += 1;
+      }
+    }
+    await qc.invalidateQueries({ queryKey: ["lifecycle", "recon"] });
+    setBusy(false);
+    if (failed) toast.error(`Đã đánh dấu ${issues.length - failed}/${issues.length} lệch; ${failed} lệch không lưu được – thử lại.`);
+    else toast.success(`Đã đánh dấu ${issues.length} lệch là đã biết.`);
+    onDone();
+  };
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title="Đánh dấu đã biết"
+      description={`${issues.length} lệch của ${rows.length} nhân viên${rule ? ` – chỉ loại “${ruleTitle ?? rule}”` : ""}. Lệch đã biết không tính vào số lệch cho tới khi bấm “Mở lại”.`}
+      footer={
+        <>
+          <Button onClick={onClose}>Huỷ</Button>
+          <Button variant="primary" loading={busy} disabled={!issues.length} onClick={run}>Đánh dấu {issues.length} lệch</Button>
+        </>
+      }
+    >
+      <Field label="Ghi chú (không bắt buộc)" hint="Ghi cho tất cả lệch được chọn, ví dụ: đã báo bảo vệ thu thẻ.">
+        <Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} data-autofocus />
+      </Field>
+    </Dialog>
+  );
+}
+
 export function ReconciliationPage() {
   const { can } = useAuth();
   const connections = useQuery({
@@ -79,6 +122,11 @@ export function ReconciliationPage() {
   const noConnections = connections.data?.length === 0;
   const [params, setParams] = useSearchParams();
   const [selected, setSelectedState] = useState<string | null>(params.get("emp"));
+  const [picked, setPicked] = useState<string[]>([]);
+  const [ackOpen, setAckOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const qc = useQueryClient();
+  const canBulk = can("lifecycle.reconciliation.sync");
   const wide = useWide();
   // Remember which row opened the panel so closing it hands focus back there.
   const opener = useRef<HTMLElement | null>(null);
@@ -119,6 +167,8 @@ export function ReconciliationPage() {
   }, [search]);
 
   const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v));
+  // A new filter is a new list: drop the selection rather than act on rows no longer shown.
+  useEffect(() => setPicked([]), [qs.toString()]);
   const q = useQuery({
     queryKey: ["lifecycle", "recon", filters],
     queryFn: () => api<ReconResponse>(`/api/lifecycle/reconciliation?${qs}&limit=1000`),
@@ -132,10 +182,42 @@ export function ReconciliationPage() {
   }, [lastFinished]);
 
   const ruleTitle = useMemo(() => Object.fromEntries((rules.data ?? []).map((r) => [r.code, r.title])), [rules.data]);
+  const pickable = (q.data?.items ?? []).filter((r) => r.issue_count > 0).map((r) => r.employee_id);
+  const allPicked = pickable.length > 0 && pickable.every((id) => picked.includes(id));
 
   const columns = useMemo<ColumnDef<ReconRow, unknown>[]>(() => {
     const flagged = (row: ReconRow, system: string) => row.issues.some((i) => !i.acked && i.system === system);
+    const select: ColumnDef<ReconRow, unknown>[] = canBulk
+      ? [
+          {
+            id: "select",
+            enableSorting: false,
+            header: () => (
+              <input
+                type="checkbox"
+                className="size-4 accent-[var(--primary)]"
+                aria-label="Chọn tất cả nhân viên đang lệch"
+                checked={allPicked}
+                disabled={!pickable.length}
+                onChange={() => setPicked(allPicked ? [] : pickable)}
+              />
+            ),
+            cell: (c) =>
+              c.row.original.issue_count > 0 ? (
+                <input
+                  type="checkbox"
+                  className="size-4 accent-[var(--primary)]"
+                  aria-label={`Chọn ${c.row.original.employee_id}`}
+                  checked={picked.includes(c.row.original.employee_id)}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={() => setPicked((p) => (p.includes(c.row.original.employee_id) ? p.filter((x) => x !== c.row.original.employee_id) : [...p, c.row.original.employee_id]))}
+                />
+              ) : null,
+          },
+        ]
+      : [];
     return [
+      ...select,
       {
         accessorKey: "employee_id",
         header: "Mã NV",
@@ -179,7 +261,8 @@ export function ReconciliationPage() {
         },
       },
     ];
-  }, [ruleTitle]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ruleTitle, canBulk, picked, allPicked, pickable.join()]);
   // With the side panel open, keep the system columns in view: Phòng ban and Biến động are in the panel.
   const shownColumns = useMemo(
     () => (selected && wide ? columns.filter((c) => !["department", "effective_date"].includes((c as { accessorKey?: string }).accessorKey ?? "")) : columns),
@@ -201,7 +284,37 @@ export function ReconciliationPage() {
     }
   };
 
+  const createJobs = async () => {
+    const rows = (q.data?.items ?? []).filter((r) => picked.includes(r.employee_id));
+    const reqs = rows.flatMap((r) => (r.kind === "onboard" || r.kind === "offboard" ? r.request_ids : []));
+    setCreating(true);
+    let ok = 0;
+    for (const id of reqs) {
+      try {
+        await api("/api/lifecycle/jobs", { method: "POST", json: { request_id: id } });
+        ok += 1;
+      } catch {
+        // request of another kind or with parse errors: reported below
+      }
+    }
+    setCreating(false);
+    await qc.invalidateQueries({ queryKey: ["jobs"] });
+    const skipped = rows.length - new Set(rows.filter((r) => r.kind === "onboard" || r.kind === "offboard").map((r) => r.employee_id)).size;
+    toast.success(
+      `Đã tạo hoặc mở ${ok} Job nháp${skipped ? `; bỏ qua ${skipped} nhân viên không có request Nhân viên mới / Nghỉ việc` : ""}${reqs.length - ok ? `; ${reqs.length - ok} request chưa tạo được (thiếu thông tin)` : ""}. Xem ở trang Job.`,
+    );
+    setPicked([]);
+  };
+
   const data = q.data;
+  const at = data ? data.items.findIndex((r) => r.employee_id === selected) : -1;
+  const step =
+    at < 0 || !data
+      ? undefined
+      : {
+          prev: at > 0 ? () => setSelectedState(data.items[at - 1]!.employee_id) : undefined,
+          next: at < data.items.length - 1 ? () => setSelectedState(data.items[at + 1]!.employee_id) : undefined,
+        };
   const sev = data?.facets.severity ?? {};
   const syncing = syncNow.isPending || syncStatus.data?.task?.running;
 
@@ -296,7 +409,8 @@ export function ReconciliationPage() {
             ))}
             <HelpTip title="Mức độ và “Đánh dấu đã biết”">
               <span className="block">Cao: rủi ro an ninh hoặc tài sản (vd. đã nghỉ việc nhưng BioStar còn hoạt động, còn tài sản đang gán). Trung bình: thiếu hoặc sai dữ liệu giữa các hệ thống. Thấp: cần xem lại (tên lệch, request chưa đủ thông tin).</span>
-              <span className="block">Mở một dòng để xem lệch và xử lý qua Job onboard/offboard. “Đánh dấu đã biết” bỏ lệch đó khỏi số đếm, giữ qua các lần đồng bộ cho tới khi bấm “Mở lại”.</span>
+              <span className="block">Mở một dòng để xem lệch và xử lý qua Job onboard/offboard; trong panel, phím j / k sang nhân viên sau / trước. “Đánh dấu đã biết” bỏ lệch đó khỏi số đếm, giữ qua các lần đồng bộ cho tới khi bấm “Mở lại”.</span>
+              <span className="block">Chọn nhiều dòng bằng ô đánh dấu để đánh dấu đã biết hoặc tạo Job nháp cùng lúc; đang lọc theo một loại lệch thì chỉ đánh dấu loại đó.</span>
             </HelpTip>
           </div>
           <form role="search" aria-label="Lọc đối soát" className="mb-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1.5fr_1.5fr_auto]" onSubmit={(e) => e.preventDefault()}>
@@ -330,6 +444,34 @@ export function ReconciliationPage() {
               </Button>
             </div>
           </form>
+          {picked.length > 0 && (
+            <div role="region" aria-label="Thao tác với nhân viên đã chọn" className="mb-3 flex flex-wrap items-center gap-3 rounded-md border border-primary bg-primary-soft px-3 py-2 text-sm">
+              <span>Đã chọn <strong className="tabular">{picked.length}</strong> nhân viên</span>
+              <Button size="sm" variant="primary" onClick={() => setAckOpen(true)}>
+                <CheckCheck className="size-4" aria-hidden="true" />
+                Đánh dấu đã biết…
+              </Button>
+              {can("lifecycle.job.execute") && (
+                <Button size="sm" onClick={createJobs} loading={creating}>
+                  <Play className="size-4" aria-hidden="true" />
+                  Tạo Job onboard / offboard
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => setPicked([])}>Bỏ chọn</Button>
+            </div>
+          )}
+          {ackOpen && (
+            <BulkAckDialog
+              rows={data.items.filter((r) => picked.includes(r.employee_id))}
+              rule={filters.rule}
+              ruleTitle={ruleTitle[filters.rule]}
+              onClose={() => setAckOpen(false)}
+              onDone={() => {
+                setAckOpen(false);
+                setPicked([]);
+              }}
+            />
+          )}
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm text-muted" role="status">{data.total} nhân viên phù hợp</p>
             <label className="flex cursor-pointer items-center gap-2 text-sm whitespace-nowrap">
@@ -357,10 +499,10 @@ export function ReconciliationPage() {
                 </EmptyState>
               }
             />
-            {selected && wide && <EmployeePanel employeeId={selected} onClose={() => setSelected(null)} />}
+            {selected && wide && <EmployeePanel employeeId={selected} onClose={() => setSelected(null)} onStep={step} />}
             {selected && !wide && (
               <PanelSheet onClose={() => setSelected(null)}>
-                <EmployeePanel employeeId={selected} onClose={() => setSelected(null)} className="min-h-full bg-surface" />
+                <EmployeePanel employeeId={selected} onClose={() => setSelected(null)} onStep={step} className="min-h-full bg-surface" />
               </PanelSheet>
             )}
           </div>

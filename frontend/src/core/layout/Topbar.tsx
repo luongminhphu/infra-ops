@@ -50,6 +50,11 @@ export function Topbar() {
     }
     // Full page load: no cached user or page data can survive the sign-out and bounce back to "/".
     qc.clear();
+    try {
+      sessionStorage.clear(); // next sign-in lands on the role's home again
+    } catch {
+      // storage blocked
+    }
     window.location.replace("/login");
   };
 
