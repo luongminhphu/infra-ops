@@ -1105,3 +1105,13 @@ Quyết định:
   trước khi khui hàng mới.
 - Sửa kèm: nhóm nhân viên theo ngày bắt đầu (quá hạn nổi lên đầu), chip "Lấy từ kho" dẫn thẳng tới tài sản, tiến độ Job
   đổi state hiện ngay trên dòng tài sản, xác nhận trước khi chuyển Chờ thanh lý, danh sách dạng thẻ trên điện thoại.
+
+## 36. Kho thiết bị: chuẩn hoá tên trạng thái (25/11/2026)
+
+- Vấn đề (critique 26/40): "Còn trống / Đang giữ / Cần mua" khó hiểu – trộn trạng thái SDP, nguồn và phân bổ; "Đang giữ"
+  gồm cả gợi ý chưa khoá; "Cần mua 0 … không cần" trong khi nhân viên chưa có band không được tính.
+- Quyết định (chủ sản phẩm): ô theo loại dùng 3 nhãn **Sẵn sàng cấp / Đã phân bổ / Thiếu** kèm "N trong kho"
+  (Trong kho = Sẵn sàng cấp + Đã phân bổ, đúng tuyệt đối: chỉ đếm tài sản còn trong kho); Đã phân bổ tách
+  **Đã chọn cho X** (trên Job nháp) và **Dự kiến cho X** (gợi ý). "Thiếu" chỉ dùng cho số lượng; thiếu dữ liệu là
+  "Chưa có …". Bộ lọc tách hai nhóm: Phân bổ (cộng lại bằng Tất cả) và Nguồn (Mới / Thu hồi). "Trả về kho" → "Bỏ chờ
+  thanh lý". Trang ghi rõ số nhân viên chưa có band (chưa tính vào Thiếu). Link cũ `status=returned|missing` vẫn chạy.

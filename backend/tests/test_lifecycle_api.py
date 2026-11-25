@@ -263,7 +263,11 @@ async def test_allocation_plan_and_band_override(admin, configured, respx_mock) 
     assert monitor["id"] == "a2" and monitor["reserved_for"] == {
         "name": req["full_name"],
         "display_id": req["display_id"],
+        "chosen": False,  # suggested, not on the job yet
     }
+    # Planned counts only assets still in stock, so in_store = free + planned exactly.
+    assert stock["Màn hình"]["planned"] == 1 and stock["Màn hình"]["chosen"] == 0
+    assert data["no_band"] == sum(r["status"] == "no_band" for r in data["requests"])
     assert "serial" in monitor and stock["Laptop"]["items"] == []
 
     # The preparation wizard gets everything pre-filled: RTR details, SDP user by employee ID, devices.

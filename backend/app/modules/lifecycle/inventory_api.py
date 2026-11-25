@@ -115,14 +115,17 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
         needs.append(Need(r.id, r.effective_date, band_of(r)[0], picked))
     plan = allocate(needs, settings.allocation_standard, stock)
 
-    # Which upcoming onboard each stock asset is set aside for (picked on its job or suggested for reuse).
+    # Which upcoming onboard each stock asset is set aside for: chosen on its job draft, or only suggested.
     reserved: dict[str, dict[str, Any]] = {}
     by_id = {r.id: r for r in reqs}
     for rid, lines in plan.items():
         for ln in lines:
-            for a in [*ln.picked, *ln.reuse]:
+            for a, chosen in [*((a, True) for a in ln.picked), *((a, False) for a in ln.reuse)]:
                 r = by_id[rid]
-                reserved.setdefault(a["id"], {"name": r.full_name, "display_id": r.display_id or r.id})
+                reserved.setdefault(
+                    a["id"], {"name": r.full_name, "display_id": r.display_id or r.id, "chosen": chosen}
+                )
+    in_stock = {a["id"] for a in stock}
     summary = []
     for item in settings.allocation_standard:
         lines = [ln for lines in plan.values() for ln in lines if ln.label == item.label]
@@ -132,7 +135,9 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
                 "bands": item.bands,
                 "product_types": item.product_types,
                 "in_store": sum(matches(a, item) for a in stock),
-                "planned": sum(len(ln.picked) + len(ln.reuse) for ln in lines),
+                # Only assets still in stock: in_store = free + planned holds exactly.
+                "planned": sum(a["id"] in in_stock for ln in lines for a in [*ln.picked, *ln.reuse]),
+                "chosen": sum(a["id"] in in_stock for ln in lines for a in ln.picked),
                 "to_buy": sum(ln.buy for ln in lines),
                 # Stock detail: every matching In Store asset and who it is set aside for.
                 "items": sorted(
@@ -161,6 +166,7 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
                 "product_types": [ptype],
                 "in_store": len(found),
                 "planned": 0,
+                "chosen": 0,
                 "to_buy": 0,
                 "items": sorted(
                     ({**_asset(a), "serial": a.get("serial"), "reserved_for": None} for a in found),
@@ -193,7 +199,15 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
             }
         )
     bands = sorted({b for i in settings.allocation_standard for b in i.bands})
-    return {"as_of": run.finished_at if run else None, "stock": summary, "requests": out, "bands": bands}
+    # Hires without a band have no computable need: the shortage excludes them, so say how many.
+    no_band = sum(r["status"] == "no_band" for r in out)
+    return {
+        "as_of": run.finished_at if run else None,
+        "stock": summary,
+        "requests": out,
+        "bands": bands,
+        "no_band": no_band,
+    }
 
 
 class BandIn(BaseModel):
