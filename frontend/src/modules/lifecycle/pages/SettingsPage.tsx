@@ -46,16 +46,8 @@ interface Values {
 
 interface BioStarSource {
   profile_id: string;
-  id_prefix: string;
-  id_prefix_to: string;
-  id_keep_last: number;
 }
 
-/** What a BioStar user ID becomes after the prefix rule (mirrors backend normalize.map_employee_id). */
-const mapId = (id: string, src: BioStarSource) => {
-  const mapped = src.id_prefix && id.startsWith(src.id_prefix) ? src.id_prefix_to + id.slice(src.id_prefix.length) : id;
-  return src.id_keep_last && mapped.length > src.id_keep_last ? mapped.slice(-src.id_keep_last) : mapped;
-};
 
 interface StandardItem {
   label: string;
@@ -174,41 +166,24 @@ export function SettingsPage() {
             BioStar đọc thêm (chỉ để đối soát)
             <HelpTip title="BioStar đọc thêm">
               <span className="block">Hệ thống BioStar khác (vd. máy cũ ở văn phòng) được đọc mỗi lần đồng bộ và gộp với hệ thống chính theo Mã NV. Job không ghi vào các hệ thống này.</span>
-              <span className="block">Nếu mã user trên hệ thống đó khác tiền tố so với Mã NV thật (vd. 100002 thay cho 000002), nhập Tiền tố = 1, Thay bằng = 0.</span>
+              <span className="block">Mã NV được so theo 5 số cuối trên mọi BioStar và SDP (vd. user 100008 → Mã NV 000008); Mã NV và họ tên lấy theo SDP.</span>
               <span className="block">Một người có user ở cả hai hệ thống: user đang hoạt động được ưu tiên để không bỏ sót người đã nghỉ còn quyền ra vào.</span>
             </HelpTip>
           </h3>
-          <p className="mb-3 text-sm text-muted">Mã NV và họ tên theo SDP: user có mã SDP không biết được tự khớp vào Mã NV SDP cùng số cuối và cùng họ tên. Quy tắc bên dưới chỉ cần khi tự khớp không đủ.</p>
+          <p className="mb-3 text-sm text-muted">Mã NV so theo 5 số cuối với SDP (vd. 100008 → 000008); Mã NV và họ tên lấy theo SDP.</p>
           <ul className="space-y-3">
             {v.biostar_sources.map((src, k) => {
               const upd = (patch: Partial<BioStarSource>) => set("biostar_sources", v.biostar_sources.map((x, j) => (j === k ? { ...x, ...patch } : x)));
               return (
-                <li key={k} className="grid items-end gap-3 rounded-sm border border-line p-3 sm:grid-cols-[1fr_8rem_8rem_8rem_auto]">
+                <li key={k} className="grid items-end gap-3 rounded-sm border border-line p-3 sm:grid-cols-[1fr_auto]">
                   <Field label="Kết nối BioStar">
                     <Select value={src.profile_id} onChange={(e) => upd({ profile_id: e.target.value })}>
                       {profileOptions("biostar").map((p) => <option key={p.id} value={p.id}>{p.name}{p.enabled ? "" : " (đang tắt)"}</option>)}
                     </Select>
                   </Field>
-                  <Field label="Tiền tố trên BioStar">
-                    <Input value={src.id_prefix} maxLength={8} onChange={(e) => upd({ id_prefix: e.target.value.trim() })} placeholder="1" />
-                  </Field>
-                  <Field label="Thay bằng">
-                    <Input value={src.id_prefix_to} maxLength={8} onChange={(e) => upd({ id_prefix_to: e.target.value.trim() })} placeholder="0" />
-                  </Field>
-                  <Field label="Giữ số cuối (0 = tất cả)">
-                    <Input type="number" min={0} max={20} value={src.id_keep_last ?? 0} onChange={(e) => upd({ id_keep_last: Math.min(20, Math.max(0, Number(e.target.value) || 0)) })} />
-                  </Field>
                   <Button size="icon" variant="ghost" aria-label="Bỏ hệ thống BioStar này" onClick={() => set("biostar_sources", v.biostar_sources.filter((_, j) => j !== k))}>
                     <Trash2 className="size-4" aria-hidden="true" />
                   </Button>
-                  {(src.id_prefix || src.id_keep_last > 0) && (
-                    <p className="text-sm text-muted sm:col-span-5">
-                      Ví dụ:{" "}
-                      {[`${src.id_prefix}00002`, `${src.id_prefix}002352`].map((ex, j) => (
-                        <span key={ex}>{j > 0 && " · "}user <span className="font-mono">{ex}</span> → Mã NV <span className="font-mono">{mapId(ex, src)}</span></span>
-                      ))}
-                    </p>
-                  )}
                 </li>
               );
             })}
@@ -218,7 +193,7 @@ export function SettingsPage() {
             disabled={profileOptions("biostar").length === 0 || v.biostar_sources.length >= 5}
             onClick={() => {
               const other = profileOptions("biostar").find((p) => p.id !== v.biostar_profile_id) ?? profileOptions("biostar")[0]!;
-              set("biostar_sources", [...v.biostar_sources, { profile_id: other.id, id_prefix: "", id_prefix_to: "", id_keep_last: 0 }]);
+              set("biostar_sources", [...v.biostar_sources, { profile_id: other.id }]);
             }}
           >
             <Plus className="size-4" aria-hidden="true" />Thêm hệ thống BioStar

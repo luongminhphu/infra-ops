@@ -69,16 +69,9 @@ DEFAULT_STANDARD = [
 
 
 class BioStarSource(BaseModel):
-    """An extra BioStar system read for reconciliation only (e.g. an old office server).
-
-    Its user IDs may use another prefix for the employee ID: user ``100002`` with prefix ``1`` → ``0`` is employee
-    ``000002``. Jobs still write only to the main BioStar connection.
-    """
+    """An extra BioStar system read for reconciliation only. Jobs still write only to the main BioStar."""
 
     profile_id: uuid.UUID
-    id_prefix: str = Field("", max_length=8)
-    id_prefix_to: str = Field("", max_length=8)
-    id_keep_last: int = Field(0, ge=0, le=20)  # 0 = whole ID; 6 keeps "002352" of "1002352"
 
 
 class LifecycleSettings(BaseModel):

@@ -354,13 +354,13 @@ BS_OFFICE = "https://bs-office.test.local"
 
 
 @respx.mock(assert_all_mocked=True, assert_all_called=False)
-async def test_second_biostar_with_prefix_rule(admin, configured, respx_mock) -> None:  # type: ignore[no-untyped-def]
-    # Old office BioStar: employee 003551 is user "103551" (prefix 1 instead of 0).
+async def test_second_biostar_matched_on_last_six_digits(admin, configured, respx_mock) -> None:  # type: ignore[no-untyped-def]
+    # Office BioStar: employee 003551 is user "1003551" (7 digits; SDP matches on the last 6).
     mock_systems(respx_mock)
     respx_mock.post(f"{BS_OFFICE}/api/login").mock(
         return_value=httpx.Response(200, headers={"bs-session-id": "o"}, json={"User": {}})
     )
-    office = [{"user_id": "103551", "name": "Office Person", "disabled": "false"}]
+    office = [{"user_id": "1003551", "name": "Office Person", "disabled": "false"}]
     respx_mock.get(f"{BS_OFFICE}/api/users").mock(
         return_value=httpx.Response(200, json={"UserCollection": {"total": "1", "rows": office}})
     )
@@ -381,37 +381,31 @@ async def test_second_biostar_with_prefix_rule(admin, configured, respx_mock) ->
         json={"auth_type": "username_password", "public": {"username": "r"}, "secrets": {"password": "p"}},
     )
     values = (await admin.get("/api/lifecycle/settings")).json()["values"]
-    values["biostar_sources"] = [{"profile_id": prof["id"], "id_prefix": "1", "id_prefix_to": "0"}]
+    values["biostar_sources"] = [{"profile_id": prof["id"]}]
     values["biostar_retired_groups"] = ["kế toán"]  # 002100 is in group "Kế Toán" (case-insensitive)
     assert (await admin.put("/api/lifecycle/settings", json=values)).status_code == 200
 
     summary = await _sync()
     assert summary["status"] == "success", summary
     rows = {r["employee_id"]: r for r in (await admin.get("/api/lifecycle/reconciliation")).json()["items"]}
-    assert "103551" not in rows  # consolidated under the real employee ID
+    assert "1003551" not in rows  # consolidated under the SDP employee ID
     assert rows["003551"]["cells"]["biostar"]["label"] == "Hoạt động"
-    assert "BS Office (user 103551)" in rows["003551"]["cells"]["biostar"]["detail"]
+    assert "BS Office (user 1003551)" in rows["003551"]["cells"]["biostar"]["detail"]
     assert rows["002100"]["cells"]["biostar"]["label"] == "Nghỉ việc"
 
     # "Tự động" main must skip a connection listed as an extra source: here BS E2E (created first) is the extra
     # source, so the automatic main is BS Office and both systems are still read.
     values = (await admin.get("/api/lifecycle/settings")).json()["values"]
     values["biostar_profile_id"] = None
-    values["biostar_sources"] = [{"profile_id": configured[1]["id"], "id_prefix": "", "id_prefix_to": ""}]
+    values["biostar_sources"] = [{"profile_id": configured[1]["id"]}]
     assert (await admin.put("/api/lifecycle/settings", json=values)).status_code == 200
     await _sync()
     rows = {r["employee_id"]: r for r in (await admin.get("/api/lifecycle/reconciliation")).json()["items"]}
-    assert "103551" in rows  # BS Office read as the (automatic) main system, without a prefix rule
+    # BS Office read as the (automatic) main system: its IDs are matched on the last 6 digits too.
+    assert "BS Office (user 1003551)" in rows["003551"]["cells"]["biostar"]["detail"]
     assert "BS E2E (user 002100)" in rows["002100"]["cells"]["biostar"]["detail"]
-    # BS Office chosen as main AND listed with its rule: the rule still applies (read once, as main).
-    values["biostar_profile_id"] = prof["id"]
-    values["biostar_sources"] = [{"profile_id": prof["id"], "id_prefix": "1", "id_prefix_to": "0"}]
-    assert (await admin.put("/api/lifecycle/settings", json=values)).status_code == 200
-    await _sync()
-    rows = {r["employee_id"]: r for r in (await admin.get("/api/lifecycle/reconciliation")).json()["items"]}
-    assert "103551" not in rows and rows["003551"]["cells"]["biostar"]["label"] == "Hoạt động"
     values["biostar_profile_id"] = configured[1]["id"]
-    values["biostar_sources"] = [{"profile_id": prof["id"], "id_prefix": "1", "id_prefix_to": "0"}]
+    values["biostar_sources"] = [{"profile_id": prof["id"]}]
     assert (await admin.put("/api/lifecycle/settings", json=values)).status_code == 200
 
     # One BioStar unreadable → no BioStar judgement at all (never judge a system whose read failed).

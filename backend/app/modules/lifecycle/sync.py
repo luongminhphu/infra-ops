@@ -224,41 +224,26 @@ async def _sync(
     except Exception as exc:
         errors["sdp"] = _err(exc)
 
-    # Main BioStar, then the extra systems with their employee-ID prefix rule. BioStar counts as read only when
+    # Main BioStar, then the extra systems. BioStar counts as read only when
     # every system was read: never judge "no BioStar user" on a partial picture.
     main = main_biostar(settings)
-    # A system both chosen as main and listed as a source is read once, as main, with its ID rule.
-    main_rule = next(
-        (
-            (s.id_prefix, s.id_prefix_to, s.id_keep_last)
-            for s in settings.biostar_sources
-            if s.profile_id == main.get("profile_id")
-        ),
-        ("", "", 0),
-    )
-    reads: list[tuple[str, dict[str, Any], tuple[str, str, int]]] = [("biostar", main, main_rule)]
+    reads: list[tuple[str, dict[str, Any]]] = [("biostar", main)]
     reads += [
-        (
-            f"biostar:{s.profile_id}",
-            {"profile_id": s.profile_id},
-            (s.id_prefix, s.id_prefix_to, s.id_keep_last),
-        )
+        (f"biostar:{s.profile_id}", {"profile_id": s.profile_id})
         for s in settings.biostar_sources
-        if s.profile_id != main.get("profile_id")
+        if s.profile_id != main.get("profile_id")  # an extra source chosen as main is read once, as main
     ]
     read_users: list[dict[str, Any]] = []
     retired_groups = {g.strip().lower() for g in settings.biostar_retired_groups if g.strip()}
-    # SDP is the reference for employee IDs: every BioStar system's IDs are matched to SDP's.
-    sdp_names = {u["employee_id"]: u["name"] for u in sdp_users if u.get("employee_id")}
-    for err_key, which, id_rule in reads:
+    # SDP is the reference: BioStar and SDP employee IDs are matched on their last 5 digits.
+    sdp_ids = normalize.sdp_id_index([u["employee_id"] for u in sdp_users if u.get("employee_id")])
+    for err_key, which in reads:
         try:
             profile, ctx = await open_connection(session, "biostar", Purpose.READ, **which)
             async with BioStarClient(ctx) as client:
                 for u in await client.list_users():
                     n = normalize.biostar_user(u)
-                    n["employee_id"] = normalize.resolve_employee_id(
-                        n["user_id"], n.get("name") or "", id_rule, sdp_names
-                    )
+                    n["employee_id"] = normalize.resolve_employee_id(n["user_id"], sdp_ids)
                     if (n.get("group") or "").strip().lower() in retired_groups:
                         n["retired"], n["active"] = True, False  # moved to the "left" group = offboarded
                     n["source"] = profile.name

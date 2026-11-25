@@ -235,15 +235,17 @@ def test_allocation_reuses_stock_by_date_and_band() -> None:
     assert plan["noband"] == []
 
 
-def test_biostar_employee_id_prefix_and_merge() -> None:
-    from app.modules.lifecycle.normalize import map_employee_id, merge_biostar_users
+def test_biostar_employee_id_last_five_digits_and_merge() -> None:
+    from app.modules.lifecycle.normalize import id_key, merge_biostar_users, resolve_employee_id, sdp_id_index
 
-    assert map_employee_id("100002", "1", "0") == "000002"
-    assert map_employee_id("000002", "1", "0") == "000002"  # already correct: untouched
-    assert map_employee_id("100002", "", "") == "100002"
-    assert map_employee_id("1002352", "1", "0", 6) == "002352"  # 7-digit office ID: last 6 digits
-    assert map_employee_id("100002", "1", "0", 6) == "000002"
-    assert map_employee_id("2352", "", "", 6) == "2352"  # shorter IDs untouched
+    assert id_key("100008") == "00008" and id_key("1002352") == "02352" and id_key("2352") == "2352"
+    assert id_key("GUEST-01") == "GUEST-01"  # non-numeric IDs are compared as they are
+    sdp = sdp_id_index(["002352", "000008", "100100", "000100"])
+    assert resolve_employee_id("1002352", sdp) == "002352"
+    assert resolve_employee_id("100008", sdp) == "000008"  # Office 100008 = SDP 000008
+    assert resolve_employee_id("000008", sdp) == "000008"
+    assert resolve_employee_id("200100", sdp) == "200100"  # 00100 is shared by two SDP IDs: not guessed
+    assert resolve_employee_id("777777", sdp) == "777777"  # unknown to SDP: kept as is (flagged)
     old = {"user_id": "100002", "employee_id": "000002", "active": True, "source": "Office"}
     new = {"user_id": "000002", "employee_id": "000002", "active": False, "source": "Server"}
     assert merge_biostar_users([new, old]) == [old]  # an active user anywhere wins (offboard checks)
@@ -276,19 +278,3 @@ def test_name_key_ignores_order_and_punctuation() -> None:
 
     assert name_key("Thinh. Nguyen Canh") == name_key("NGUYEN CANH THINH") == name_key("Nguyễn Cảnh Thịnh")
     assert name_key("Nguyen Canh Thinh") != name_key("Nguyen Van Thinh")
-
-
-def test_biostar_employee_id_follows_sdp() -> None:
-    from app.modules.lifecycle.normalize import resolve_employee_id
-
-    sdp = {"000008": "Thinh. Nguyen Canh", "002352": "Lê Văn An", "100100": "Trần Bình"}
-    none = ("", "", 0)
-    # No rule configured: matched to SDP by last digits when the name agrees.
-    assert resolve_employee_id("100008", "NGUYEN CANH THINH", none, sdp) == "000008"
-    assert resolve_employee_id("1002352", "LE VAN AN", none, sdp) == "002352"
-    # Same digits, different person: not matched.
-    assert resolve_employee_id("100008", "Pham Van Khac", none, sdp) == "100008"
-    # An ID SDP knows is kept as is.
-    assert resolve_employee_id("100100", "Trần Bình", none, sdp) == "100100"
-    # A configured rule still wins when SDP knows its result.
-    assert resolve_employee_id("100008", "x", ("1", "0", 0), sdp) == "000008"
