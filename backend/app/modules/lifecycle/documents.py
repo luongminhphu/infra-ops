@@ -13,6 +13,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.modules.manifest import DocumentKind, PlaceholderDoc
+from app.core.timeutil import fmt_date
 
 TEMPLATES = Path(__file__).parent / "templates"
 
@@ -109,10 +110,6 @@ class ReturnData(_Common):
         return (v + [""] * len(RETURN_CHECKLIST))[: len(RETURN_CHECKLIST)]
 
 
-def _d(value: dt.date | None) -> str:
-    return value.strftime("%d/%m/%Y") if value else ""
-
-
 def _box(on: bool) -> str:
     return "☑" if on else "☐"
 
@@ -120,7 +117,7 @@ def _box(on: bool) -> str:
 def _common_context(data: _Common, number: str) -> dict[str, Any]:
     return {
         "number": number,
-        "date": _d(data.date),
+        "date": fmt_date(data.date),
         "it_rep": data.it_rep,
         "reviewer": data.reviewer,
         "employee": data.employee.model_dump(),
@@ -131,7 +128,9 @@ def _common_context(data: _Common, number: str) -> dict[str, Any]:
 def handover_context(data: HandoverData, number: str) -> dict[str, Any]:
     return {
         **_common_context(data, number),
-        "assets": [{"name": a.name, "tag": a.tag, "date": _d(a.date), "note": a.note} for a in data.assets],
+        "assets": [
+            {"name": a.name, "tag": a.tag, "date": fmt_date(a.date), "note": a.note} for a in data.assets
+        ],
         "software": [{"mark": _box(b)} for b in data.software],
         "software_other": data.software_other,
     }
@@ -144,7 +143,7 @@ def return_context(data: ReturnData, number: str) -> dict[str, Any]:
             {
                 "name": a.name,
                 "tag": a.tag,
-                "date": _d(a.date if a.condition != "not_returned" else None),
+                "date": fmt_date(a.date if a.condition != "not_returned" else None),
                 "condition": CONDITION_LABEL[a.condition],
                 "note": a.note,
             }

@@ -20,10 +20,10 @@ from app.core.connectors.sdp import SdpClient, SdpError
 from app.core.logging import get_logger
 from app.core.rbac.service import grant_role
 from app.core.scheduler.service import get_task
-from app.core.settings.service import load_settings
 from app.modules.workload.models import Technician, Ticket
 from app.modules.workload.rules import device_need, normalize_ticket, ticket_phase, ticket_state
-from app.modules.workload.settings import MODULE_ID, SETTINGS_KEY, WorkloadSettings
+from app.modules.workload.settings import MODULE_ID, WorkloadSettings
+from app.modules.workload.settings import load as load_module_settings
 
 log = get_logger(__name__)
 SYNC_TASK_KEY = "workload.sync"
@@ -184,7 +184,7 @@ async def sync_tickets(
 
 
 async def run_sync(session: AsyncSession, requested_by: str | None = None) -> dict[str, Any]:
-    settings = await load_settings(session, MODULE_ID, SETTINGS_KEY, WorkloadSettings)
+    settings = await load_module_settings(session)
     _, ctx = await open_connection(session, "sdp", Purpose.READ, profile_id=settings.sdp_profile_id)
     await reclassify(session, settings)
     async with SdpClient(ctx) as client:

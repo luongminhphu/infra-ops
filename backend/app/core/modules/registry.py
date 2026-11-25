@@ -35,9 +35,6 @@ class ModuleRegistry:
     def get(self, module_id: str) -> ModuleManifest | None:
         return self._modules.get(module_id)
 
-    def is_enabled(self, module_id: str) -> bool:
-        return module_id in self._modules
-
     def permissions(self) -> list[tuple[str, Permission]]:
         return list(self._permissions.values())
 

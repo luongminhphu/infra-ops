@@ -113,8 +113,3 @@ def get_keyring() -> Keyring:
 
         _keyring = Keyring.from_env_value(get_settings().master_keys.get_secret_value())
     return _keyring
-
-
-def reset_keyring() -> None:
-    global _keyring
-    _keyring = None

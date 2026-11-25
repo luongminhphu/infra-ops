@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,16 +22,16 @@ from app.core.connectors.sdp import SdpClient
 from app.core.errors import AppError
 from app.core.logging import get_logger
 from app.core.scheduler.service import get_task
-from app.core.settings.service import load_settings
+from app.core.timeutil import today_vn
 from app.modules.lifecycle import normalize
 from app.modules.lifecycle.models import AssetReturn, IssueAck, LifecycleRequest, ReconRow, Snapshot, SyncRun
 from app.modules.lifecycle.parsing import parse_rtr_description
 from app.modules.lifecycle.queries import latest_run
 from app.modules.lifecycle.reconcile import reconcile
-from app.modules.lifecycle.settings import MODULE_ID, SETTINGS_KEY, LifecycleSettings, main_biostar
+from app.modules.lifecycle.settings import MODULE_ID, LifecycleSettings, main_biostar
+from app.modules.lifecycle.settings import load as load_module_settings
 
 log = get_logger(__name__)
-TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 SYNC_TASK_KEY = "lifecycle.sync"
 
 
@@ -192,7 +191,7 @@ async def run_sync(
     requested_by: str | None = None,
     today: date | None = None,
 ) -> dict[str, Any]:
-    settings = await load_settings(session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
+    settings = await load_module_settings(session)
     run = SyncRun(trigger=trigger, requested_by=requested_by, status="running", stats={}, errors={}, notes=[])
     session.add(run)
     await session.commit()
@@ -309,9 +308,7 @@ async def _sync(
         )
 
     requests = [request_dict(r) for r in (await session.scalars(select(LifecycleRequest))).all()]
-    result = reconcile(
-        requests, sdp_users, assets, bs_users, settings, today or datetime.now(TZ).date(), sources
-    )
+    result = reconcile(requests, sdp_users, assets, bs_users, settings, today or today_vn(), sources)
     acks = {(a.employee_id, a.rule) for a in (await session.scalars(select(IssueAck))).all()}
     issue_total = 0
     for row in result.rows:

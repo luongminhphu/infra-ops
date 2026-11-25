@@ -9,6 +9,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from app.core.audit.service import record
 from app.core.auth.deps import CurrentUser, require
@@ -16,7 +17,7 @@ from app.core.connections.models import ConnectionProfile
 from app.core.db import get_session
 from app.core.errors import NotFound
 from app.core.scheduler.service import get_task, request_run, task_out
-from app.core.settings.service import load_settings, save_settings
+from app.core.settings.service import save_settings
 from app.modules.lifecycle.export import to_csv, to_xlsx
 from app.modules.lifecycle.models import IssueAck, LifecycleRequest, ReconRow, Snapshot, SyncRun
 from app.modules.lifecycle.parsing import classify_change_type, fold, html_to_text
@@ -29,6 +30,7 @@ from app.modules.lifecycle.settings import (
     SETTINGS_KEY,
     LifecycleSettings,
 )
+from app.modules.lifecycle.settings import load as load_module_settings
 from app.modules.lifecycle.sync import SYNC_TASK_KEY, reparse_all
 
 router = APIRouter(tags=["lifecycle"])
@@ -306,7 +308,11 @@ async def list_requests(
     limit: int = Query(200, ge=1, le=1000),
 ) -> dict[str, Any]:
     reqs = (
-        await session.scalars(select(LifecycleRequest).order_by(LifecycleRequest.created_at.desc()))
+        await session.scalars(
+            select(LifecycleRequest)
+            .options(defer(LifecycleRequest.description_text))  # only the detail view shows it
+            .order_by(LifecycleRequest.created_at.desc())
+        )
     ).all()
     needle = fold(q) if q else ""
     items = [
@@ -339,7 +345,7 @@ async def get_request(
 async def change_types(
     _: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
 ) -> list[dict[str, Any]]:
-    settings = await load_settings(session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
+    settings = await load_module_settings(session)
     raws = Counter(r for r in (await session.scalars(select(LifecycleRequest.change_type_raw))).all() if r)
     explicit = {fold(k): v for k, v in settings.change_type_map.items()}
     return [
@@ -388,7 +394,7 @@ async def sync_now(
 async def get_module_settings(
     _: CurrentUser = Depends(manage), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
-    settings = await load_settings(session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
+    settings = await load_module_settings(session)
     profiles = (
         await session.scalars(
             select(ConnectionProfile)

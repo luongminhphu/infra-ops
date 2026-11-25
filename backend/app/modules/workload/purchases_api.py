@@ -26,7 +26,6 @@ from app.core.config import get_settings
 from app.core.connections.models import ConnectionProfile
 from app.core.db import get_session
 from app.core.errors import AppError, NotFound
-from app.core.settings.service import load_settings
 from app.core.storage.models import StoredFile
 from app.core.storage.service import check_size, get_storage, read_file, safe_filename, save_file, sniff
 from app.core.workflow.engine import create_job, start_job
@@ -44,7 +43,8 @@ from app.modules.workload.models import (
     Ticket,
 )
 from app.modules.workload.quotes import detect_supplier, match_prices, needs_quotes, pdf_text, quote_problem
-from app.modules.workload.settings import MODULE_ID, SETTINGS_KEY, WorkloadSettings
+from app.modules.workload.settings import MODULE_ID, WorkloadSettings
+from app.modules.workload.settings import load as load_module_settings
 
 router = APIRouter(tags=["workload"])
 view = require("workload.tickets.view")
@@ -194,7 +194,7 @@ async def _full(
             )
         ).all():
             quotes.setdefault(q.purchase_id, []).append(q)
-    settings = await _settings(session)
+    settings = await load_module_settings(session)
     upns = {p.created_by for p in rows}
     names = dict((await session.execute(select(User.upn, User.display_name).where(User.upn.in_(upns)))).all()) if upns else {}  # fmt: skip
     jobs: dict[str, Job] = {}
@@ -233,10 +233,6 @@ async def _full(
 
 async def _one(session: AsyncSession, p: PurchaseRequest, user: CurrentUser | None = None) -> dict[str, Any]:
     return (await _full(session, [p], user))[0]
-
-
-async def _settings(session: AsyncSession) -> WorkloadSettings:
-    return await load_settings(session, MODULE_ID, SETTINGS_KEY, WorkloadSettings)
 
 
 async def _visible(
@@ -376,7 +372,7 @@ async def _change_status(
         cat = await session.get(CatalogItem, p.catalog_item_id) if p.catalog_item_id else None
         if cat is None:
             raise AppError("Chọn thiết bị trong bảng giá trước khi duyệt.", code="price_required")
-        settings = await _settings(session)
+        settings = await load_module_settings(session)
         if needs_quotes(cat.category, settings.quote_categories):
             rows = (
                 await session.scalars(select(PurchaseQuote).where(PurchaseQuote.purchase_id == p.id))
@@ -427,7 +423,7 @@ async def update_purchase(
     if p is None:
         raise NotFound("Không tìm thấy đề xuất.")
     if await _change_status(session, user, p, body):
-        await pos.repack(session, await _settings(session))
+        await pos.repack(session, await load_module_settings(session))
     await session.commit()
     await session.refresh(p)
     return await _one(session, p, user)
@@ -460,7 +456,7 @@ async def bulk_status(
         except AppError as exc:
             failed[str(pid)] = exc.message
     if repack:
-        await pos.repack(session, await _settings(session))
+        await pos.repack(session, await load_module_settings(session))
     await session.commit()
     return {"done": done, "failed": failed}
 
@@ -480,7 +476,7 @@ async def receive_target(
     _: CurrentUser = Depends(receiver), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
     """Which SDP connection "Nhập kho SDP" will write to (shown before the user confirms)."""
-    settings = await _settings(session)
+    settings = await load_module_settings(session)
     stmt = select(ConnectionProfile).where(ConnectionProfile.system_type == "sdp")
     if settings.sdp_profile_id:
         stmt = stmt.where(ConnectionProfile.id == settings.sdp_profile_id)
@@ -514,10 +510,20 @@ async def receivable(
             .limit(50)
         )
     ).all()
-    out = []
-    for po in closed:
-        rows = await _full(session, [p for p, _ in await pos.po_items(session, po)], user)
-        out.append({"id": str(po.id), "number": po.number, "closed_at": po.closed_at, "items": rows})
+    items = (
+        await session.scalars(
+            select(PurchaseRequest)
+            .where(PurchaseRequest.po_id.in_([po.id for po in closed]))
+            .order_by(PurchaseRequest.approved_at, PurchaseRequest.created_at)
+        )
+    ).all()
+    by_po: dict[uuid.UUID, list[dict[str, Any]]] = {}
+    for p, row in zip(items, await _full(session, list(items), user), strict=True):
+        by_po.setdefault(p.po_id, []).append(row)  # type: ignore[arg-type]
+    out = [
+        {"id": str(po.id), "number": po.number, "closed_at": po.closed_at, "items": by_po.get(po.id, [])}
+        for po in closed
+    ]
     return {"closed": out}
 
 
@@ -609,7 +615,7 @@ async def receive(
     used = await _serial_used(session, p.id, serials)
     if used:
         raise AppError(f"Serial {used} đã được nhận cho đề xuất khác.", code="serial_used")
-    settings = await _settings(session)
+    settings = await load_module_settings(session)
     job, _ = await create_job(
         session,
         user.actor,
@@ -623,7 +629,6 @@ async def receive(
         subject_key=str(p.id),
         subject_label=f"Nhập kho {p.quantity} × {cat.name}",
         external_ref=str(p.id),
-        idempotency_key=f"workload.receive:{uuid.uuid4()}",
     )
     await start_job(session, user.actor, job, None)
     await record(
@@ -1098,7 +1103,7 @@ async def list_catalog(
 ) -> list[dict[str, Any]]:
     rows = (await session.scalars(select(CatalogItem).order_by(CatalogItem.category, CatalogItem.name))).all()
     if user.has(PRICE):
-        cats = (await _settings(session)).quote_categories
+        cats = (await load_module_settings(session)).quote_categories
         return [{**catalog_out(c), "needs_quotes": needs_quotes(c.category, cats)} for c in rows]
     # Operators pick a device by name only.
     return [{k: catalog_out(c)[k] for k in ("id", "name", "category", "spec", "active")} for c in rows]
@@ -1143,7 +1148,7 @@ async def _save_catalog(
         after={"unit_price": c.unit_price, "vendor": c.vendor, "active": c.active},
     )
     # A new price changes the value of open POs: re-pack them under the limit.
-    await pos.repack(session, await _settings(session))
+    await pos.repack(session, await load_module_settings(session))
     await session.commit()
     return catalog_out(c)
 
@@ -1243,7 +1248,7 @@ async def apply_quote(
             after={"unit_price": c.unit_price, "vendor": c.vendor, "quote_file": stored.filename},
         )
         changed.append(catalog_out(c))
-    await pos.repack(session, await _settings(session))
+    await pos.repack(session, await load_module_settings(session))
     await session.commit()
     return changed
 
@@ -1371,7 +1376,7 @@ async def po_out(
 async def list_pos(
     _: CurrentUser = Depends(price_view), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
-    settings = await _settings(session)
+    settings = await load_module_settings(session)
     open_rows = (
         await session.scalars(
             select(PurchaseOrder).where(PurchaseOrder.status == "open").order_by(PurchaseOrder.created_at)
@@ -1421,7 +1426,9 @@ async def close_po(
     user: CurrentUser = Depends(po_close),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    await pos.repack(session, await _settings(session))  # takes the PO lock, brings totals up to date
+    await pos.repack(
+        session, await load_module_settings(session)
+    )  # takes the PO lock, brings totals up to date
     po = await session.get(PurchaseOrder, po_id, with_for_update=True)
     if po is None or po.status != "open":
         raise NotFound("PO không còn mở (đã chốt hoặc đã được gom lại).")
@@ -1463,7 +1470,7 @@ async def po_email(
     po = await session.get(PurchaseOrder, po_id)
     if po is None or po.status != "closed":
         raise NotFound("Chỉ tạo email nháp cho PO đã chốt.")
-    data = await pos.build_eml(session, await _settings(session), po)
+    data = await pos.build_eml(session, await load_module_settings(session), po)
     return Response(
         data,
         media_type="message/rfc822",

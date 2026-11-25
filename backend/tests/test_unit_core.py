@@ -150,3 +150,14 @@ def test_job_next_action_rules() -> None:
     stalled.updated_at = datetime.now(UTC) - timedelta(hours=2)
     passive = job_item(stalled, today)
     assert passive["priority"] == 3 and passive["passive"] is True  # nothing for the operator to do
+
+
+def test_fmt_date_local_time_and_fallback() -> None:
+    from datetime import UTC, date, datetime
+
+    from app.core.timeutil import fmt_date
+
+    # 18:30 UTC on 31/12 is already 01/01 in Asia/Ho_Chi_Minh.
+    assert fmt_date(datetime(2026, 12, 31, 18, 30, tzinfo=UTC)) == "01/01/2027"
+    assert fmt_date(date(2026, 3, 5)) == "05/03/2026"
+    assert fmt_date(None) == "" and fmt_date(None, "?") == "?"

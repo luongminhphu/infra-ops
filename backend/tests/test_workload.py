@@ -15,7 +15,7 @@ from sqlalchemy import select
 
 from app.core.db import get_sessionmaker
 from app.core.workflow.engine import pump
-from app.modules.workload.rules import device_need, is_overdue, normalize_ticket, pick_bucket, ticket_phase
+from app.modules.workload.rules import device_need, normalize_ticket, pick_bucket, ticket_phase
 from app.modules.workload.settings import WorkloadSettings
 
 SDP = "https://sdp-wl.test.local"
@@ -52,18 +52,13 @@ def req(
 
 
 # ------------------------------------------------------------------ pure rules
-def test_normalize_and_overdue_rules() -> None:
+def test_normalize_rules() -> None:
     s = WorkloadSettings()
     t = normalize_ticket(req("1", "resolved", "7", 1, ms(11, 5), 4), s)
     assert t["state"] == "done" and t["technician_id"] == "7" and t["completed_at"] is not None
-    assert not is_overdue(t, datetime(2026, 12, 1, tzinfo=UTC))
-    late = normalize_ticket(req("2", "Closed", "7", 1, ms(11, 2), 6), s)
-    assert is_overdue(late, datetime(2026, 12, 1, tzinfo=UTC))
     # Re-opened tickets drop a stale completion time.
     reopened = normalize_ticket(req("3", "Open", None, 1, ms(11, 2), 6), s)
     assert reopened["state"] == "open" and reopened["completed_at"] is None
-    assert is_overdue(reopened, datetime(2026, 11, 3, tzinfo=UTC))
-    assert not is_overdue(reopened, datetime(2026, 11, 1, tzinfo=UTC))
     assert normalize_ticket(req("4", "Canceled", None, 1, None), s)["state"] == "cancelled"
     assert [pick_bucket(d) for d in (7, 31, 92, 184, 365)] == ["day", "day", "week", "week", "month"]
 

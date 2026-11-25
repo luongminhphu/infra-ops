@@ -8,7 +8,6 @@ from collections.abc import Hashable, Sequence
 from datetime import UTC, datetime
 from email.message import EmailMessage
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from jinja2.sandbox import SandboxedEnvironment
 from markupsafe import Markup, escape
@@ -17,6 +16,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.storage.service import read_file
+from app.core.timeutil import TZ
 from app.modules.workload.models import (
     CatalogItem,
     PurchaseEvidence,
@@ -26,7 +26,6 @@ from app.modules.workload.models import (
 )
 from app.modules.workload.settings import WorkloadSettings
 
-TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 KIND_LABEL = {"replace": "Thay thế", "upgrade": "Nâng cấp", "repair": "Sửa chữa", "new": "Cấp mới"}
 
 

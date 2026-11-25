@@ -23,7 +23,6 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="INFRAOPS_", extra="ignore")
 
     environment: Literal["development", "test", "production"] = "development"
-    app_name: str = "infra-ops"
     public_base_url: str = "http://localhost:5173"
 
     database_url: str = "postgresql+asyncpg://infraops:infraops@localhost:5432/infraops"

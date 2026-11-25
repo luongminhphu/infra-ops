@@ -6,7 +6,6 @@ requesting person's own API key; disposing is reserved to managers (``lifecycle.
 
 from __future__ import annotations
 
-import uuid
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends
@@ -21,15 +20,15 @@ from app.core.connections.service import open_connection
 from app.core.connectors.base import Purpose
 from app.core.connectors.sdp import SdpClient
 from app.core.db import get_session
-from app.core.errors import AppError, NotFound, PermissionDenied, PersonalCredentialMissing
+from app.core.errors import AppError, NotFound, PermissionDenied
 from app.core.scheduler.service import request_run
-from app.core.settings.service import load_settings
 from app.core.workflow.definitions import StepContext, StepDefinition, StepOutcome, WorkflowDefinition
 from app.core.workflow.engine import create_job, start_job
 from app.modules.lifecycle.inventory_api import build_plan
 from app.modules.lifecycle.models import AssetReturn, Snapshot
 from app.modules.lifecycle.queries import latest_run
-from app.modules.lifecycle.settings import MODULE_ID, SETTINGS_KEY, LifecycleSettings
+from app.modules.lifecycle.settings import MODULE_ID, LifecycleSettings
+from app.modules.lifecycle.settings import load as load_module_settings
 
 VIEW = "lifecycle.job.view"
 MANAGE = "lifecycle.stock.manage"
@@ -43,7 +42,7 @@ router = APIRouter(prefix="/stock", tags=["lifecycle-stock"])  # mounted under /
 async def _set_state(ctx: StepContext) -> StepOutcome:
     """Idempotent: reads each asset first and only writes when its state differs."""
     p = ctx.params
-    s = await load_settings(ctx.session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
+    s = await load_module_settings(ctx.session)
     _, conn = await open_connection(
         ctx.session, "sdp", Purpose.WRITE, profile_id=s.sdp_profile_id, as_user=ctx.job.created_by
     )
@@ -59,8 +58,6 @@ async def _set_state(ctx: StepContext) -> StepOutcome:
                     before.setdefault(a["id"], state)
                     await client.set_asset_state(a["id"], p["to_state"])
                     changed.append(a["id"])
-            except PersonalCredentialMissing:
-                raise
             except Exception as exc:
                 failed[a.get("tag") or a["id"]] = getattr(exc, "message", None) or str(exc)
     if p["to_state"] == s.asset_state_disposed:  # gone from stock: drop the "returned" marks
@@ -123,7 +120,7 @@ async def stock(
     user: CurrentUser = Depends(require(VIEW)), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
     """Assets in stock from the latest sync: new, returned (thu hồi) and waiting for disposal."""
-    s = await load_settings(session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
+    s = await load_module_settings(session)
     run = await latest_run(session)
     if run is None:
         return {"as_of": None, "items": [], "states": _states(s), "can": _can(user)}
@@ -232,7 +229,7 @@ async def change_state(
             if body.to == "disposed"
             else "Bạn không có quyền cập nhật tồn kho."
         )
-    s = await load_settings(session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
+    s = await load_module_settings(session)
     assets = [
         {"id": str(a.get("id", "")), "tag": a.get("tag") or "", "name": a.get("name") or ""}
         for a in body.assets
@@ -273,7 +270,6 @@ async def change_state(
         subject_key=f"{len(assets)} tài sản",
         subject_label=f"{len(assets)} tài sản → {to_state}",
         external_ref=None,
-        idempotency_key=f"{wf}:{uuid.uuid4()}",
     )
     await start_job(session, user.actor, job, None)
     await record(

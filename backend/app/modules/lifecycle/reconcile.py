@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Literal
 
+from app.core.timeutil import fmt_date
 from app.modules.lifecycle.parsing import fold, name_key
 from app.modules.lifecycle.settings import LifecycleSettings
 
@@ -88,10 +89,6 @@ class Row:
 class ReconcileResult:
     rows: list[Row]
     notes: list[dict[str, Any]]  # global findings not tied to one employee
-
-
-def _fmt(d: date | None) -> str:
-    return d.strftime("%d/%m/%Y") if d else "?"
 
 
 def _latest(requests: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -271,14 +268,14 @@ def reconcile(
                 row.issues.append(
                     Issue(
                         "offboard_biostar_active",
-                        f"Nghỉ việc từ {_fmt(today_eff)} nhưng user BioStar vẫn hoạt động.",
+                        f"Nghỉ việc từ {fmt_date(today_eff, '?')} nhưng user BioStar vẫn hoạt động.",
                     )
                 )
             if sources.get("assets") and in_use:
                 row.issues.append(
                     Issue(
                         "offboard_assets_in_use",
-                        f"Nghỉ việc từ {_fmt(today_eff)} nhưng còn {len(in_use)} tài sản đang gán.",
+                        f"Nghỉ việc từ {fmt_date(today_eff, '?')} nhưng còn {len(in_use)} tài sản đang gán.",
                     )
                 )
         if (
@@ -291,7 +288,7 @@ def reconcile(
                     row.issues.append(
                         Issue(
                             "onboard_no_biostar",
-                            f"Ngày hiệu lực {_fmt(today_eff)} nhưng chưa có user BioStar.",
+                            f"Ngày hiệu lực {fmt_date(today_eff, '?')} nhưng chưa có user BioStar.",
                         )
                     )
                 elif bs["cards"] + bs["fingerprints"] + bs["faces"] == 0:
@@ -300,7 +297,10 @@ def reconcile(
                     )
             if sources.get("assets") and not emp_assets:
                 row.issues.append(
-                    Issue("onboard_no_assets", f"Ngày hiệu lực {_fmt(today_eff)} nhưng chưa có tài sản nào.")
+                    Issue(
+                        "onboard_no_assets",
+                        f"Ngày hiệu lực {fmt_date(today_eff, '?')} nhưng chưa có tài sản nào.",
+                    )
                 )
         if bs and not bs.get("retired") and sources.get("sdp") and sdp_has_emp_ids and not users and not reqs:
             row.issues.append(

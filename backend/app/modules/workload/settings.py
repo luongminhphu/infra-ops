@@ -7,6 +7,9 @@ import uuid
 from jinja2 import TemplateSyntaxError
 from jinja2.sandbox import SandboxedEnvironment
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.settings.service import load_settings
 
 MODULE_ID = "workload"
 SETTINGS_KEY = "main"
@@ -88,3 +91,7 @@ class WorkloadSettings(BaseModel):
         except TemplateSyntaxError as exc:
             raise ValueError(f"Mẫu email sai cú pháp (dòng {exc.lineno}): {exc.message}") from exc
         return value
+
+
+async def load(session: AsyncSession) -> WorkloadSettings:
+    return await load_settings(session, MODULE_ID, SETTINGS_KEY, WorkloadSettings)

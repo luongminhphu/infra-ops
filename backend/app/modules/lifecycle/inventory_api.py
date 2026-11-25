@@ -4,31 +4,31 @@ and what must be bought (then proposed as a purchase request in the workload mod
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import raiseload
 
 from app.core.audit.service import record
 from app.core.auth.deps import CurrentUser, require
 from app.core.db import get_session
 from app.core.errors import NotFound
-from app.core.settings.service import load_settings
+from app.core.timeutil import today_vn
 from app.core.workflow.models import Job
 from app.modules.lifecycle.allocation import Line, Need, allocate, matches, returned_first
 from app.modules.lifecycle.models import AssetReturn, LifecycleRequest, Snapshot
 from app.modules.lifecycle.parsing import fold
 from app.modules.lifecycle.queries import latest_run
-from app.modules.lifecycle.settings import FIELD_TITLES, MODULE_ID, SETTINGS_KEY, LifecycleSettings
+from app.modules.lifecycle.settings import FIELD_TITLES, MODULE_ID
+from app.modules.lifecycle.settings import load as load_module_settings
 
 router = APIRouter(tags=["lifecycle-inventory"])
 view = require("lifecycle.job.view")
 execute = require("lifecycle.job.execute")
-TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 
 def band_of(req: LifecycleRequest) -> tuple[str | None, str | None]:
@@ -66,7 +66,7 @@ OTHER_LABELS = {"workstation": "PC", "desktop": "PC"}
 
 async def build_plan(session: AsyncSession) -> dict[str, Any]:
     """Stock summary and per-request allocation (reuse / buy) for upcoming onboards."""
-    settings = await load_settings(session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
+    settings = await load_module_settings(session)
     run = await latest_run(session)
     assets: dict[str, dict[str, Any]] = {}
     if run is not None:
@@ -82,7 +82,7 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
     # Returned (thu hồi) devices are suggested before new stock.
     stock = returned_first(stock, set((await session.scalars(select(AssetReturn.asset_id))).all()))
 
-    since = datetime.now(TZ).date() - timedelta(days=settings.allocation_past_days)
+    since = today_vn() - timedelta(days=settings.allocation_past_days)
     closed = {s.lower() for s in settings.sdp_closed_statuses}
     reqs = [
         r
@@ -102,6 +102,9 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
                 select(Job)
                 .where(Job.workflow_key == "lifecycle.onboard", Job.external_ref.in_([r.id for r in reqs]))
                 .order_by(Job.created_at)
+                .options(
+                    raiseload(Job.steps), raiseload(Job.evidence), raiseload(Job.assignments)
+                )  # only status / params are read
             )
         ).all():
             if j.status != "cancelled":

@@ -219,6 +219,11 @@ class SdpClient:
             "PUT", f"/api/v3/requests/{request_id}", {"request": {"status": {"name": status}}}
         )
 
+    async def set_request_technician(self, request_id: str, technician_id: str | int) -> dict[str, Any]:
+        return await self.write(
+            "PUT", f"/api/v3/requests/{request_id}", {"request": {"technician": {"id": technician_id}}}
+        )
+
     async def post_file(self, path: str, field: str, filename: str, data: bytes, mime: str) -> dict[str, Any]:
         """Multipart upload (e.g. request attachments). Never retried on failure to avoid duplicates."""
         resp = await http.request(
