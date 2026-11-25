@@ -503,7 +503,9 @@ Mã NV…) hoặc *Không cần làm gì* khi hệ thống đang tự chạy.
    nhãn ở mục Request RTR); thiếu band thì Operator nhập tay trên trang Kho & cấp phát.
 2. **Kho & cấp phát** dùng tài sản In Store, chưa gán user, của lần đồng bộ gần nhất: nhân viên có ngày hiệu lực
    sớm hơn được ưu tiên; tài sản đã chọn trên Job nháp giữ cho Job đó. Mỗi dòng hiện *Tận dụng* (tài sản cụ thể) hoặc
-   *Cần mua* → **Lập đề xuất mua** (điền sẵn thiết bị, số lượng, người dùng). **Chọn tài sản tận dụng vào Job** ghi
+   *Cần mua* → **Lập đề xuất mua** (điền sẵn thiết bị, số lượng, người dùng). Bấm **Xem chi tiết** trên ô tồn kho của từng loại thiết bị để
+   xem danh sách tài sản In Store (tên, asset tag, serial, sản phẩm, số lượng theo model) và tài sản nào *Còn trống* hay
+   đã *Giữ cho* nhân viên sắp onboard; tìm nhanh theo tên, tag, serial hoặc người nhận. **Chọn tài sản tận dụng vào Job** ghi
    gợi ý vào Job nháp.
 3. Nút **?** cạnh tiêu đề / trường giải thích cách vận hành từng phần.
 

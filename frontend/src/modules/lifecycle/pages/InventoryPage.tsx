@@ -46,7 +46,7 @@ interface PlanRequest {
 }
 interface Allocation {
   as_of: string | null;
-  stock: { label: string; bands: string[]; product_types: string[]; in_store: number; planned: number; to_buy: number }[];
+  stock: StockLine[];
   requests: PlanRequest[];
   bands: string[];
 }
@@ -61,6 +61,99 @@ const REQ_STATUS: Record<PlanRequest["status"], { status: Status; label: string 
   buy: { status: "warning", label: "Cần mua thêm" },
   no_band: { status: "waiting", label: "Thiếu band" },
 };
+
+interface StockItem extends Asset {
+  serial: string | null;
+  reserved_for: { name: string | null; display_id: string } | null;
+}
+interface StockLine {
+  label: string;
+  bands: string[];
+  product_types: string[];
+  in_store: number;
+  planned: number;
+  to_buy: number;
+  items: StockItem[];
+}
+
+/** Every In Store asset counted on a stock card: what it is and whether an upcoming onboard has it. */
+function StockDialog({ line, onClose }: { line: StockLine; onClose: () => void }) {
+  const [q, setQ] = useState("");
+  const needle = q.trim().toLowerCase();
+  const items = line.items.filter((a) => !needle || [a.name, a.asset_tag, a.serial, a.product, a.reserved_for?.name].some((v) => v?.toLowerCase().includes(needle)));
+  const byProduct = Object.entries(
+    line.items.reduce<Record<string, number>>((acc, a) => ({ ...acc, [a.product ?? a.product_type ?? "—"]: (acc[a.product ?? a.product_type ?? "—"] ?? 0) + 1 }), {}),
+  ).sort((x, y) => y[1] - x[1]);
+  const free = line.items.filter((a) => !a.reserved_for).length;
+  return (
+    <Dialog
+      open
+      size="lg"
+      onClose={onClose}
+      title={`Tồn kho: ${line.label}`}
+      description={`${line.items.length} tài sản In Store chưa gán user · ${free} còn trống · ${line.items.length - free} đã giữ cho nhân viên sắp onboard.`}
+      footer={<Button onClick={onClose}>Đóng</Button>}
+    >
+      {byProduct.length > 0 && (
+        <ul aria-label="Theo sản phẩm" className="mb-3 flex flex-wrap gap-2 text-sm">
+          {byProduct.map(([name, n]) => (
+            <li key={name} className="rounded-sm bg-surface-2 px-2 py-0.5">{name} <span className="font-semibold tabular">× {n}</span></li>
+          ))}
+        </ul>
+      )}
+      <Field label="Tìm tài sản" className="mb-3">
+        <Input type="search" data-autofocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tên, asset tag, serial, sản phẩm hoặc người nhận" />
+      </Field>
+      {items.length === 0 ? (
+        <p className="py-6 text-center text-sm text-muted">{line.items.length ? "Không có tài sản khớp từ khoá." : "Kho không còn tài sản nào thuộc nhóm này."}</p>
+      ) : (
+        <div tabIndex={0} role="region" aria-label={`Danh sách tài sản ${line.label}`} className="max-h-[55vh] overflow-auto rounded-sm border border-line">
+          <ul className="divide-y divide-line text-sm sm:hidden">
+            {items.map((a) => (
+              <li key={a.id} className="px-3 py-2">
+                <p className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium">{a.name ?? a.id}</span>
+                  {a.reserved_for ? <StatusBadge status="waiting" label={`Giữ cho ${a.reserved_for.name ?? `#${a.reserved_for.display_id}`}`} /> : <StatusBadge status="match" label="Còn trống" />}
+                </p>
+                <p className="mt-0.5 text-muted">
+                  <Mono>{a.asset_tag ?? "—"}</Mono> · <Mono>{a.serial ?? "—"}</Mono> · {a.product ?? a.product_type ?? "—"}
+                </p>
+              </li>
+            ))}
+          </ul>
+          <table className="hidden w-full text-sm sm:table">
+            <thead className="sticky top-0 bg-surface-2 text-left text-muted">
+              <tr>
+                <th scope="col" className="px-3 py-2 font-medium">Tài sản</th>
+                <th scope="col" className="px-3 py-2 font-medium">Asset tag</th>
+                <th scope="col" className="px-3 py-2 font-medium">Serial</th>
+                <th scope="col" className="px-3 py-2 font-medium">Sản phẩm</th>
+                <th scope="col" className="px-3 py-2 font-medium">Tình trạng</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {items.map((a) => (
+                <tr key={a.id}>
+                  <td className="px-3 py-2">{a.name ?? a.id}</td>
+                  <td className="px-3 py-2"><Mono>{a.asset_tag ?? "—"}</Mono></td>
+                  <td className="px-3 py-2"><Mono>{a.serial ?? "—"}</Mono></td>
+                  <td className="px-3 py-2">{a.product ?? a.product_type ?? "—"}</td>
+                  <td className="px-3 py-2">
+                    {a.reserved_for ? (
+                      <StatusBadge status="waiting" label={`Giữ cho ${a.reserved_for.name ?? `#${a.reserved_for.display_id}`}`} />
+                    ) : (
+                      <StatusBadge status="match" label="Còn trống" />
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Dialog>
+  );
+}
 
 const assetText = (a: Asset) => `${a.name ?? a.id}${a.asset_tag ? ` (${a.asset_tag})` : ""}`;
 function BandDialog({ req, bands, onClose }: { req: PlanRequest; bands: string[]; onClose: () => void }) {
@@ -202,6 +295,7 @@ export function InventoryPage() {
     enabled: can("workload.tickets.view"),
   });
   const d = q.data;
+  const [detail, setDetail] = useState<StockLine | null>(null);
   return (
     <>
       <PageHeader
@@ -225,13 +319,20 @@ export function InventoryPage() {
           </p>
           <section aria-label="Tồn kho theo tiêu chuẩn" className="order-last mt-5 grid gap-3 sm:order-none sm:mt-0 sm:mb-5 sm:grid-cols-2 lg:grid-cols-4">
             {d.stock.map((s) => (
-              <Panel key={s.label} title={s.label} description={s.bands.length ? `Band ${s.bands.join(", ")}` : undefined} bodyClassName="grid grid-cols-3 gap-2 p-3 text-center">
+              <Panel
+                key={s.label}
+                title={s.label}
+                description={s.bands.length ? `Band ${s.bands.join(", ")}` : undefined}
+                actions={<Button size="sm" variant="ghost" onClick={() => setDetail(s)} aria-label={`Xem chi tiết tồn kho ${s.label}`}>Xem chi tiết</Button>}
+                bodyClassName="grid grid-cols-3 gap-2 p-3 text-center"
+              >
                 <div><p className="text-xl font-semibold tabular">{s.in_store}</p><p className="text-xs text-muted">Trong kho</p></div>
                 <div><p className="text-xl font-semibold tabular">{s.planned}</p><p className="text-xs text-muted">Sẽ dùng</p></div>
                 <div><p className={cn("text-xl font-semibold tabular", s.to_buy > 0 && "text-waiting")}>{s.to_buy}</p><p className="text-xs text-muted">Cần mua</p></div>
               </Panel>
             ))}
           </section>
+          {detail && <StockDialog line={detail} onClose={() => setDetail(null)} />}
           <h2 className="mb-2 flex items-center gap-1 text-lg font-semibold">
             Nhân viên sắp onboard ({d.requests.length})
           </h2>

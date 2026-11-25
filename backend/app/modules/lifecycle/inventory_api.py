@@ -108,6 +108,14 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
         needs.append(Need(r.id, r.effective_date, band_of(r)[0], picked))
     plan = allocate(needs, settings.allocation_standard, stock)
 
+    # Which upcoming onboard each stock asset is set aside for (picked on its job or suggested for reuse).
+    reserved: dict[str, dict[str, Any]] = {}
+    by_id = {r.id: r for r in reqs}
+    for rid, lines in plan.items():
+        for ln in lines:
+            for a in [*ln.picked, *ln.reuse]:
+                r = by_id[rid]
+                reserved.setdefault(a["id"], {"name": r.full_name, "display_id": r.display_id or r.id})
     summary = []
     for item in settings.allocation_standard:
         lines = [ln for lines in plan.values() for ln in lines if ln.label == item.label]
@@ -119,6 +127,15 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
                 "in_store": sum(matches(a, item) for a in stock),
                 "planned": sum(len(ln.picked) + len(ln.reuse) for ln in lines),
                 "to_buy": sum(ln.buy for ln in lines),
+                # Stock detail: every matching In Store asset and who it is set aside for.
+                "items": sorted(
+                    (
+                        {**_asset(a), "serial": a.get("serial"), "reserved_for": reserved.get(a["id"])}
+                        for a in stock
+                        if matches(a, item)
+                    ),
+                    key=lambda x: ((x["product"] or ""), (x["name"] or "")),
+                ),
             }
         )
     out = []
