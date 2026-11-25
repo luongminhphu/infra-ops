@@ -74,6 +74,7 @@ interface StockLine {
   planned: number;
   to_buy: number;
   items: StockItem[];
+  standard: boolean; // false: In Store device type outside the allocation standard (PC, UPS, …)
 }
 
 /** Every In Store asset counted on a stock card: what it is and whether an upcoming onboard has it. */
@@ -317,18 +318,18 @@ export function InventoryPage() {
               <span className="block">Dữ liệu kho theo lần đồng bộ gần nhất (menu Đồng bộ dữ liệu).</span>
             </HelpTip>
           </p>
-          <section aria-label="Tồn kho theo tiêu chuẩn" className="order-last mt-5 grid gap-3 sm:order-none sm:mt-0 sm:mb-5 sm:grid-cols-2 lg:grid-cols-4">
+          <section aria-label="Tồn kho" className="order-last mt-5 grid gap-3 sm:order-none sm:mt-0 sm:mb-5 sm:grid-cols-2 lg:grid-cols-4">
             {d.stock.map((s) => (
               <Panel
                 key={s.label}
                 title={s.label}
-                description={s.bands.length ? `Band ${s.bands.join(", ")}` : undefined}
+                description={!s.standard ? "Ngoài tiêu chuẩn cấp phát" : s.bands.length ? `Band ${s.bands.join(", ")}` : undefined}
                 actions={<Button size="sm" variant="ghost" onClick={() => setDetail(s)} aria-label={`Xem chi tiết tồn kho ${s.label}`}>Xem chi tiết</Button>}
                 bodyClassName="grid grid-cols-3 gap-2 p-3 text-center"
               >
                 <div><p className="text-xl font-semibold tabular">{s.in_store}</p><p className="text-xs text-muted">Trong kho</p></div>
-                <div><p className="text-xl font-semibold tabular">{s.planned}</p><p className="text-xs text-muted">Sẽ dùng</p></div>
-                <div><p className={cn("text-xl font-semibold tabular", s.to_buy > 0 && "text-waiting")}>{s.to_buy}</p><p className="text-xs text-muted">Cần mua</p></div>
+                <div><p className="text-xl font-semibold tabular">{s.standard ? s.planned : "—"}</p><p className="text-xs text-muted">Sẽ dùng</p></div>
+                <div><p className={cn("text-xl font-semibold tabular", s.to_buy > 0 && "text-waiting")}>{s.standard ? s.to_buy : "—"}</p><p className="text-xs text-muted">Cần mua</p></div>
               </Panel>
             ))}
           </section>

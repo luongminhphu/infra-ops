@@ -16,7 +16,7 @@ from app.core.audit.service import Actor, record
 from app.core.auth.models import User
 from app.core.connections.service import open_connection
 from app.core.connectors.base import Purpose
-from app.core.connectors.sdp import SdpClient
+from app.core.connectors.sdp import SdpClient, SdpError
 from app.core.logging import get_logger
 from app.core.rbac.service import grant_role
 from app.core.scheduler.service import get_task
@@ -34,9 +34,15 @@ PAGE = 500  # tickets loaded per query when merging a sync
 
 
 async def sync_technicians(
-    session: AsyncSession, client: SdpClient, settings: WorkloadSettings | None = None
+    session: AsyncSession,
+    client: SdpClient,
+    settings: WorkloadSettings | None = None,
+    rows: list[dict[str, Any]] | None = None,
 ) -> int:
-    rows = await client.list_all("/api/v3/technicians", "technicians")
+    """Technicians from SDP's list, or (``rows`` given) only those seen on requests: then nobody is deactivated."""
+    partial = rows is not None
+    if rows is None:
+        rows = await client.list_all("/api/v3/technicians", "technicians")
     now = datetime.now(UTC)
     existing = {t.id: t for t in (await session.scalars(select(Technician))).all()}
     seen: set[str] = set()
@@ -53,7 +59,7 @@ async def sync_technicians(
         session.add(tech)
         existing[tid] = tech
     for tid, tech in existing.items():
-        if tid not in seen:
+        if tid not in seen and not partial:
             tech.active = False
     await session.flush()
     await auto_link(session, list(existing.values()))
@@ -130,7 +136,9 @@ async def auto_link(session: AsyncSession, techs: list[Technician]) -> None:
     await session.flush()
 
 
-async def sync_tickets(session: AsyncSession, client: SdpClient, settings: WorkloadSettings) -> int:
+async def sync_tickets(
+    session: AsyncSession, client: SdpClient, settings: WorkloadSettings
+) -> list[dict[str, Any]]:
     newest = await session.scalar(select(func.max(Ticket.sdp_updated_ms)))
     since = (
         newest - OVERLAP_MS
@@ -172,7 +180,7 @@ async def sync_tickets(session: AsyncSession, client: SdpClient, settings: Workl
             ticket.synced_at = now
             session.add(ticket)
         await session.flush()
-    return len(rows)
+    return rows
 
 
 async def run_sync(session: AsyncSession, requested_by: str | None = None) -> dict[str, Any]:
@@ -180,9 +188,18 @@ async def run_sync(session: AsyncSession, requested_by: str | None = None) -> di
     _, ctx = await open_connection(session, "sdp", Purpose.READ, profile_id=settings.sdp_profile_id)
     await reclassify(session, settings)
     async with SdpClient(ctx) as client:
-        technicians = await sync_technicians(session, client, settings)
-        tickets = await sync_tickets(session, client, settings)
-    stats = {"technicians": technicians, "tickets": tickets}
+        try:
+            technicians: int | None = await sync_technicians(session, client, settings)
+        except SdpError as exc:
+            # Listing technicians needs an SDP admin permission the read key may lack: fall back to the
+            # technicians assigned on the requests read below.
+            log.warning("workload_technicians_unreadable", error=str(exc))
+            technicians = None
+        rows = await sync_tickets(session, client, settings)
+        if technicians is None:
+            seen = {str(t["id"]): t for r in rows if (t := r.get("technician") or {}).get("id")}
+            technicians = await sync_technicians(session, client, settings, rows=list(seen.values()))
+    stats = {"technicians": technicians, "tickets": len(rows)}
     await record(
         session,
         actor=Actor(None, requested_by or "system"),

@@ -11,6 +11,7 @@ from urllib.parse import parse_qs
 import httpx
 import pytest
 import respx
+from sqlalchemy import select
 
 from app.core.db import get_sessionmaker
 from app.core.workflow.engine import pump
@@ -82,15 +83,27 @@ class FakeSdp:
         self.assets: list[dict] = [{"id": "900", "serial_number": "SN-OLD", "name": "OLD"}]
         self.asset_posts: list[dict] = []
         self.fail_assets = False
+        self.deny_techs = False
         self.techs = [
             {"id": "11", "name": "Tech 11", "email_id": "wl-op1@test.local"},
             {"id": "12", "name": "Tech 12", "email_id": "wl-op2@test.local"},
         ]
 
     def install(self, r: respx.MockRouter) -> None:
+        denied = {
+            "response_status": {
+                "status_code": 4000,
+                "status": "failed",
+                "messages": [{"status_code": 4000, "message": "User does not have this permission"}],
+            }
+        }
         r.get(f"{SDP}/api/v3/technicians").mock(
-            side_effect=lambda _: httpx.Response(
-                200, json={**OK, "list_info": {"has_more_rows": False}, "technicians": self.techs}
+            side_effect=lambda _: (
+                httpx.Response(403, json=denied)
+                if self.deny_techs
+                else httpx.Response(
+                    200, json={**OK, "list_info": {"has_more_rows": False}, "technicians": self.techs}
+                )
             )
         )
         r.get(f"{SDP}/api/v3/requests").mock(
@@ -172,6 +185,19 @@ async def sdp(admin, respx_mock):  # type: ignore[no-untyped-def]
     async with get_sessionmaker()() as s:
         assert await run_sync(s) == {"technicians": 2, "tickets": 5}
     return fake
+
+
+@respx.mock(assert_all_called=False)
+async def test_sync_without_technician_list_permission(sdp) -> None:  # type: ignore[no-untyped-def]
+    from app.modules.workload.models import Technician
+    from app.modules.workload.sync import run_sync
+
+    sdp.deny_techs = True  # read key without the SDP "technicians" admin permission
+    async with get_sessionmaker()() as s:
+        stats = await run_sync(s)
+        # Technicians come from the requests instead; nobody is deactivated for missing from them.
+        assert stats["technicians"] == 2 and stats["tickets"] == 5
+        assert {t.id for t in (await s.scalars(select(Technician))).all() if t.active} == {"11", "12"}
 
 
 @respx.mock(assert_all_called=False)
