@@ -346,5 +346,6 @@ sudo docker compose start api worker
 | Đồng bộ báo "Chưa cấu hình kết nối cho hệ thống sdp" | Chưa tạo/bật kết nối SDP hoặc chưa chọn trong Cấu hình module. |
 | Kiểm tra kết nối lỗi SSL | SDP/BioStar dùng CA nội bộ: mục 10.1. |
 | Tải file lên báo lỗi 413 | Tăng `client_max_body_size` trong nginx máy chủ (mặc định ứng dụng nhận tối đa 20 MB). |
+| Đăng nhập đúng mật khẩu nhưng vẫn quay lại trang đăng nhập (log: `POST /auth/login 204` rồi `GET /me 401`), trang báo *Cần mở trang bằng HTTPS* | Đang mở bằng `http://`: cookie phiên có cờ `Secure` nên trình duyệt bỏ. Cấu hình HTTPS (mục 8) và mở `https://…`; chỉ khi thử nghiệm mới làm theo mục 10.3. |
 | Trang báo lỗi 502 | `api` đang khởi động (chờ *healthy*) hoặc lỗi: `sudo docker compose logs api`. |
 | PDF biên bản sai font | Thiếu font Aptos: mục 10.2. |

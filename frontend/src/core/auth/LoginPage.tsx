@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { LogIn } from "lucide-react";
+import { LogIn, ShieldAlert } from "lucide-react";
 import { api, errorMessage } from "@/core/api/client";
 import { Button } from "@/core/ui/button";
 import { Field, Input } from "@/core/ui/field";
@@ -14,7 +14,7 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const next = params.get("next") ?? "/";
-  const config = useQuery({ queryKey: ["auth-config"], queryFn: () => api<{ mode: string }>("/api/core/auth/config") });
+  const config = useQuery({ queryKey: ["auth-config"], queryFn: () => api<{ mode: string; cookie_secure: boolean }>("/api/core/auth/config") });
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [submitted, setSubmitted] = useState(false);
@@ -23,6 +23,9 @@ export function LoginPage() {
 
   if (me) return <Navigate to={next} replace />;
   const mode = config.data?.mode;
+  // The session cookie is Secure: over plain http:// the browser drops it and every login "fails" silently.
+  const needsHttps = !!config.data?.cookie_secure && window.location.protocol === "http:" && !["localhost", "127.0.0.1"].includes(window.location.hostname);
+  const httpsUrl = `https://${window.location.hostname}${window.location.pathname}${window.location.search}`;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -32,6 +35,11 @@ export function LoginPage() {
     setError("");
     try {
       await api("/api/core/auth/login", { method: "POST", json: { username, password } });
+      try {
+        await api("/api/core/me");
+      } catch {
+        throw new Error("Mật khẩu đúng nhưng trình duyệt không lưu phiên đăng nhập (cookie). Mở trang bằng địa chỉ https:// rồi đăng nhập lại.");
+      }
       await qc.invalidateQueries({ queryKey: ME_KEY });
       navigate(next.startsWith("/") && !next.startsWith("//") ? next : "/", { replace: true });
     } catch (err) {
@@ -54,6 +62,19 @@ export function LoginPage() {
         </div>
         <div className="rounded-md border border-line bg-surface p-5">
           <h2 className="mb-4 text-lg font-semibold">Đăng nhập</h2>
+          {needsHttps && (
+            <div role="alert" className="mb-4 flex gap-2 rounded-sm border border-waiting/40 bg-waiting-soft px-3 py-2 text-sm">
+              <ShieldAlert className="mt-0.5 size-4 shrink-0 text-waiting" aria-hidden="true" />
+              <span>
+                <span className="block font-medium">Cần mở trang bằng HTTPS để đăng nhập.</span>
+                <span className="block">
+                  Trình duyệt không lưu phiên đăng nhập trên địa chỉ http://. Mở{" "}
+                  <a className="font-medium text-primary underline" href={httpsUrl}>{httpsUrl}</a> (cần cấu hình HTTPS trên máy chủ).
+                </span>
+                <span className="block text-muted">Quản trị: xem mục HTTPS trong hướng dẫn cài đặt; chỉ khi thử nghiệm mới đặt INFRAOPS_SESSION_COOKIE_SECURE=false.</span>
+              </span>
+            </div>
+          )}
           {mode === "oidc" ? (
             <a
               href={`/api/core/auth/oidc/login?next=${encodeURIComponent(next)}`}

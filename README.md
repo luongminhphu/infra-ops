@@ -111,7 +111,8 @@ sudo docker compose ps        # db healthy, migrate exited (0), api healthy, wor
 sudo docker compose exec api python -m app.cli create-admin --username admin --name "Quản trị"
 ```
 
-**5. HTTPS.** Cookie phiên có cờ `Secure` nên phải truy cập qua HTTPS: đặt nginx (hoặc reverse proxy sẵn có) trên
+**5. HTTPS.** Cookie phiên có cờ `Secure` nên phải truy cập qua HTTPS (mở bằng `http://<ip>:8080` thì đăng nhập đúng
+mật khẩu vẫn quay lại trang đăng nhập – trang sẽ báo *Cần mở trang bằng HTTPS*): đặt nginx (hoặc reverse proxy sẵn có) trên
 máy chủ trỏ tới `127.0.0.1:8080` – cấu hình mẫu ở [mục 8 của hướng dẫn](docs/install-ubuntu-docker.md#8-https-bằng-nginx-trên-máy-chủ).
 
 **6. Cấu hình trong ứng dụng** (đăng nhập `admin`): *Hệ thống → Kết nối hệ thống* thêm SDP, BioStar và bấm
@@ -214,6 +215,7 @@ Test không bao giờ gọi hệ thống thật: SDP/BioStar được mock bằn
 | 15 | **Việc tiếp theo**: Việc của tôi thành một hàng chờ theo ưu tiên từ mọi module, nút *Làm việc tiếp theo* | Xong |
 | 16 | **Nhận hàng từng bước**: chọn PO → quét serial từng máy → xác nhận ghi SDP → kết quả + Job onboard còn thiếu máy | Xong |
 | 17 | **Tổng quan** đầu Việc của tôi (trễ hạn / đến hạn 3 ngày / đang mở / đã xong 7 ngày); Operator nhận hàng, **đọc serial từ file biên bản** (PDF/Excel), **gợi ý mã tài sản** HCM-năm-loại-4 số cuối serial; sửa theo critique luồng Operator | Xong |
+| 18 | Triển khai: trang đăng nhập báo rõ khi mở bằng `http://` (cookie phiên `Secure` bị trình duyệt bỏ) thay vì đăng nhập thất bại không lý do | Xong |
 | sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
 
 ## Đăng nhập
