@@ -3,10 +3,10 @@ import { Link } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Boxes, CheckCircle2, PackageOpen, PackageSearch, Pencil, ShoppingCart, Wand2 } from "lucide-react";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
+import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { cn } from "@/core/lib/cn";
-import { formatDate } from "@/core/lib/format";
+import { formatDate, isoDateVn } from "@/core/lib/format";
 import { Button } from "@/core/ui/button";
 import { Dialog } from "@/core/ui/dialog";
 import { EmptyState, Mono, Panel } from "@/core/ui/feedback";
@@ -90,7 +90,6 @@ function BandDialog({ req, bands, onClose }: { req: PlanRequest; bands: string[]
       void qc.invalidateQueries({ queryKey: ["lifecycle", "allocation"] });
       onClose();
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   return (
     <Dialog
@@ -133,7 +132,6 @@ export function RequestCard({ r, purchases, bands }: { r: PlanRequest; purchases
       toast.success(`Đã chọn ${reuse.length} tài sản từ kho vào Job của ${r.full_name}.`);
       void qc.invalidateQueries({ queryKey: ["lifecycle"] });
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const proposed = (l: Line) => proposedFor(purchases, r, l);
   const buyLink = (l: Line) => buyLinkFor(r, l);
@@ -218,9 +216,6 @@ export function RequestCard({ r, purchases, bands }: { r: PlanRequest; purchases
   );
 }
 
-const isoToday = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Ho_Chi_Minh" });
-const isoIn = (days: number) => new Date(Date.now() + days * 86_400_000).toLocaleDateString("sv-SE", { timeZone: "Asia/Ho_Chi_Minh" });
-
 /** People who need devices: most urgent first (start date passed, within 7 days, later). */
 export function OnboardTab({ d, purchases }: { d: Allocation; purchases: PurchaseLite[] | null }) {
   if (d.requests.length === 0)
@@ -231,8 +226,8 @@ export function OnboardTab({ d, purchases }: { d: Allocation; purchases: Purchas
         </EmptyState>
       </Panel>
     );
-  const today = isoToday();
-  const week = isoIn(7);
+  const today = isoDateVn();
+  const week = isoDateVn(7);
   const byDate = [...d.requests].sort((x, y) => (x.effective_date ?? "9999").localeCompare(y.effective_date ?? "9999"));
   const groups = [
     { key: "late", title: "Đã qua ngày bắt đầu", items: byDate.filter((r) => r.effective_date && r.effective_date < today) },

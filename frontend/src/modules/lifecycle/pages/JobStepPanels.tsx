@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { FileText, Plus, Search, Trash2, X } from "lucide-react";
@@ -8,6 +8,7 @@ import { Dialog } from "@/core/ui/dialog";
 import { EmptyState, LoadingRows, Mono } from "@/core/ui/feedback";
 import { Field, Input, Select, Textarea } from "@/core/ui/field";
 import { formatDateTime } from "@/core/lib/format";
+import { useDebounced } from "@/core/lib/useDebounced";
 import type { Job, JobAsset, JobStep } from "../jobs";
 
 const CONDITIONS = { good: "Tốt", damaged: "Hỏng", missing_accessory: "Thiếu phụ kiện", not_returned: "Chưa thu hồi" } as const;
@@ -26,11 +27,7 @@ interface SnapshotAsset {
 export function AssetPicker({ open, onClose, selected, onPick }: { open: boolean; onClose: () => void; selected: JobAsset[]; onPick: (a: JobAsset) => void }) {
   const [q, setQ] = useState("");
   const [type, setType] = useState("");
-  const [debounced, setDebounced] = useState("");
-  useEffect(() => {
-    const t = window.setTimeout(() => setDebounced(q), 250);
-    return () => window.clearTimeout(t);
-  }, [q]);
+  const debounced = useDebounced(q, 250);
   const list = useQuery({
     queryKey: ["in-store", debounced, type],
     queryFn: () => api<{ items: SnapshotAsset[]; total: number; as_of: string | null; types: string[] }>(

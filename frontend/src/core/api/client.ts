@@ -63,3 +63,11 @@ export function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return "Đã xảy ra lỗi không xác định.";
 }
+
+/** errorMessage plus the API's validation details ("field.path: msg; ..."), when present. */
+export function errorDetails(error: unknown): string {
+  if (error instanceof ApiError && Array.isArray(error.details)) {
+    return `${error.message} ${(error.details as { loc: string[]; msg: string }[]).map((d) => `${d.loc.join(".")}: ${d.msg}`).join("; ")}`;
+  }
+  return errorMessage(error);
+}

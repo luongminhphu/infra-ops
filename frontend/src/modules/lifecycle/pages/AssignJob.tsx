@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRightLeft } from "lucide-react";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
+import { api } from "@/core/api/client";
 import { Button } from "@/core/ui/button";
 import { Dialog } from "@/core/ui/dialog";
 import { Field, Select, Textarea } from "@/core/ui/field";
@@ -35,7 +35,6 @@ export function AssignJobButton({ job }: { job: Job }) {
       setOpen(false);
       void qc.invalidateQueries({ queryKey: ["jobs", "assign", job.id] });
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const options = (people.data ?? []).filter((p) => p.id !== job.assignee?.user_id);
   const target = options.find((p) => p.id === to);
@@ -85,7 +84,6 @@ export function PendingAssignment({ job }: { job: Job }) {
   const retry = useMutation({
     mutationFn: (id: string) => api(`/api/core/jobs/${id}/steps/reassign/retry`, { method: "POST" }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["jobs", "assign", job.id] }),
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const runs = q.data?.items ?? [];
   if (!runs.length) return null;

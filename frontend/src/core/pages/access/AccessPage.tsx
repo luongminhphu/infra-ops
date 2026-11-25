@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Lock, Plus, ShieldCheck, Users } from "lucide-react";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
+import { api } from "@/core/api/client";
 import type { AppUser, PermissionGroup, Role } from "@/core/api/types";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { Button } from "@/core/ui/button";
@@ -82,7 +82,6 @@ function RolesTab({ roles, perms }: { roles: Role[]; perms: PermissionGroup[] })
       await qc.invalidateQueries({ queryKey: ["roles"] });
       toast.success("Đã xoá vai trò.");
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const total = perms.reduce((n, g) => n + g.permissions.length, 0);
   return (

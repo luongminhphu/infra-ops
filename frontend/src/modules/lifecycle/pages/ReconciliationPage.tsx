@@ -15,7 +15,8 @@ import { HelpTip } from "@/core/ui/help-tip";
 import { Menu, MenuItem } from "@/core/ui/menu";
 import { StatusBadge } from "@/core/ui/status";
 import { formatDate, formatRelative } from "@/core/lib/format";
-import { cn } from "@/core/lib/cn";
+import { chip } from "../chip";
+import { useDebounced } from "@/core/lib/useDebounced";
 import { useRules, useSyncNow, useSyncStatus, type ReconResponse, type ReconRow } from "../api";
 import { CellChip } from "../CellChip";
 import { KIND_LABEL, NOTE_TITLE, SEVERITY, SOURCE_LABEL } from "../labels";
@@ -161,11 +162,11 @@ export function ReconciliationPage() {
     else next.delete(key);
     setParams(next, { replace: true });
   };
+  const debouncedSearch = useDebounced(search);
   useEffect(() => {
-    const t = window.setTimeout(() => search !== filters.q && setFilter("q", search), 300);
-    return () => window.clearTimeout(t);
+    if (debouncedSearch !== filters.q) setFilter("q", debouncedSearch);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [debouncedSearch]);
 
   const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v));
   // A new filter is a new list: drop the selection rather than act on rows no longer shown.
@@ -175,10 +176,12 @@ export function ReconciliationPage() {
     queryFn: () => api<ReconResponse>(`/api/lifecycle/reconciliation?${qs}&limit=1000`),
   });
 
-  // Refresh when a sync finishes.
+  // Refresh when a sync finishes (not on the first value seen: the list was just loaded).
   const lastFinished = syncStatus.data?.task?.last_finished_at;
+  const seenFinished = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    if (lastFinished) void q.refetch();
+    if (seenFinished.current !== undefined && lastFinished) void q.refetch();
+    if (syncStatus.data) seenFinished.current = lastFinished ?? null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastFinished]);
 
@@ -402,10 +405,7 @@ export function ReconciliationPage() {
                   else if (value !== "issues") next.set("severity", value);
                   setParams(next, { replace: true });
                 }}
-                className={cn(
-                  "h-7 cursor-pointer rounded-full border px-3 text-sm transition-colors duration-150",
-                  pressed ? "border-primary bg-primary-soft font-medium text-primary" : "border-line-strong bg-surface hover:bg-surface-2",
-                )}
+                className={chip(pressed, true)}
               >
                 {label}
               </button>

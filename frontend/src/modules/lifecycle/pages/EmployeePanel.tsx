@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCheck, ChevronDown, ChevronUp, FilePlus2, Play, RotateCcw, X } from "lucide-react";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
+import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { Button } from "@/core/ui/button";
 import { ErrorState, LoadingRows, Mono } from "@/core/ui/feedback";
@@ -42,7 +42,6 @@ function IssueItem({ employeeId, issue, ackNote }: { employeeId: string; issue: 
       await refresh();
       toast.success("Đã đánh dấu là lệch đã biết.");
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const reopen = useMutation({
     mutationFn: () => api(`/api/lifecycle/reconciliation/${employeeId}/ack/${issue.rule}`, { method: "DELETE" }),
@@ -50,7 +49,6 @@ function IssueItem({ employeeId, issue, ackNote }: { employeeId: string; issue: 
       await refresh();
       toast.success("Đã mở lại lệch.");
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   return (
     <li className="rounded-sm border border-line p-2.5">
@@ -126,7 +124,6 @@ function JobsSection({ employeeId, requests, latestId }: { employeeId: string; r
       await qc.invalidateQueries({ queryKey: ["jobs"] });
       navigate(`/lifecycle/jobs/${j.id}`);
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   if (!can("lifecycle.job.view")) return null;
   const items = (jobs.data?.items ?? []).filter((j) => j.status !== "cancelled");

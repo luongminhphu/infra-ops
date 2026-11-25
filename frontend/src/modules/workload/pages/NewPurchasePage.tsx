@@ -8,7 +8,7 @@ import { Button } from "@/core/ui/button";
 import { EmptyState, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input, Select, Textarea } from "@/core/ui/field";
 import { announce } from "@/core/ui/live-region";
-import { Wizard } from "@/core/ui/wizard";
+import { From, Wizard } from "@/core/ui/wizard";
 import { useCatalog, type DeviceNeed, type Purchase } from "../api";
 import { EVIDENCE_ACCEPT, EvidenceHelp, pastedImage, uploadEvidence } from "../evidence";
 import { KIND_LABEL } from "../labels";
@@ -20,11 +20,6 @@ const STEPS = [
   { key: "evidence", title: "Bằng chứng duyệt" },
   { key: "review", title: "Xem lại & gửi" },
 ];
-
-/** Where a pre-filled value came from. */
-function From({ children }: { children: string }) {
-  return <span className="ml-2 rounded-xs bg-surface-2 px-1.5 py-0.5 text-xs font-normal text-muted">{children}</span>;
-}
 
 /**
  * Device purchase proposal, step by step. Opened from a suggestion (helpdesk request: ?ticket=…, onboard

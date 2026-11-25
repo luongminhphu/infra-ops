@@ -38,7 +38,22 @@ export function pluralDays(days: number): string {
   return `còn ${days} ngày`;
 }
 
+/** yyyy-MM-dd in Vietnam time, `offsetDays` from `now`. */
+export function isoDateVn(offsetDays = 0, now: Date = new Date()): string {
+  return formatInTimeZone(new Date(now.getTime() + offsetDays * 86_400_000), TIME_ZONE, "yyyy-MM-dd");
+}
+
+/** 1.234.567 (vi-VN grouping). */
+export function formatNumber(n: number): string {
+  return new Intl.NumberFormat("vi-VN").format(n);
+}
+
 /** 1.234.567 đ */
 export function formatVnd(value: number | null | undefined, fallback = "—"): string {
-  return value == null ? fallback : `${new Intl.NumberFormat("vi-VN").format(value)} đ`;
+  return value == null ? fallback : `${formatNumber(value)} đ`;
+}
+
+/** Removes Vietnamese diacritics so "ket noi" finds "Kết nối". */
+export function fold(s: string): string {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
 }

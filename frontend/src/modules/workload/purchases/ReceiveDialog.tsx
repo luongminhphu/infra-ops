@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { PackageCheck } from "lucide-react";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
+import { api } from "@/core/api/client";
 import { Button } from "@/core/ui/button";
 import { Dialog } from "@/core/ui/dialog";
 import { Field, Input, Textarea } from "@/core/ui/field";
@@ -40,7 +40,6 @@ export function ReceiveDialog({ p, onClose, onDone }: { p: Purchase; onClose: ()
       );
       onDone();
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const set = (i: number, patch: Partial<(typeof units)[number]>) => setUnits((cur) => cur.map((u, j) => (j === i ? { ...u, ...patch } : u)));
   return (

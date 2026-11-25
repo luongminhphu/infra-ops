@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Building2, Pencil, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
+import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { formatDate } from "@/core/lib/format";
 import { Button } from "@/core/ui/button";
@@ -38,7 +38,6 @@ function EditDialog({ item, onClose }: { item: Supplier | null; onClose: () => v
       void qc.invalidateQueries({ queryKey: ["workload", "suppliers"] });
       onClose();
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   return (
     <Dialog

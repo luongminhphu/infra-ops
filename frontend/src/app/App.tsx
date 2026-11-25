@@ -2,8 +2,8 @@ import { MyWorkPage } from "@/core/pages/MyWorkPage";
 import { MyCredentialsPage } from "@/core/pages/MyCredentialsPage";
 import { createBrowserRouter, RouterProvider, type RouteObject } from "react-router-dom";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Toaster } from "sonner";
-import { ApiError } from "@/core/api/client";
+import { Toaster, toast } from "sonner";
+import { ApiError, errorMessage } from "@/core/api/client";
 import { AuthProvider, ME_KEY } from "@/core/auth/AuthProvider";
 import { LoginPage } from "@/core/auth/LoginPage";
 import { RequireAuth, RequirePermission } from "@/core/auth/guards";
@@ -27,7 +27,13 @@ function onApiError(error: unknown) {
 
 const queryClient: QueryClient = new QueryClient({
   queryCache: new QueryCache({ onError: onApiError }),
-  mutationCache: new MutationCache({ onError: onApiError }),
+  mutationCache: new MutationCache({
+    onError: (error, _vars, _ctx, mutation) => {
+      onApiError(error);
+      // Default error toast; mutations with their own onError or meta.silentError handle errors themselves.
+      if (!mutation.options.onError && !mutation.meta?.silentError) toast.error(errorMessage(error));
+    },
+  }),
   defaultOptions: {
     queries: {
       retry: (count, error) => !(error instanceof ApiError && error.status >= 400 && error.status < 500) && count < 2,

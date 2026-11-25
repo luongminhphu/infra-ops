@@ -3,9 +3,9 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { FileSearch, FileText, Pencil, Plus, Tags } from "lucide-react";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
+import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
-import { formatDate, formatVnd } from "@/core/lib/format";
+import { formatDate, formatNumber, formatVnd } from "@/core/lib/format";
 import { Button } from "@/core/ui/button";
 import { DataTable } from "@/core/ui/data-table";
 import { DateInput } from "@/core/ui/date-input";
@@ -18,7 +18,7 @@ import { useCatalog, type CatalogItem } from "../api";
 import { PdfImportDialog } from "./PdfImportDialog";
 
 const digits = (s: string) => s.replace(/\D/g, "");
-const group = (s: string) => (s ? new Intl.NumberFormat("vi-VN").format(Number(s)) : "");
+const group = (s: string) => (s ? formatNumber(Number(s)) : "");
 
 function EditDialog({ item, onClose }: { item: CatalogItem | null; onClose: () => void }) {
   const qc = useQueryClient();
@@ -44,7 +44,6 @@ function EditDialog({ item, onClose }: { item: CatalogItem | null; onClose: () =
       void qc.invalidateQueries({ queryKey: ["workload"] });
       onClose();
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   return (
     <Dialog

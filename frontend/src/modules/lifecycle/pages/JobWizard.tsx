@@ -9,7 +9,7 @@ import { Button } from "@/core/ui/button";
 import { EmptyState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
-import { Wizard, WizardProgress } from "@/core/ui/wizard";
+import { From, Wizard, WizardProgress } from "@/core/ui/wizard";
 import { JOB_STATUS, WORKFLOW_LABEL, jobStatusLabel, operatorTask, type Job, type JobAsset } from "../jobs";
 import { StepDetail, useJobActions } from "./JobPage";
 import { buyLink, proposedFor } from "../buy";
@@ -54,11 +54,6 @@ interface PreviewStep {
 
 const toJobAsset = (a: Asset): JobAsset => ({ id: a.id, name: a.name ?? a.id, tag: a.asset_tag, product_type: a.product_type });
 const sameAssets = (a: JobAsset[], b: JobAsset[]) => a.map((x) => x.id).sort().join() === b.map((x) => x.id).sort().join();
-
-/** Small source tag: tells the operator where a pre-filled value comes from. */
-function From({ children }: { children: string }) {
-  return <span className="ml-2 rounded-xs bg-surface-2 px-1.5 py-0.5 text-xs text-muted">{children}</span>;
-}
 
 /**
  * Operator's step-by-step view of an onboard/offboard job. Preparation asks only for confirmations:

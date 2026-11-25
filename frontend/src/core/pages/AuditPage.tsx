@@ -4,7 +4,7 @@ import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ScrollText, ShieldCheck, X } from "lucide-react";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
+import { api } from "@/core/api/client";
 import type { AuditEntry } from "@/core/api/types";
 import { Button } from "@/core/ui/button";
 import { DataTable } from "@/core/ui/data-table";
@@ -13,6 +13,7 @@ import { Field, Input, Select } from "@/core/ui/field";
 import { DateInput } from "@/core/ui/date-input";
 import { StatusBadge, type Status } from "@/core/ui/status";
 import { formatDateTime } from "@/core/lib/format";
+import { useDebounced } from "@/core/lib/useDebounced";
 
 export const ACTION_LABEL: Record<string, string> = {
   "auth.login": "Đăng nhập",
@@ -145,13 +146,11 @@ export function AuditPage() {
 
   // Debounce free-text search so typing does not fire a request per keystroke.
   const [search, setSearch] = useState(filters.q);
+  const debouncedSearch = useDebounced(search, 350);
   useEffect(() => {
-    const t = window.setTimeout(() => {
-      if (search !== filters.q) setFilter("q", search);
-    }, 350);
-    return () => window.clearTimeout(t);
+    if (debouncedSearch !== filters.q) setFilter("q", debouncedSearch);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [debouncedSearch]);
 
   const facets = useQuery({ queryKey: ["audit-facets"], queryFn: () => api<{ modules: string[]; actions: string[] }>("/api/core/audit/facets") });
   const query = useInfiniteQuery({
@@ -178,7 +177,6 @@ export function AuditPage() {
       r.ok
         ? toast.success(`Nhật ký toàn vẹn: đã kiểm tra ${r.checked.toLocaleString("vi-VN")} bản ghi, không phát hiện chỉnh sửa.`)
         : toast.error(`Phát hiện bất thường tại bản ghi #${r.broken_at_id}: ${r.reason}`),
-    onError: (e) => toast.error(errorMessage(e)),
   });
 
   const columns = useMemo<ColumnDef<AuditEntry, unknown>[]>(

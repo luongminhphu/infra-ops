@@ -33,10 +33,6 @@ interface PreviewStep {
   error: string | null;
 }
 
-function msg(e: unknown): string {
-  return errorMessage(e);
-}
-
 /**
  * One step of a job. `focus` (operator wizard): only what the person acts on now – verification once the
  * step has run, no timing details or before-state.
@@ -181,8 +177,8 @@ export function useJobActions(job: Job | undefined) {
     }
   };
   const fail = (e: unknown) => {
-    toast.error(msg(e));
-    announce(msg(e));
+    toast.error(errorMessage(e));
+    announce(errorMessage(e));
     if (e instanceof ApiError && e.code === "stale_version") void qc.invalidateQueries({ queryKey: ["job", id] });
   };
   return {

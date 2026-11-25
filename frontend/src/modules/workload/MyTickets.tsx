@@ -2,8 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ShoppingCart } from "lucide-react";
-import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
+import { api } from "@/core/api/client";
 import { HelpTip } from "@/core/ui/help-tip";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { Button } from "@/core/ui/button";
@@ -48,7 +47,6 @@ export function MyTicketsSection() {
   const dismiss = useMutation({
     mutationFn: (id: string) => api(`/api/workload/tickets/${id}/dismiss-purchase`, { method: "POST" }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["workload", "my-work"] }),
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const d = q.data;
   const now = Date.now();
