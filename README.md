@@ -520,6 +520,18 @@ Mã NV…) hoặc *Không cần làm gì* khi hệ thống đang tự chạy.
    gợi ý vào Job nháp.
 3. Nút **?** cạnh tiêu đề / trường giải thích cách vận hành từng phần.
 
+### Tồn kho (Vòng đời nhân sự)
+- Danh sách mọi tài sản chưa gán người dùng theo lần đồng bộ gần nhất, chia tab **Mới**, **Thu hồi**, **Chờ thanh lý**
+  (kèm số lượng), lọc theo loại, tìm theo mã tài sản / serial / tên. Mã tài sản và serial là bắt buộc: tài sản thiếu
+  được đánh dấu đỏ (tab **Thiếu mã TS / serial**) để bổ sung trên SDP.
+- **Thu hồi**: đồng bộ tự nhận ra tài sản lần trước đang gán cho ai đó nay về In Store (ghi người trả, ngày); Manager /
+  Supervisor có thể đánh dấu tay hoặc chuyển về hàng mới.
+- Chọn nhiều (ô đầu dòng, chọn tất cả theo bộ lọc) rồi **Chuyển Chờ thanh lý** / **Trả về kho** (Manager, Supervisor) hoặc
+  **Thanh lý trên SDP** (chỉ **Manager** và **Administrator**, nhập `THANH LY` để xác nhận; chỉ áp dụng cho hàng đang
+  Chờ thanh lý). Thay đổi chạy bằng Job nền với API key cá nhân của người bấm.
+- Trên SDP cần có trạng thái tài sản cho "Chờ thanh lý" (mặc định tên `Chờ thanh lý`) và "Disposed"; đổi tên ở
+  **Cấu hình module → Trạng thái “chờ thanh lý” / “đã thanh lý”**.
+
 ### Suprema BioStar 2
 1. Tạo tài khoản BioStar riêng: Read = quyền xem User/Access Group; Write = Operator/Administrator có quyền quản lý User.
 2. Base URL của server BioStar 2 (vd. `https://biostar.congty.local`). Nếu dùng chứng chỉ tự ký,

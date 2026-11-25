@@ -25,6 +25,8 @@ from app.modules.lifecycle.documents import HANDOVER, RETURN
 from app.modules.lifecycle.documents_api import router as documents_router
 from app.modules.lifecycle.inventory_api import router as inventory_router
 from app.modules.lifecycle.jobs_api import router as jobs_router
+from app.modules.lifecycle.stock import ASSET_DISPOSE, ASSET_STATE
+from app.modules.lifecycle.stock import router as stock_router
 from app.modules.lifecycle.workflows import OFFBOARD, ONBOARD
 
 
@@ -94,9 +96,18 @@ manifest = ModuleManifest(
             "lifecycle.templates.manage", "Quản lý mẫu biên bản và huỷ biên bản đã chốt", ("manager",)
         ),
         Permission("lifecycle.settings.manage", "Cấu hình mapping của module", ("manager",)),
+        Permission(
+            "lifecycle.stock.manage",
+            "Cập nhật tồn kho: đánh dấu hàng thu hồi, chuyển sang / trả về từ Chờ thanh lý trên SDP",
+            ("manager", "supervisor"),
+        ),
+        # Administrator has every permission; only Managers among the other roles may dispose.
+        Permission(
+            "lifecycle.stock.dispose", "Thanh lý tài sản (trạng thái Disposed) trên SDP", ("manager",)
+        ),
     ],
-    routers=[router, documents_router, jobs_router, inventory_router],
-    workflows=[ONBOARD, OFFBOARD, REASSIGN_JOB],
+    routers=[router, documents_router, jobs_router, inventory_router, stock_router],
+    workflows=[ONBOARD, OFFBOARD, REASSIGN_JOB, ASSET_STATE, ASSET_DISPOSE],
     document_kinds=[HANDOVER, RETURN],
     nav=[
         NavItem(
@@ -108,6 +119,7 @@ manifest = ModuleManifest(
         NavItem("Job onboard / offboard", "/lifecycle/jobs", "workflow", "lifecycle.job.view"),
         NavItem("Lưu đồ quy trình", "/lifecycle/flows", "route", "lifecycle.job.view"),
         NavItem("Kho & cấp phát", "/lifecycle/inventory", "package", "lifecycle.job.view"),
+        NavItem("Tồn kho", "/lifecycle/stock", "archive", "lifecycle.job.view"),
         NavItem("Request RTR", "/lifecycle/requests", "ticket", "lifecycle.reconciliation.view"),
         NavItem("Biên bản", "/lifecycle/documents", "file-text", "lifecycle.documents.view"),
         NavItem("Đồng bộ dữ liệu", "/lifecycle/sync", "refresh-cw", "lifecycle.reconciliation.view"),

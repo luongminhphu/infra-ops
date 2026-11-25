@@ -122,3 +122,20 @@ class IssueAck(Base):
     note: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     acked_by: Mapped[str] = mapped_column(String(320), nullable=False)
     acked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AssetReturn(Base):
+    """An In Store asset that came back from someone (thu hồi), as opposed to new stock.
+
+    SDP keeps only the current user, so the sync records it when an asset it saw assigned is back In Store
+    (source "sync"); stock managers may also mark or unmark it by hand ("manual"). Cleared when the asset is
+    assigned again.
+    """
+
+    __tablename__ = "lifecycle_asset_return"
+
+    asset_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    returned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    from_user: Mapped[str | None] = mapped_column(String(256))
+    source: Mapped[str] = mapped_column(String(16), nullable=False, default="sync")
+    marked_by: Mapped[str] = mapped_column(String(320), nullable=False, default="system")

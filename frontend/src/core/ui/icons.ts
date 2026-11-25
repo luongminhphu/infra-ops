@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  Archive,
   Box,
   Package,
   Fingerprint,
@@ -43,6 +44,7 @@ const ICONS: Record<string, LucideIcon> = {
   "user-check": UserCheck,
   "shopping-cart": ShoppingCart,
   package: Package,
+  archive: Archive,
 };
 
 export function iconFor(name: string): LucideIcon {

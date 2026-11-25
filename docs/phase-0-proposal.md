@@ -1081,3 +1081,16 @@ Quyết định:
   thực hiện Job/nhận hàng/chuyển việc chưa có key.
 - Tiếp theo: trang tồn kho mới (Mới / Thu hồi / Chờ thanh lý theo state SDP, thanh lý = state Disposed, chỉ Manager và
   Administrator được ghi Disposed lên SDP).
+
+## 34. Tồn kho: mới / thu hồi / chờ thanh lý (25/11/2026)
+
+- Yêu cầu: trang quản lý tồn kho trực quan; phân biệt hàng mới, hàng thu hồi, hàng chờ thanh lý; mã tài sản và serial
+  bắt buộc; chọn nhanh / chọn nhiều để chuyển chờ thanh lý và loại khỏi quản lý tài sản.
+- Quyết định (chủ sản phẩm): trạng thái theo **state SDP** (In Store, state "Chờ thanh lý" cấu hình được); "loại bỏ" =
+  đổi state sang **Disposed** (không xoá asset); chỉ **Manager / Administrator** được ghi Disposed lên SDP
+  (`lifecycle.stock.dispose`); Manager / Supervisor chuyển chờ thanh lý, trả về kho, đánh dấu thu hồi
+  (`lifecycle.stock.manage`).
+- SDP chỉ lưu người dùng hiện tại, nên "thu hồi" được ghi trong infra-ops (`lifecycle_asset_return`): đồng bộ so với lần
+  trước (từng gán → nay In Store), hoặc đánh dấu tay; xoá khi tài sản được gán lại hoặc đã thanh lý.
+- Đổi state chạy trong worker (Job `lifecycle.asset_state` / `lifecycle.asset_dispose`, đọc trước khi ghi, chỉ đổi state –
+  không đụng người dùng), bằng API key cá nhân của người yêu cầu (§33); thanh lý chỉ nhận tài sản đang Chờ thanh lý.

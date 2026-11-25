@@ -25,8 +25,9 @@ from app.core.logging import get_logger
 from app.core.scheduler.service import get_task
 from app.core.settings.service import load_settings
 from app.modules.lifecycle import normalize
-from app.modules.lifecycle.models import IssueAck, LifecycleRequest, ReconRow, Snapshot, SyncRun
+from app.modules.lifecycle.models import AssetReturn, IssueAck, LifecycleRequest, ReconRow, Snapshot, SyncRun
 from app.modules.lifecycle.parsing import parse_rtr_description
+from app.modules.lifecycle.queries import latest_run
 from app.modules.lifecycle.reconcile import reconcile
 from app.modules.lifecycle.settings import MODULE_ID, SETTINGS_KEY, LifecycleSettings, main_biostar
 
@@ -152,6 +153,38 @@ def request_dict(r: LifecycleRequest) -> dict[str, Any]:
     }
 
 
+async def track_returns(
+    session: AsyncSession, assets: list[dict[str, Any]], settings: LifecycleSettings
+) -> int:
+    """Mark assets back In Store that the previous sync saw assigned (thu hồi); clear marks of re-assigned ones."""
+    prev_run = await latest_run(session)
+    prev = (
+        {
+            s.external_id: s.data
+            for s in (
+                await session.scalars(
+                    select(Snapshot).where(Snapshot.run_id == prev_run.id, Snapshot.system == "sdp_asset")
+                )
+            ).all()
+        }
+        if prev_run
+        else {}
+    )
+    marks = {m.asset_id: m for m in (await session.scalars(select(AssetReturn))).all()}
+    added = 0
+    for a in assets:
+        aid = a["id"]
+        if a.get("user_id"):
+            if aid in marks:  # assigned again: no longer returned stock
+                await session.delete(marks[aid])
+            continue
+        before = prev.get(aid) or {}
+        if a.get("state") == settings.asset_state_in_store and before.get("user_id") and aid not in marks:
+            session.add(AssetReturn(asset_id=aid, from_user=before.get("user_name"), source="sync"))
+            added += 1
+    return added
+
+
 async def run_sync(
     session: AsyncSession,
     *,
@@ -256,6 +289,8 @@ async def _sync(
             errors[err_key] = _err(exc)
     sources["biostar"] = not any(k.startswith("biostar") for k in errors)
     bs_users = normalize.merge_biostar_users(read_users)
+    if sources["assets"]:
+        stats["assets_returned"] = await track_returns(session, assets, settings)
 
     for system, items, key in (
         ("sdp_user", sdp_users, "id"),
