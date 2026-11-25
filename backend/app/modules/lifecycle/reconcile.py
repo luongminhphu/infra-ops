@@ -168,7 +168,7 @@ def reconcile(
                 }
             )
 
-    bs_by_emp = {b["user_id"]: b for b in biostar_users if b.get("user_id")}
+    bs_by_emp = {b.get("employee_id") or b["user_id"]: b for b in biostar_users if b.get("user_id")}
 
     employees = set(req_by_emp) | set(users_by_emp) | set(bs_by_emp)
     rows: list[Row] = []
@@ -207,7 +207,7 @@ def reconcile(
             request_ids=[r["id"] for r in reqs],
             sdp_user_ids=owner_ids,
             asset_ids=[a["id"] for a in emp_assets],
-            biostar_user_id=bs["user_id"] if bs else None,
+            biostar_user_id=(bs.get("ref") or bs["user_id"]) if bs else None,
         )
 
         # --- cells -------------------------------------------------------
@@ -245,7 +245,8 @@ def reconcile(
             row.cells["biostar"] = {
                 "status": "match" if bs["active"] else "skipped",
                 "label": state,
-                "detail": f"Nhóm: {bs.get('group') or '—'} · thẻ {bs['cards']} · vân tay {bs['fingerprints']} · "
+                "detail": (f"{bs['source']} (user {bs['user_id']}) · " if bs.get("source") else "")
+                + f"Nhóm: {bs.get('group') or '—'} · thẻ {bs['cards']} · vân tay {bs['fingerprints']} · "
                 f"khuôn mặt {bs['faces']}",
             }
 

@@ -15,6 +15,7 @@ import { KIND_LABEL } from "../labels";
 interface Values {
   sdp_profile_id: string | null;
   biostar_profile_id: string | null;
+  biostar_sources: BioStarSource[];
   rtr_requester_name: string;
   rtr_lookback_days: number;
   field_labels: Record<string, string>;
@@ -41,6 +42,15 @@ interface Values {
   allocation_standard: StandardItem[];
   allocation_past_days: number;
 }
+
+interface BioStarSource {
+  profile_id: string;
+  id_prefix: string;
+  id_prefix_to: string;
+}
+
+/** What a BioStar user ID becomes after the prefix rule (mirrors backend normalize.map_employee_id). */
+const mapId = (id: string, prefix: string, to: string) => (prefix && id.startsWith(prefix) ? to + id.slice(prefix.length) : id);
 
 interface StandardItem {
   label: string;
@@ -138,13 +148,60 @@ export function SettingsPage() {
                 {profileOptions("sdp").map((p) => <option key={p.id} value={p.id}>{p.name}{p.enabled ? "" : " (đang tắt)"}</option>)}
               </Select>
             </Field>
-            <Field label="BioStar">
+            <Field label="BioStar" hint="Hệ thống chính: Job onboard/offboard tạo và khoá user ở đây.">
               <Select value={v.biostar_profile_id ?? ""} onChange={(e) => set("biostar_profile_id", e.target.value || null)}>
                 <option value="">Tự động</option>
                 {profileOptions("biostar").map((p) => <option key={p.id} value={p.id}>{p.name}{p.enabled ? "" : " (đang tắt)"}</option>)}
               </Select>
             </Field>
           </div>
+          <h3 className="mt-5 mb-1 flex items-center gap-1 text-base font-semibold">
+            BioStar đọc thêm (chỉ để đối soát)
+            <HelpTip title="BioStar đọc thêm">
+              <span className="block">Hệ thống BioStar khác (vd. máy cũ ở văn phòng) được đọc mỗi lần đồng bộ và gộp với hệ thống chính theo Mã NV. Job không ghi vào các hệ thống này.</span>
+              <span className="block">Nếu mã user trên hệ thống đó khác tiền tố so với Mã NV thật (vd. 100002 thay cho 000002), nhập Tiền tố = 1, Thay bằng = 0.</span>
+              <span className="block">Một người có user ở cả hai hệ thống: user đang hoạt động được ưu tiên để không bỏ sót người đã nghỉ còn quyền ra vào.</span>
+            </HelpTip>
+          </h3>
+          <p className="mb-3 text-sm text-muted">Hệ thống chính dùng đúng Mã NV thì không cần quy tắc.</p>
+          <ul className="space-y-3">
+            {v.biostar_sources.map((src, k) => {
+              const upd = (patch: Partial<BioStarSource>) => set("biostar_sources", v.biostar_sources.map((x, j) => (j === k ? { ...x, ...patch } : x)));
+              return (
+                <li key={k} className="grid items-end gap-3 rounded-sm border border-line p-3 sm:grid-cols-[1fr_9rem_9rem_auto]">
+                  <Field label="Kết nối BioStar">
+                    <Select value={src.profile_id} onChange={(e) => upd({ profile_id: e.target.value })}>
+                      {profileOptions("biostar").map((p) => <option key={p.id} value={p.id}>{p.name}{p.enabled ? "" : " (đang tắt)"}</option>)}
+                    </Select>
+                  </Field>
+                  <Field label="Tiền tố trên BioStar">
+                    <Input value={src.id_prefix} maxLength={8} onChange={(e) => upd({ id_prefix: e.target.value.trim() })} placeholder="1" />
+                  </Field>
+                  <Field label="Thay bằng">
+                    <Input value={src.id_prefix_to} maxLength={8} onChange={(e) => upd({ id_prefix_to: e.target.value.trim() })} placeholder="0" />
+                  </Field>
+                  <Button size="icon" variant="ghost" aria-label="Bỏ hệ thống BioStar này" onClick={() => set("biostar_sources", v.biostar_sources.filter((_, j) => j !== k))}>
+                    <Trash2 className="size-4" aria-hidden="true" />
+                  </Button>
+                  {src.id_prefix && (
+                    <p className="text-sm text-muted sm:col-span-4">
+                      Ví dụ: user <span className="font-mono">{src.id_prefix}00002</span> → Mã NV <span className="font-mono">{mapId(`${src.id_prefix}00002`, src.id_prefix, src.id_prefix_to)}</span>
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <Button
+            className="mt-3"
+            disabled={profileOptions("biostar").length === 0 || v.biostar_sources.length >= 5}
+            onClick={() => {
+              const other = profileOptions("biostar").find((p) => p.id !== v.biostar_profile_id) ?? profileOptions("biostar")[0]!;
+              set("biostar_sources", [...v.biostar_sources, { profile_id: other.id, id_prefix: "", id_prefix_to: "" }]);
+            }}
+          >
+            <Plus className="size-4" aria-hidden="true" />Thêm hệ thống BioStar
+          </Button>
         </Panel>
 
         <Panel title="Request RTR trên ServiceDesk Plus">

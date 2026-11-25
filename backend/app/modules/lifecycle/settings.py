@@ -68,10 +68,24 @@ DEFAULT_STANDARD = [
 ]
 
 
+class BioStarSource(BaseModel):
+    """An extra BioStar system read for reconciliation only (e.g. an old office server).
+
+    Its user IDs may use another prefix for the employee ID: user ``100002`` with prefix ``1`` → ``0`` is employee
+    ``000002``. Jobs still write only to the main BioStar connection.
+    """
+
+    profile_id: uuid.UUID
+    id_prefix: str = Field("", max_length=8)
+    id_prefix_to: str = Field("", max_length=8)
+
+
 class LifecycleSettings(BaseModel):
     # Connections (None = first enabled Production profile of that type)
     sdp_profile_id: uuid.UUID | None = None
     biostar_profile_id: uuid.UUID | None = None
+    # More BioStar systems read for reconciliation (each with its own employee-ID prefix rule).
+    biostar_sources: list[BioStarSource] = Field(default_factory=list, max_length=5)
 
     # RTR requests in ServiceDesk Plus
     rtr_requester_name: str = Field("RTR", min_length=1, max_length=200)
