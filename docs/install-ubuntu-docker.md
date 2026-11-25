@@ -10,8 +10,7 @@ chủ. Kubernetes (Rancher) xem mục *Triển khai → Kubernetes* trong `READM
 ## 1. Thành phần
 
 ```
-Người dùng ──HTTPS 443──> nginx (máy chủ, chứng chỉ công ty)
-                              └─HTTP 127.0.0.1:8080──> web (SPA + proxy /api)
+Người dùng ──HTTPS 443 (HTTP 80 → chuyển sang 443)──> web (nginx: SPA + proxy /api, chứng chỉ ở ./certs)
                                                           └──> api (FastAPI) ──> db (PostgreSQL 16)
                                                        worker (đồng bộ SDP/BioStar, chạy Job) ──┘
                                                        migrate (chạy 1 lần mỗi lần khởi động/nâng cấp)
@@ -100,7 +99,7 @@ Mở `.env` (`sudo nano .env`) và điền:
 | `POSTGRES_PASSWORD` | chuỗi hex vừa sinh |
 | `INFRAOPS_AUTH_MODE` | `local` (tài khoản trong app) – chuyển sang `oidc` khi bật SSO Entra (mục 9.3) |
 | `INFRAOPS_ENABLED_MODULES` | `lifecycle,workload` |
-| `INFRAOPS_HTTP_BIND` | `127.0.0.1:8080` (chỉ nginx trên máy chủ truy cập được cổng web) |
+| `INFRAOPS_HTTP_BIND` / `INFRAOPS_HTTPS_BIND` | `80` / `443` (mặc định). Chỉ khi dùng nginx riêng trên máy chủ (mục 8.2): `127.0.0.1:8080` / `127.0.0.1:8443` |
 
 > **Cất giữ master key ở nơi an toàn ngoài máy chủ** (két mật khẩu của phòng IT). Mất key = mất toàn bộ
 > credential SDP/BioStar đã nhập (phải nhập lại); không đổi key bằng cách sửa trực tiếp – xem `.env.example`
@@ -133,10 +132,31 @@ sudo docker compose exec api python -m app.cli create-admin --username admin --n
 
 Nhập mật khẩu (tối thiểu 12 ký tự) hai lần. Có thể chạy lại lệnh để đặt lại mật khẩu cho tài khoản này.
 
-## 8. HTTPS bằng nginx trên máy chủ
+## 8. HTTPS
 
-Phiên đăng nhập dùng cookie `Secure`: **chỉ hoạt động qua HTTPS**. Mở thẳng `http://máy-chủ:8080` sẽ đăng nhập
-"thành công" nhưng bị đưa lại trang đăng nhập.
+Phiên đăng nhập dùng cookie `Secure`: **chỉ hoạt động qua HTTPS**. Mở bằng `http://` sẽ đăng nhập "thành công" nhưng
+bị đưa lại trang đăng nhập (trang báo *Cần mở trang bằng HTTPS*).
+
+### 8.1 Cách mặc định: chứng chỉ trong `./certs` (không cần cài nginx trên máy chủ)
+
+Container `web` tự phục vụ HTTPS cổng 443 và chuyển HTTP cổng 80 sang HTTPS khi có chứng chỉ:
+
+```bash
+sudo mkdir -p /opt/infra-ops/certs
+sudo cp fullchain.pem /opt/infra-ops/certs/tls.crt     # chứng chỉ + chuỗi CA trung gian
+sudo cp privkey.pem  /opt/infra-ops/certs/tls.key
+sudo chown 101 /opt/infra-ops/certs/tls.key && sudo chmod 600 /opt/infra-ops/certs/tls.key   # uid của nginx trong container
+sudo docker compose up -d
+sudo docker compose logs web | grep infra-ops   # "HTTPS enabled on 8443, HTTP on 8080 redirects to it"
+```
+
+Log báo `no certificate` nghĩa là thiếu file hoặc container không đọc được `tls.key` (kiểm tra `chown 101`). Gia hạn
+chứng chỉ: chép đè 2 file rồi `sudo docker compose restart web`. Chứng chỉ tự ký để thử nghiệm: xem README, bước 3.
+
+### 8.2 Tuỳ chọn: nginx riêng trên máy chủ
+
+Dùng khi máy chủ đã có nginx/reverse proxy giữ cổng 80/443. Trong `.env` đặt `INFRAOPS_HTTP_BIND=127.0.0.1:8080` và
+`INFRAOPS_HTTPS_BIND=127.0.0.1:8443`, không đặt chứng chỉ vào `./certs`, rồi cấu hình nginx máy chủ như sau:
 
 ```bash
 sudo apt-get install -y nginx
@@ -264,8 +284,9 @@ Mẫu biên bản dùng font Aptos (Microsoft). Chép các file `.ttf` vào `/op
 
 ### 10.3 Truy cập thử không có HTTPS (chỉ để thử nghiệm)
 
-Thêm `INFRAOPS_SESSION_COOKIE_SECURE=false` và `INFRAOPS_HTTP_BIND=8080` vào `.env`, đặt
-`INFRAOPS_PUBLIC_BASE_URL=http://<ip>:8080`, `sudo docker compose up -d`. Không dùng cho môi trường thật.
+Thêm `INFRAOPS_SESSION_COOKIE_SECURE=false` vào `.env`, đặt `INFRAOPS_PUBLIC_BASE_URL=http://<ip>`,
+`sudo docker compose up -d` rồi mở `http://<ip>` (cổng 80). Không dùng cho môi trường thật – nên dùng chứng chỉ tự ký
+ở mục 8.1 thay vì cách này.
 
 ### 10.4 Máy chủ không ra được Internet
 

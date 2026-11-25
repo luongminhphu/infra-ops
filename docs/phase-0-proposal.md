@@ -1048,4 +1048,9 @@ Quyết định:
   *Cần mở trang bằng HTTPS* kèm liên kết https://, và sau khi đăng nhập kiểm tra lại `/me` để báo lỗi rõ ràng thay vì
   quay về trang đăng nhập. Không đổi cơ chế bảo mật: môi trường thật vẫn cần HTTPS; chỉ khi thử nghiệm mới đặt
   `INFRAOPS_SESSION_COOKIE_SECURE=false`.
+- Cổng mặc định của docker compose đổi từ 8080 sang **80 (HTTP) / 443 (HTTPS)**: container `web` tự phục vụ HTTPS khi có
+  `./certs/tls.crt` + `tls.key` (script `docker-tls.sh` lúc khởi động bật `listen 8443 ssl` và chuyển HTTP sang HTTPS),
+  không cần nginx trên máy chủ; không có chứng chỉ thì chỉ HTTP. Kubernetes không đổi (ingress lo TLS, không gắn
+  chứng chỉ). Máy chủ đã cài theo cách cũ: sửa `INFRAOPS_HTTP_BIND` trong `.env` (bỏ `8080` hoặc giữ
+  `127.0.0.1:8080` nếu vẫn dùng nginx máy chủ) và thêm `INFRAOPS_HTTPS_BIND`.
 
