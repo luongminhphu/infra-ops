@@ -252,17 +252,26 @@ Test không bao giờ gọi hệ thống thật: SDP/BioStar được mock bằn
 | `oidc` | SSO Microsoft Entra ID (khi đã có App Registration): đặt `INFRAOPS_OIDC_TENANT_ID`, `INFRAOPS_OIDC_CLIENT_ID`, `INFRAOPS_OIDC_CLIENT_SECRET`; redirect URI `https://<host>/api/core/auth/oidc/callback` |
 | `dev` | Chỉ để phát triển |
 
-Vai trò được gán hoàn toàn trong app (Người dùng & quyền). Người đăng nhập SSO lần đầu là **Chỉ xem**.
+Vai trò được gán hoàn toàn trong app (Người dùng & quyền), xếp từ ít quyền đến nhiều quyền nhất:
 
 | Vai trò | Quyền chính |
 |---|---|
-| Quản trị | Toàn quyền, cấu hình kết nối hệ thống và phân quyền |
-| Manager | Quyền của Supervisor + cấu hình module (Vòng đời, Công việc, mẫu biên bản), buộc đóng Job, xem nhật ký |
-| Supervisor | Quyền của Operator + xem task của mọi Operator và điều phối/chuyển task (ghi sang SDP). Không cấu hình hệ thống/module, không quản lý người dùng |
+| Viewer | Chỉ đọc (thấy task của mọi Operator) |
 | Operator | Thực hiện các task trên app (Job onboard/offboard, biên bản, đồng bộ, đề xuất mua, nhận hàng); **chỉ thấy task và thống kê của mình, không thấy giá** |
-| Chỉ xem | Chỉ đọc (thấy task của mọi Operator) |
+| Supervisor | Quyền của Operator + xem task của mọi Operator và điều phối/chuyển task (ghi sang SDP). Không cấu hình hệ thống/module, không quản lý người dùng |
+| Manager | Quyền của Supervisor + cấu hình module (Vòng đời, Công việc, mẫu biên bản), buộc đóng Job, xem nhật ký |
+| Administrator | Toàn quyền, cấu hình kết nối hệ thống và phân quyền |
 
-Kết nối hệ thống và người dùng/phân quyền chỉ Quản trị thay đổi. Quản trị có thể chỉnh quyền từng vai trò trong ma trận phân quyền.
+Kết nối hệ thống và người dùng/phân quyền chỉ Administrator thay đổi. Administrator có thể chỉnh quyền từng vai trò trong ma trận phân quyền.
+
+**Khớp tài khoản SSO Entra ID** (`INFRAOPS_AUTH_MODE=oidc`): *Tên đăng nhập* trong app phải là **UPN** của người dùng
+trên Entra ID (địa chỉ đăng nhập Microsoft, vd. `nguyen.van.a@congty.vn`; lấy từ claim `preferred_username`, không
+phân biệt hoa thường) – không phải tên ngắn hay e-mail phụ. Lần đăng nhập SSO đầu tiên, app tìm tài khoản theo UPN đó
+và ghi lại Object ID (`oid`) của Entra; từ đó luôn khớp theo `oid`, nên đổi UPN trên Entra sau này vẫn giữ đúng tài
+khoản. Không tìm thấy thì app tự tạo tài khoản vai trò **Viewer**. Vì vậy, để gán quyền trước khi người dùng đăng nhập,
+tạo tài khoản với Tên đăng nhập = UPN (ở chế độ SSO form không có ô mật khẩu). Tài khoản `admin` tạo bằng lệnh
+`create-admin` là tài khoản nội bộ, chỉ đăng nhập được ở chế độ `local`; khi chuyển sang SSO, đặt
+`INFRAOPS_BOOTSTRAP_ADMIN_UPNS=<UPN của quản trị viên>` để người đó nhận vai trò Administrator ở lần đăng nhập SSO.
 
 ## Kết nối hệ thống (Admin)
 

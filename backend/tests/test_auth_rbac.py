@@ -46,6 +46,12 @@ async def test_logout_invalidates_session(client) -> None:  # type: ignore[no-un
     assert (await client.get("/api/core/me")).status_code == 401
 
 
+async def test_system_roles_listed_least_to_most_privileged(admin) -> None:  # type: ignore[no-untyped-def]
+    roles = [r for r in (await admin.get("/api/core/roles")).json() if r["is_system"]]
+    assert [r["code"] for r in roles] == ["viewer", "operator", "supervisor", "manager", "admin"]
+    assert [r["name"] for r in roles] == ["Viewer", "Operator", "Supervisor", "Manager", "Administrator"]
+
+
 async def test_operator_defaults(admin, client) -> None:  # type: ignore[no-untyped-def]
     roles = {r["code"]: r for r in (await admin.get("/api/core/roles")).json()}
     hd = roles["operator"]

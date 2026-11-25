@@ -10,21 +10,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.modules.registry import ModuleRegistry
 from app.core.rbac.models import KnownPermission, Role, RolePermission, UserRole
 
+# Ordered from least to most privileged (the order roles are listed in the UI).
 SYSTEM_ROLES: dict[str, tuple[str, str, bool]] = {
-    "admin": ("Quản trị", "Toàn quyền trên mọi module, không chỉnh sửa được.", True),
-    "manager": (
-        "Manager",
-        "Toàn bộ task của Operator, điều phối, cấu hình module và đóng Job bắt buộc; không quản lý kết nối và người dùng.",
-        False,
-    ),
+    "viewer": ("Viewer", "Xem dữ liệu, không thay đổi.", False),
+    "operator": ("Operator", "Thực hiện các task trên app và xem dữ liệu vận hành.", False),
     "supervisor": (
         "Supervisor",
         "Xem và điều phối task của các Operator, làm việc Helpdesk/Support; không cấu hình hệ thống, không quản lý người dùng.",
         False,
     ),
-    "operator": ("Operator", "Thực hiện các task trên app và xem dữ liệu vận hành.", False),
-    "viewer": ("Chỉ xem", "Xem dữ liệu, không thay đổi.", False),
+    "manager": (
+        "Manager",
+        "Toàn bộ task của Operator, điều phối, cấu hình module và đóng Job bắt buộc; không quản lý kết nối và người dùng.",
+        False,
+    ),
+    "admin": ("Administrator", "Toàn quyền trên mọi module, không chỉnh sửa được.", True),
 }
+# Earlier default names, renamed on startup unless an admin already changed them.
+_OLD_NAMES = {"admin": "Quản trị", "viewer": "Chỉ xem"}
+
+
+def role_rank(code: str) -> int:
+    """Position of a system role from least to most privileged; custom roles come after."""
+    order = list(SYSTEM_ROLES)
+    return order.index(code) if code in order else len(order)
 
 
 async def sync_permissions(session: AsyncSession, registry: ModuleRegistry) -> list[str]:
@@ -40,6 +49,8 @@ async def sync_permissions(session: AsyncSession, registry: ModuleRegistry) -> l
             )
             session.add(role)
             roles[code] = role
+        elif roles[code].name == _OLD_NAMES.get(code):
+            roles[code].name = name
     await session.flush()
 
     known = set((await session.scalars(select(KnownPermission.code))).all())

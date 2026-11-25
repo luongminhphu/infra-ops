@@ -22,7 +22,7 @@ from app.core.errors import AppError, Conflict, NotFound
 from app.core.modules.registry import get_registry
 from app.core.permissions import RBAC_MANAGE
 from app.core.rbac.models import Role, RolePermission, UserRole
-from app.core.rbac.service import count_active_admins, set_user_roles
+from app.core.rbac.service import count_active_admins, role_rank, set_user_roles
 
 router = APIRouter(tags=["access"])
 manage = require(RBAC_MANAGE)
@@ -90,7 +90,10 @@ async def _role_out(session: AsyncSession, role: Role) -> RoleOut:
 async def list_roles(
     _: CurrentUser = Depends(manage), session: AsyncSession = Depends(get_session)
 ) -> list[RoleOut]:
-    roles = (await session.scalars(select(Role).order_by(Role.is_system.desc(), Role.name))).all()
+    roles = sorted(
+        (await session.scalars(select(Role))).all(),
+        key=lambda r: (not r.is_system, role_rank(r.code) if r.is_system else 0, r.name.lower()),
+    )
     return [await _role_out(session, r) for r in roles]
 
 

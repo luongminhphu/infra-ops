@@ -119,7 +119,7 @@ function ExpiringWidget({ data }: { data: { warn_days: number; items: ExpItem[] 
 function GettingStarted() {
   const steps = [
     { to: "/settings/connections", title: "Thêm kết nối ServiceDesk Plus và BioStar", detail: "Nhập credential Read (đồng bộ) và Write (chạy Job), bấm Kiểm tra kết nối." },
-    { to: "/settings/access", title: "Tạo tài khoản và gán vai trò", detail: "Manager, Supervisor, Operator hoặc Chỉ xem cho từng người trong phòng IT." },
+    { to: "/settings/access", title: "Tạo tài khoản và gán vai trò", detail: "Viewer, Operator, Supervisor hoặc Manager cho từng người trong phòng IT." },
     { to: "/lifecycle/settings", title: "Cấu hình module", detail: "Nhãn trường RTR, nhóm BioStar mặc định; liên kết Operator với technician ở Cấu hình công việc." },
     { to: "/lifecycle/sync", title: "Đồng bộ dữ liệu lần đầu", detail: "Đọc request, user, tài sản và user BioStar để bắt đầu đối soát." },
   ];
