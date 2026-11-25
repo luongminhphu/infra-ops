@@ -102,9 +102,10 @@ export function ConnectionFormDialog({
     },
     onSuccess: async (saved) => {
       await qc.invalidateQueries({ queryKey: connectionsKey });
-      toast.success(editing ? "Đã lưu thay đổi kết nối." : "Đã thêm kết nối. Nhập credential để bắt đầu sử dụng.");
+      toast.success(editing ? "Đã lưu thay đổi kết nối." : "Đã thêm kết nối. Nhập API key (credential Read) để bắt đầu sử dụng.");
       onClose();
-      if (!editing) navigate(`/settings/connections/${saved.id}`);
+      // Step 2: the detail page opens the Read credential dialog straight away.
+      if (!editing) navigate(`/settings/connections/${saved.id}?credential=read`);
     },
     onError: (e) => {
       const msg = e instanceof ApiError && e.code === "stale_version" ? e.message : errorMessage(e);
@@ -128,7 +129,7 @@ export function ConnectionFormDialog({
       open={open}
       onClose={onClose}
       title={editing ? `Sửa kết nối ${profile?.name}` : "Thêm kết nối hệ thống"}
-      description={editing ? undefined : "Credential (API key, mật khẩu) được nhập ở bước sau và luôn được mã hoá."}
+      description={editing ? undefined : "Bước 1/2: thông tin máy chủ. Bấm “Tiếp: nhập API key” để sang bước nhập credential (luôn được mã hoá)."}
       size="md"
     >
       <form onSubmit={submit} noValidate className="space-y-4">
@@ -165,7 +166,9 @@ export function ConnectionFormDialog({
         {type && Object.keys(type.config_schema.properties ?? {}).length > 0 && (
           <fieldset className="space-y-3 rounded-sm border border-line p-3">
             <legend className="px-1 text-sm font-semibold">Cấu hình {type.display_name}</legend>
-            {Object.entries(type.config_schema.properties ?? {}).map(([key, prop]) => (
+            {Object.entries(type.config_schema.properties ?? {})
+              .filter(([, prop]) => Object.entries(prop["x-show-when"] ?? {}).every(([k, v]) => config[k] === v))
+              .map(([key, prop]) => (
               <ConfigField key={key} name={key} prop={prop} value={config[key]} onChange={(v) => setConfig((c) => ({ ...c, [key]: v }))} />
             ))}
           </fieldset>
@@ -182,7 +185,7 @@ export function ConnectionFormDialog({
         <div className="flex justify-end gap-2 border-t border-line pt-3">
           <Button onClick={onClose}>Huỷ</Button>
           <Button type="submit" variant="primary" loading={save.isPending}>
-            {editing ? "Lưu thay đổi" : "Thêm kết nối"}
+            {editing ? "Lưu thay đổi" : "Tiếp: nhập API key"}
           </Button>
         </div>
       </form>

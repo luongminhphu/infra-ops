@@ -44,6 +44,8 @@ export interface JsonSchemaProp {
   description?: string;
   default?: unknown;
   enum?: string[];
+  /** Show the field only when these other config values match (e.g. Cloud-only settings). */
+  "x-show-when"?: Record<string, string>;
 }
 
 export interface ConnectorType {
