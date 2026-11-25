@@ -135,7 +135,7 @@ def test_reconcile_rules() -> None:
     # Offboarded but BioStar active and laptop still assigned
     rules, row = _issues(result, "002100")
     assert {"offboard_biostar_active", "offboard_assets_in_use"} <= rules
-    assert row.cells["assets"]["label"] == "1"
+    assert row.cells["assets"]["label"] == "1 tài sản"
     # name differs only by diacritics → not a mismatch
     assert "name_mismatch" not in rules
     # Onboarded 14 days ago: no BioStar user, no assets

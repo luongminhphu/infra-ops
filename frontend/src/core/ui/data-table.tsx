@@ -51,8 +51,9 @@ export function DataTable<T>({
     getRowId,
   });
   const rows = table.getRowModel().rows;
+  // relative: sr-only (absolute) cell text must be clipped by this scroller, not widen the page.
   return (
-    <div className="overflow-auto rounded-md border border-line bg-surface shadow-card" style={{ maxHeight }}>
+    <div className="relative overflow-auto rounded-md border border-line bg-surface shadow-card" style={{ maxHeight }}>
       <table className="w-full border-collapse text-left">
         <caption className="sr-only">{caption}</caption>
         <thead className="sticky top-0 z-10 bg-surface-2">
