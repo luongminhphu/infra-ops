@@ -19,6 +19,8 @@ export interface Me {
   permissions: string[];
   csrf_token: string;
   auth_mode: "local" | "oidc" | "dev";
+  /** Username/password sign-in accepted (local mode, or SSO with local accounts allowed). */
+  local_login: boolean;
   is_local: boolean;
   nav: NavGroup[];
 }

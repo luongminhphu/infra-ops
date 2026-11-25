@@ -14,7 +14,7 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const next = params.get("next") ?? "/";
-  const config = useQuery({ queryKey: ["auth-config"], queryFn: () => api<{ mode: string; cookie_secure: boolean }>("/api/core/auth/config") });
+  const config = useQuery({ queryKey: ["auth-config"], queryFn: () => api<{ mode: string; cookie_secure: boolean; local_login: boolean }>("/api/core/auth/config") });
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [submitted, setSubmitted] = useState(false);
@@ -30,7 +30,7 @@ export function LoginPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitted(true);
-    if (!username || (mode === "local" && !password)) return;
+    if (!username || (mode !== "dev" && !password)) return;
     setBusy(true);
     setError("");
     try {
@@ -49,6 +49,32 @@ export function LoginPage() {
       setBusy(false);
     }
   };
+
+  const loginForm = (
+    <form onSubmit={submit} noValidate className="space-y-3">
+      <Field
+        label={mode === "dev" ? "Email công ty (chế độ phát triển)" : "Tên đăng nhập"}
+        required
+        error={!username ? "Nhập tên đăng nhập." : undefined}
+        showError={submitted}
+      >
+        <Input autoComplete="username" autoFocus={mode !== "oidc"} value={username} onChange={(e) => setUsername(e.target.value)} />
+      </Field>
+      {mode !== "dev" && (
+        <Field label="Mật khẩu" required error={!password ? "Nhập mật khẩu." : undefined} showError={submitted}>
+          <Input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        </Field>
+      )}
+      {error && (
+        <p role="alert" className="rounded-sm bg-failed-soft px-2.5 py-2 text-sm text-failed">
+          {error}
+        </p>
+      )}
+      <Button type="submit" variant="primary" className="h-9 w-full" loading={busy} disabled={!mode}>
+        Đăng nhập
+      </Button>
+    </form>
+  );
 
   return (
     <main className="grid min-h-dvh place-items-center bg-paper px-4">
@@ -76,6 +102,12 @@ export function LoginPage() {
             </div>
           )}
           {mode === "oidc" ? (
+            <>
+              {error && !submitted && (
+                <p role="alert" className="mb-3 rounded-sm bg-failed-soft px-2.5 py-2 text-sm text-failed">
+                  {error}
+                </p>
+              )}
             <a
               href={`/api/core/auth/oidc/login?next=${encodeURIComponent(next)}`}
               className="flex h-9 w-full items-center justify-center gap-2 rounded-sm bg-primary font-medium text-on-primary hover:bg-primary-hover"
@@ -83,30 +115,16 @@ export function LoginPage() {
               <LogIn className="size-4" aria-hidden="true" />
               Đăng nhập bằng tài khoản Microsoft
             </a>
+              {config.data?.local_login && (
+                <details className="mt-4 border-t border-line pt-3" open={!!error && submitted}>
+                  <summary className="cursor-pointer text-sm font-medium text-primary">Đăng nhập bằng tài khoản nội bộ</summary>
+                  <p className="mt-1 mb-3 text-xs text-muted">Chỉ dành cho tài khoản được Administrator cấp mật khẩu trong infra-ops (vd. tài khoản dự phòng).</p>
+              {loginForm}
+                </details>
+              )}
+            </>
           ) : (
-            <form onSubmit={submit} noValidate className="space-y-3">
-              <Field
-                label={mode === "dev" ? "Email công ty (chế độ phát triển)" : "Tên đăng nhập"}
-                required
-                error={!username ? "Nhập tên đăng nhập." : undefined}
-                showError={submitted}
-              >
-                <Input autoComplete="username" autoFocus value={username} onChange={(e) => setUsername(e.target.value)} />
-              </Field>
-              {mode !== "dev" && (
-                <Field label="Mật khẩu" required error={!password ? "Nhập mật khẩu." : undefined} showError={submitted}>
-                  <Input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-                </Field>
-              )}
-              {error && (
-                <p role="alert" className="rounded-sm bg-failed-soft px-2.5 py-2 text-sm text-failed">
-                  {error}
-                </p>
-              )}
-              <Button type="submit" variant="primary" className="h-9 w-full" loading={busy} disabled={!mode}>
-                Đăng nhập
-              </Button>
-            </form>
+            loginForm
           )}
           {mode === "dev" && (
             <p className="mt-3 text-xs text-muted">Chế độ phát triển: không cần mật khẩu. Không dùng ở môi trường thật.</p>

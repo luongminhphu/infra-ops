@@ -30,6 +30,8 @@ class AuthConfig(BaseModel):
     mode: str
     # Secure session cookie: browsers drop it on plain http://, so the login page warns before signing in.
     cookie_secure: bool
+    # SSO mode with local accounts allowed: the login page offers both.
+    local_login: bool
 
 
 class LoginBody(BaseModel):
@@ -40,7 +42,11 @@ class LoginBody(BaseModel):
 @router.get("/auth/config", response_model=AuthConfig)
 async def auth_config() -> AuthConfig:
     settings = get_settings()
-    return AuthConfig(mode=settings.auth_mode, cookie_secure=settings.session_cookie_secure)
+    return AuthConfig(
+        mode=settings.auth_mode,
+        cookie_secure=settings.session_cookie_secure,
+        local_login=settings.local_login,
+    )
 
 
 @router.post("/auth/login", status_code=204)
@@ -50,7 +56,7 @@ async def login(
     settings = get_settings()
     ip = client_ip(request)
     try:
-        if settings.auth_mode == "local":
+        if settings.local_login:
             user = await login_local(session, settings, body.username, body.password, ip)
         elif settings.auth_mode == "dev":
             user = await login_dev(session, settings, body.username, ip)
@@ -130,6 +136,7 @@ class MeOut(BaseModel):
     permissions: list[str]
     csrf_token: str
     auth_mode: str
+    local_login: bool
     is_local: bool
     nav: list[dict[str, object]]
 
@@ -147,6 +154,7 @@ async def me(
         permissions=sorted(user.permissions),
         csrf_token=user.csrf_token,
         auth_mode=get_settings().auth_mode,
+        local_login=get_settings().local_login,
         is_local=bool(model and model.password_hash),
         nav=get_registry().nav_for(user.permissions),
     )
