@@ -254,6 +254,13 @@ async def test_allocation_plan_and_band_override(admin, configured, respx_mock) 
     assert lines["Laptop"]["buy"] == 1 and req["status"] == "buy"
     stock = {s["label"]: s for s in data["stock"]}
     assert stock["Màn hình"]["in_store"] == 1 and stock["Laptop"]["to_buy"] >= 1
+    # Stock detail: the In Store monitor, set aside for the onboard that reuses it.
+    [monitor] = stock["Màn hình"]["items"]
+    assert monitor["id"] == "a2" and monitor["reserved_for"] == {
+        "name": req["full_name"],
+        "display_id": req["display_id"],
+    }
+    assert "serial" in monitor and stock["Laptop"]["items"] == []
 
     # The preparation wizard gets everything pre-filled: RTR details, SDP user by employee ID, devices.
     prep = (await admin.get(f"/api/lifecycle/jobs/{req['job']['id']}/prepare")).json()
