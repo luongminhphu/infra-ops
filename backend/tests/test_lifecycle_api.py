@@ -337,3 +337,51 @@ async def test_sync_crash_marks_run_failed(admin, configured, respx_mock, monkey
         run = await s.scalar(select(SyncRun).order_by(SyncRun.started_at.desc()).limit(1))
     assert run.status == "failure" and run.finished_at is not None
     assert "reconcile exploded" in run.errors["crash"]
+
+
+BS_OFFICE = "https://bs-office.test.local"
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_second_biostar_with_prefix_rule(admin, configured, respx_mock) -> None:  # type: ignore[no-untyped-def]
+    # Old office BioStar: employee 003551 is user "103551" (prefix 1 instead of 0).
+    mock_systems(respx_mock)
+    respx_mock.post(f"{BS_OFFICE}/api/login").mock(
+        return_value=httpx.Response(200, headers={"bs-session-id": "o"}, json={"User": {}})
+    )
+    office = [{"user_id": "103551", "name": "Office Person", "disabled": "false"}]
+    respx_mock.get(f"{BS_OFFICE}/api/users").mock(
+        return_value=httpx.Response(200, json={"UserCollection": {"total": "1", "rows": office}})
+    )
+    respx_mock.post(f"{BS_OFFICE}/api/logout").mock(return_value=httpx.Response(200, json={}))
+    prof = (
+        await admin.post(
+            "/api/core/connections",
+            json={
+                "system_type": "biostar",
+                "name": "BS Office",
+                "base_url": BS_OFFICE,
+                "config": {"verify_tls": False},
+            },
+        )
+    ).json()
+    await admin.put(
+        f"/api/core/connections/{prof['id']}/credentials/read",
+        json={"auth_type": "username_password", "public": {"username": "r"}, "secrets": {"password": "p"}},
+    )
+    values = (await admin.get("/api/lifecycle/settings")).json()["values"]
+    values["biostar_sources"] = [{"profile_id": prof["id"], "id_prefix": "1", "id_prefix_to": "0"}]
+    assert (await admin.put("/api/lifecycle/settings", json=values)).status_code == 200
+
+    summary = await _sync()
+    assert summary["status"] == "success", summary
+    rows = {r["employee_id"]: r for r in (await admin.get("/api/lifecycle/reconciliation")).json()["items"]}
+    assert "103551" not in rows  # consolidated under the real employee ID
+    assert rows["003551"]["cells"]["biostar"]["label"] == "Hoạt động"
+    assert "BS Office (user 103551)" in rows["003551"]["cells"]["biostar"]["detail"]
+
+    # One BioStar unreadable → no BioStar judgement at all (never judge a system whose read failed).
+    respx_mock.get(f"{BS_OFFICE}/api/users").mock(return_value=httpx.Response(500, json={}))
+    summary = await _sync()
+    rows = {r["employee_id"]: r for r in (await admin.get("/api/lifecycle/reconciliation")).json()["items"]}
+    assert rows["003551"]["cells"]["biostar"]["status"] == "skipped"

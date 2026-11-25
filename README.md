@@ -366,6 +366,12 @@ Lưu ý:
 3. **Đồng bộ dữ liệu → Đồng bộ ngay** (worker phải đang chạy), sau đó gán các giá trị "Loại biến động" chưa
    phân loại ở Cấu hình module.
 4. Xem **Đối soát theo Mã NV**. Worker tự đồng bộ mỗi 30 phút.
+5. **Nhiều hệ thống BioStar** (vd. *BioStar 2 - Server* là hệ thống chính, *BioStar 2 - Office* là máy cũ): ở **Cấu hình
+   module → Kết nối sử dụng**, chọn hệ thống chính ở ô *BioStar* (Job tạo/khoá user ở đây), rồi **Thêm hệ thống
+   BioStar** cho máy cũ. Nếu mã user trên máy cũ khác tiền tố so với Mã NV (vd. `100002` thay cho `000002`), nhập
+   *Tiền tố trên BioStar* = `1`, *Thay bằng* = `0`. Mỗi lần đồng bộ đọc cả hai và gộp theo Mã NV; người có user ở cả hai
+   nơi thì user đang hoạt động được ưu tiên (để phát hiện người đã nghỉ còn quyền ra vào). Một hệ thống đọc lỗi thì cả
+   cột BioStar được bỏ qua lần đó, không kết luận sai.
 
 ### Biên bản Bàn giao / Thu hồi
 - **Vòng đời nhân sự → Biên bản → Lập biên bản…**: nhập Mã NV để điền sẵn từ request RTR và thiết bị đang gán

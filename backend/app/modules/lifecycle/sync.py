@@ -7,6 +7,7 @@ rules that depend on that system are skipped instead of producing false discrepa
 from __future__ import annotations
 
 import asyncio
+import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -224,27 +225,43 @@ async def _sync(
     except Exception as exc:
         errors["sdp"] = _err(exc)
 
-    try:
-        _, ctx = await open_connection(
-            session, "biostar", Purpose.READ, profile_id=settings.biostar_profile_id
-        )
-        async with BioStarClient(ctx) as client:
-            bs_users = [normalize.biostar_user(u) for u in await client.list_users()]
-        sources["biostar"] = True
-    except Exception as exc:
-        errors["biostar"] = _err(exc)
+    # Main BioStar, then the extra systems with their employee-ID prefix rule. BioStar counts as read only when
+    # every system was read: never judge "no BioStar user" on a partial picture.
+    reads: list[tuple[str, uuid.UUID | None, str, str]] = [("biostar", settings.biostar_profile_id, "", "")]
+    reads += [
+        (f"biostar:{s.profile_id}", s.profile_id, s.id_prefix, s.id_prefix_to)
+        for s in settings.biostar_sources
+    ]
+    read_users: list[dict[str, Any]] = []
+    for err_key, profile_id, prefix, prefix_to in reads:
+        try:
+            profile, ctx = await open_connection(session, "biostar", Purpose.READ, profile_id=profile_id)
+            async with BioStarClient(ctx) as client:
+                for u in await client.list_users():
+                    n = normalize.biostar_user(u)
+                    n["employee_id"] = normalize.map_employee_id(n["user_id"], prefix, prefix_to)
+                    n["source"] = profile.name
+                    # Snapshot key: the raw user id is only unique within one BioStar system.
+                    n["ref"] = (
+                        n["user_id"] if err_key == "biostar" else f"{n['user_id']}@{profile.name}"[:128]
+                    )
+                    read_users.append(n)
+        except Exception as exc:
+            errors[err_key] = _err(exc)
+    sources["biostar"] = not any(k.startswith("biostar") for k in errors)
+    bs_users = normalize.merge_biostar_users(read_users)
 
     for system, items, key in (
         ("sdp_user", sdp_users, "id"),
         ("sdp_asset", assets, "id"),
-        ("biostar_user", bs_users, "user_id"),
+        ("biostar_user", bs_users, "ref"),
     ):
         session.add_all(
             Snapshot(
                 run_id=run.id,
                 system=system,
                 external_id=str(i[key]),
-                employee_id=i.get("employee_id") or (i["user_id"] if system == "biostar_user" else None),
+                employee_id=i.get("employee_id"),
                 data=i,
             )
             for i in items

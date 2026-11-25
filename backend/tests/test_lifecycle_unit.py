@@ -233,3 +233,16 @@ def test_allocation_reuses_stock_by_date_and_band() -> None:
     late = {ln.label: ln for ln in plan["late"]}
     assert late["Laptop"].buy == 1 and late["Màn hình"].buy == 2 and "Laptop cao cấp" not in late
     assert plan["noband"] == []
+
+
+def test_biostar_employee_id_prefix_and_merge() -> None:
+    from app.modules.lifecycle.normalize import map_employee_id, merge_biostar_users
+
+    assert map_employee_id("100002", "1", "0") == "000002"
+    assert map_employee_id("000002", "1", "0") == "000002"  # already correct: untouched
+    assert map_employee_id("100002", "", "") == "100002"
+    old = {"user_id": "100002", "employee_id": "000002", "active": True, "source": "Office"}
+    new = {"user_id": "000002", "employee_id": "000002", "active": False, "source": "Server"}
+    assert merge_biostar_users([new, old]) == [old]  # an active user anywhere wins (offboard checks)
+    both_off = {**old, "active": False}
+    assert merge_biostar_users([new, both_off]) == [new]  # otherwise the main system (read first)

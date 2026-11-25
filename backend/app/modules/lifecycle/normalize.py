@@ -77,6 +77,13 @@ def _count(raw: dict[str, Any], *keys: str) -> int:
     return 0
 
 
+def map_employee_id(user_id: str, prefix: str, prefix_to: str) -> str:
+    """Employee ID for a BioStar user ID whose system uses another prefix ("100002", "1" → "0" gives "000002")."""
+    if prefix and user_id.startswith(prefix):
+        return prefix_to + user_id[len(prefix) :]
+    return user_id
+
+
 def biostar_user(raw: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
     now = now or datetime.now(UTC)
     expiry = raw.get("expiry_datetime")
@@ -102,3 +109,17 @@ def biostar_user(raw: dict[str, Any], now: datetime | None = None) -> dict[str, 
         "fingerprints": _count(raw, "fingerprint_template_count", "fingerprint_templates"),
         "faces": _count(raw, "face_count", "visual_face_count", "faces"),
     }
+
+
+def merge_biostar_users(users: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One user per employee ID across BioStar systems: an active user wins (an ex-employee still active anywhere
+    must be flagged), otherwise the first read (main system first)."""
+    by_emp: dict[str, dict[str, Any]] = {}
+    for u in users:
+        emp = u.get("employee_id") or u.get("user_id")
+        if not emp:
+            continue
+        cur = by_emp.get(emp)
+        if cur is None or (u["active"] and not cur["active"]):
+            by_emp[emp] = u
+    return list(by_emp.values())
