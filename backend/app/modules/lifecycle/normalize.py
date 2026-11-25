@@ -5,8 +5,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from app.modules.lifecycle.parsing import name_key
-
 
 def _get_path(data: dict[str, Any], path: str) -> Any:
     cur: Any = data
@@ -79,37 +77,19 @@ def _count(raw: dict[str, Any], *keys: str) -> int:
     return 0
 
 
-def map_employee_id(user_id: str, prefix: str, prefix_to: str, keep_last: int = 0) -> str:
-    """Employee ID for a BioStar user ID whose system uses another prefix ("100002", "1" → "0" gives "000002"),
-    then optionally only its last ``keep_last`` characters ("1002352" with 6 gives "002352")."""
-    if prefix and user_id.startswith(prefix):
-        user_id = prefix_to + user_id[len(prefix) :]
-    return user_id[-keep_last:] if keep_last and len(user_id) > keep_last else user_id
+EMPLOYEE_ID_DIGITS = 6
 
 
-def resolve_employee_id(
-    user_id: str,
-    name: str,
-    rule: tuple[str, str, int],
-    sdp_names: dict[str, str],
-) -> str:
-    """Employee ID for a BioStar user, with SDP as the reference.
+def id_key(employee_id: str) -> str:
+    """The part of an employee ID compared across systems: its last 6 digits ("1002352" → "002352")."""
+    return employee_id[-EMPLOYEE_ID_DIGITS:] if employee_id.isdigit() else employee_id
 
-    The configured rule's result (or the raw ID) wins when SDP knows it. On any BioStar system (main or extra),
-    an ID SDP does not know is matched to an SDP ID of the same length by its last digits ("1002352" → "002352",
-    "100008" → "000008"), only when the SDP user carries the same name. Otherwise the rule's result is kept.
-    """
-    mapped = map_employee_id(user_id, *rule)
-    for cand in dict.fromkeys([mapped, user_id]):
-        if cand in sdp_names:
-            return cand
-    if user_id.isdigit():
-        key = name_key(name)
-        for n in sorted({len(e) for e in sdp_names if e.isdigit()}):
-            for cand in (user_id[-n:], "0" + user_id[-(n - 1) :]) if 1 < n <= len(user_id) else ():
-                if cand in sdp_names and name_key(sdp_names[cand]) == key:
-                    return cand
-    return mapped
+
+def resolve_employee_id(user_id: str, sdp_ids: dict[str, str]) -> str:
+    """Employee ID for a BioStar user: the SDP employee ID with the same last 6 digits (SDP is the reference),
+    else those 6 digits."""
+    key = id_key(user_id)
+    return sdp_ids.get(key, key)
 
 
 def biostar_user(raw: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:

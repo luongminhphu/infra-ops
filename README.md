@@ -366,10 +366,11 @@ Lưu ý:
 3. **Đồng bộ dữ liệu → Đồng bộ ngay** (worker phải đang chạy), sau đó gán các giá trị "Loại biến động" chưa
    phân loại ở Cấu hình module.
 4. Xem **Đối soát theo Mã NV**. Worker tự đồng bộ mỗi 30 phút.
-5. **Nhiều hệ thống BioStar** (vd. *BioStar 2 - Server* là hệ thống chính, *BioStar 2 - Office* là máy cũ): ở **Cấu hình
+5. **Nhiều hệ thống BioStar** (vd. *BioStar 2 - Office* là hệ thống chính, *BioStar 2 - Server* là nguồn phụ): ở **Cấu hình
    module → Kết nối sử dụng**, chọn hệ thống chính ở ô *BioStar* (Job tạo/khoá user ở đây), rồi **Thêm hệ thống
-   BioStar** cho máy cũ. Nếu mã user trên máy cũ khác tiền tố so với Mã NV (vd. `100002` thay cho `000002`), nhập
-   *Tiền tố trên BioStar* = `1`, *Thay bằng* = `0`; mã 7 số (vd. `1002352` → `002352`) thì thêm *Giữ số cuối* = `6`. **SDP là chuẩn**: user BioStar (hệ thống chính hay đọc thêm) có mã SDP không biết sẽ tự khớp vào Mã NV trên SDP cùng số cuối *và cùng họ tên* (bỏ dấu, không kể thứ tự chữ: `100008` NGUYEN CANH THINH → `000008` Thinh. Nguyen Canh); họ tên hiển thị lấy theo SDP. Mỗi lần đồng bộ đọc cả hai và gộp theo Mã NV; người có user ở cả hai
+   BioStar** cho nguồn phụ. **SDP là chuẩn**: Mã NV trên mọi BioStar và SDP được so theo **6 số cuối** (vd. user
+   `1002352` → Mã NV `002352`); Mã NV và họ tên hiển thị lấy theo user SDP. Mã có 6 số cuối khác SDP (vd. `100008`
+   so với `000008`) vẫn hiện là lệch để sửa tay trên BioStar. Mỗi lần đồng bộ đọc cả hai và gộp theo Mã NV; người có user ở cả hai
    nơi thì user đang hoạt động được ưu tiên (để phát hiện người đã nghỉ còn quyền ra vào). Một hệ thống đọc lỗi thì cả
    cột BioStar được bỏ qua lần đó, không kết luận sai.
 6. **Nhóm nghỉ việc trên BioStar**: nếu quy trình là chuyển user nghỉ việc vào một nhóm (vd. `0.NGHIVIEC`) thay vì xoá,
