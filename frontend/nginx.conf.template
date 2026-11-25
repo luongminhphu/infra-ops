@@ -8,6 +8,8 @@ resolver ${NGINX_LOCAL_RESOLVERS} valid=10s;
 server {
     listen 8080;
     server_name _;
+    # HTTPS listener + HTTP->HTTPS redirect when a certificate is mounted (written by docker-tls.sh).
+    include /tmp/infra-ops-tls.conf;
     set $api_upstream http://${API_UPSTREAM};
     root /usr/share/nginx/html;
     client_max_body_size 25m;

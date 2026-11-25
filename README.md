@@ -67,7 +67,7 @@ Một máy chủ Ubuntu 22.04/24.04, 2 vCPU, 4 GB RAM, 20 GB đĩa, mở đượ
 | `migrate` | Cập nhật cấu trúc database rồi thoát (mỗi lần khởi động) |
 | `api` | Backend FastAPI; file mẫu, PDF, bản ký lưu ở volume `files` |
 | `worker` | Đồng bộ SDP/BioStar, chạy Job và các lần ghi ra hệ thống ngoài – **bắt buộc chạy** |
-| `web` | nginx phục vụ giao diện và chuyển `/api` tới `api` (cổng 8080) |
+| `web` | nginx phục vụ giao diện và chuyển `/api` tới `api`: **HTTP cổng 80, HTTPS cổng 443** (chứng chỉ ở thư mục `certs/`) |
 
 **1. Cài Docker** (Docker Engine + plugin compose, xem [hướng dẫn chi tiết](docs/install-ubuntu-docker.md#3-cài-docker-engine)).
 
@@ -93,29 +93,55 @@ echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
 | `INFRAOPS_MASTER_KEYS` / `INFRAOPS_SIGNING_SECRET` / `POSTGRES_PASSWORD` | Các dòng vừa sinh |
 | `INFRAOPS_AUTH_MODE` | `local` (tài khoản trong app); `oidc` khi bật SSO Entra |
 | `INFRAOPS_ENABLED_MODULES` | `lifecycle,workload` |
-| `INFRAOPS_HTTP_BIND` | `127.0.0.1:8080` khi đứng sau nginx HTTPS trên cùng máy chủ |
+| `INFRAOPS_HTTP_BIND` / `INFRAOPS_HTTPS_BIND` | Mặc định `80` / `443`. Chỉ đổi khi máy chủ đã có reverse proxy khác chiếm 80/443 (vd. `127.0.0.1:8080` / `127.0.0.1:8443`) |
 
 > Cất `INFRAOPS_MASTER_KEYS` ở nơi an toàn ngoài máy chủ: mất key là mất mọi credential SDP/BioStar đã nhập.
 > Không đưa `.env` vào git.
 
-**3. Build và khởi động**
+**3. Chứng chỉ HTTPS.** Cookie phiên có cờ `Secure` nên **bắt buộc truy cập qua HTTPS**. Đặt chứng chỉ của
+tên miền (vd. `infraops.congty.local`, cấp bởi CA nội bộ) vào thư mục `certs/` cạnh `docker-compose.yml`:
+
+```bash
+sudo mkdir -p /opt/infra-ops/certs
+sudo cp fullchain.pem /opt/infra-ops/certs/tls.crt     # chứng chỉ + chuỗi CA trung gian
+sudo cp privkey.pem  /opt/infra-ops/certs/tls.key
+sudo chown 101 /opt/infra-ops/certs/tls.key && sudo chmod 600 /opt/infra-ops/certs/tls.key   # nginx trong container chạy uid 101
+```
+
+Có chứng chỉ: `https://` chạy ở cổng 443, `http://` cổng 80 tự chuyển sang HTTPS. Chưa có chứng chỉ: chỉ chạy HTTP
+cổng 80 và trang đăng nhập báo *Cần mở trang bằng HTTPS*. Thử nghiệm khi chưa có chứng chỉ công ty – tạo chứng chỉ tự
+ký (trình duyệt sẽ cảnh báo):
+
+```bash
+sudo openssl req -x509 -newkey rsa:2048 -nodes -days 365 -subj "/CN=infraops.congty.local" \
+  -addext "subjectAltName=DNS:infraops.congty.local,IP:<ip-máy-chủ>" \
+  -keyout /opt/infra-ops/certs/tls.key -out /opt/infra-ops/certs/tls.crt
+sudo chown 101 /opt/infra-ops/certs/tls.key
+```
+
+Thay chứng chỉ (gia hạn): chép đè 2 file rồi `sudo docker compose restart web`.
+
+**4. Build và khởi động**
 
 ```bash
 sudo docker compose up -d --build
 sudo docker compose ps        # db healthy, migrate exited (0), api healthy, worker + web running
+sudo docker compose logs web | grep infra-ops   # "HTTPS enabled on 8443…" = đã nhận chứng chỉ
 ```
 
-**4. Tạo quản trị viên đầu tiên** (mật khẩu ≥ 12 ký tự; chạy lại để đặt lại mật khẩu):
+Mở cổng 80, 443 trên tường lửa nếu có (`sudo ufw allow 80,443/tcp`).
+
+**5. Tạo quản trị viên đầu tiên** (mật khẩu ≥ 12 ký tự; chạy lại để đặt lại mật khẩu):
 
 ```bash
 sudo docker compose exec api python -m app.cli create-admin --username admin --name "Quản trị"
 ```
 
-**5. HTTPS.** Cookie phiên có cờ `Secure` nên phải truy cập qua HTTPS (mở bằng `http://<ip>:8080` thì đăng nhập đúng
-mật khẩu vẫn quay lại trang đăng nhập – trang sẽ báo *Cần mở trang bằng HTTPS*): đặt nginx (hoặc reverse proxy sẵn có) trên
-máy chủ trỏ tới `127.0.0.1:8080` – cấu hình mẫu ở [mục 8 của hướng dẫn](docs/install-ubuntu-docker.md#8-https-bằng-nginx-trên-máy-chủ).
+**6. Mở `https://infraops.congty.local`** (tên miền trỏ về máy chủ trong DNS nội bộ) và đăng nhập `admin`. Máy chủ đã
+có nginx/reverse proxy khác giữ cổng 80/443: đặt `INFRAOPS_HTTP_BIND=127.0.0.1:8080`, `INFRAOPS_HTTPS_BIND=127.0.0.1:8443`
+và để proxy đó lo HTTPS ([mục 8 của hướng dẫn](docs/install-ubuntu-docker.md#8-https)).
 
-**6. Cấu hình trong ứng dụng** (đăng nhập `admin`): *Hệ thống → Kết nối hệ thống* thêm SDP, BioStar và bấm
+**7. Cấu hình trong ứng dụng**: *Hệ thống → Kết nối hệ thống* thêm SDP, BioStar và bấm
 *Kiểm tra kết nối* → *Người dùng & quyền* tạo tài khoản, gán vai trò → *Cấu hình module* của Vòng đời nhân sự và
 Công việc Helpdesk → *Đồng bộ ngay*. Chi tiết từng bước ở các mục dưới.
 
@@ -215,7 +241,7 @@ Test không bao giờ gọi hệ thống thật: SDP/BioStar được mock bằn
 | 15 | **Việc tiếp theo**: Việc của tôi thành một hàng chờ theo ưu tiên từ mọi module, nút *Làm việc tiếp theo* | Xong |
 | 16 | **Nhận hàng từng bước**: chọn PO → quét serial từng máy → xác nhận ghi SDP → kết quả + Job onboard còn thiếu máy | Xong |
 | 17 | **Tổng quan** đầu Việc của tôi (trễ hạn / đến hạn 3 ngày / đang mở / đã xong 7 ngày); Operator nhận hàng, **đọc serial từ file biên bản** (PDF/Excel), **gợi ý mã tài sản** HCM-năm-loại-4 số cuối serial; sửa theo critique luồng Operator | Xong |
-| 18 | Triển khai: trang đăng nhập báo rõ khi mở bằng `http://` (cookie phiên `Secure` bị trình duyệt bỏ) thay vì đăng nhập thất bại không lý do | Xong |
+| 18 | Triển khai: trang đăng nhập báo rõ khi mở bằng `http://` (cookie phiên `Secure` bị trình duyệt bỏ) thay vì đăng nhập thất bại không lý do; container `web` phục vụ thẳng **HTTP 80 / HTTPS 443** với chứng chỉ trong `certs/` | Xong |
 | sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
 
 ## Đăng nhập

@@ -50,8 +50,13 @@ services:
   web:
     build: ./frontend
     restart: unless-stopped
-    # Behind a reverse proxy on the same host, set INFRAOPS_HTTP_BIND=127.0.0.1:8080 in .env.
-    ports: ["${INFRAOPS_HTTP_BIND:-8080}:8080"]
+    # HTTP on 80 and HTTPS on 443. Put the certificate in ./certs (tls.crt = full chain, tls.key);
+    # without it only HTTP is served. Behind another reverse proxy: INFRAOPS_HTTP_BIND=127.0.0.1:8080.
+    ports:
+      - "${INFRAOPS_HTTP_BIND:-80}:8080"
+      - "${INFRAOPS_HTTPS_BIND:-443}:8443"
+    volumes:
+      - ./certs:/etc/nginx/certs:ro
     depends_on: [api]
 
 volumes:
