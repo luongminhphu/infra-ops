@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
+import { api } from "@/core/api/client";
 import { Button } from "@/core/ui/button";
 import { ErrorState, LoadingRows, PageHeader, Panel } from "@/core/ui/feedback";
 import { Field, Input, Select, Switch, Textarea } from "@/core/ui/field";
 import { HelpTip } from "@/core/ui/help-tip";
 import { StatusBadge } from "@/core/ui/status";
-import { formatVnd } from "@/core/lib/format";
+import { formatNumber, formatVnd } from "@/core/lib/format";
 import { useTechnicians } from "../api";
 
 interface Values {
@@ -85,7 +85,6 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
       toast.success("Đã lưu cấu hình. Áp dụng từ lần đồng bộ tiếp theo.");
       void qc.invalidateQueries({ queryKey: ["workload"] });
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   return (
     <Panel title="Đồng bộ từ ServiceDesk Plus" className="mb-4">
@@ -152,7 +151,7 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
           >
             <Input
               inputMode="numeric"
-              value={v.po_limit_vnd ? new Intl.NumberFormat("vi-VN").format(v.po_limit_vnd) : ""}
+              value={v.po_limit_vnd ? formatNumber(v.po_limit_vnd) : ""}
               onChange={(e) => setV({ ...v, po_limit_vnd: Number(e.target.value.replace(/\D/g, "").slice(0, 12)) || 0 })}
             />
           </Field>
@@ -164,7 +163,7 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
             <Field label="Ngưỡng cần nhiều báo giá (đ)" hint={formatVnd(v.quote_threshold_vnd)}>
               <Input
                 inputMode="numeric"
-                value={new Intl.NumberFormat("vi-VN").format(v.quote_threshold_vnd)}
+                value={formatNumber(v.quote_threshold_vnd)}
                 onChange={(e) => setV({ ...v, quote_threshold_vnd: Number(e.target.value.replace(/\D/g, "").slice(0, 12)) || 0 })}
               />
             </Field>
@@ -212,7 +211,6 @@ function TechnicianLinks() {
       toast.success("Đã cập nhật liên kết.");
       void qc.invalidateQueries({ queryKey: ["workload", "technicians"] });
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   return (
     <Panel

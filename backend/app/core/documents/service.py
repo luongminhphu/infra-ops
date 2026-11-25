@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import select, text, update
@@ -18,9 +17,9 @@ from app.core.errors import AppError, Conflict, NotFound
 from app.core.modules.manifest import DocumentKind
 from app.core.modules.registry import ModuleRegistry, get_registry
 from app.core.storage.service import read_file, save_file
+from app.core.timeutil import TZ
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 DRAFT_NUMBER = "(bản nháp – chưa có số)"
 
 

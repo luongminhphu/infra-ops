@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, LockKeyhole, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
+import { api } from "@/core/api/client";
 import type { ConnectorType, TestResult } from "@/core/api/types";
 import { formatDateTime } from "@/core/lib/format";
 import { Button } from "@/core/ui/button";
@@ -49,7 +49,6 @@ function CredentialCard({ c }: { c: MyCredential }) {
       await refresh();
       toast.success("Đã lưu API key. Bấm “Kiểm tra” để xác nhận key dùng được.");
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const test = useMutation({
     mutationFn: () => api<TestResult>(`/api/core/me/credentials/${c.profile_id}/test`, { method: "POST" }),
@@ -57,7 +56,6 @@ function CredentialCard({ c }: { c: MyCredential }) {
       setResult(r);
       await refresh();
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const remove = useMutation({
     mutationFn: () => api(`/api/core/me/credentials/${c.profile_id}`, { method: "DELETE" }),
@@ -67,7 +65,6 @@ function CredentialCard({ c }: { c: MyCredential }) {
       await refresh();
       toast.success("Đã xoá API key của bạn.");
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
 
   const submit = (e: FormEvent) => {

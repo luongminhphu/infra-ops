@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, Download, FileCheck2, FileUp, Paperclip, Printer, Save, Search, Stamp, XCircle } from "lucide-react";
 import { toast } from "sonner";
-import { api, ApiError, errorMessage } from "@/core/api/client";
+import { api, ApiError, errorDetails, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { Button, buttonVariants } from "@/core/ui/button";
 import { Dialog } from "@/core/ui/dialog";
@@ -15,13 +15,6 @@ import { formatDateTime } from "@/core/lib/format";
 import { cn } from "@/core/lib/cn";
 import { DOC_STATUS, KIND_SHORT_TITLE, SHORT_OF, useDocMeta, type Doc, type DocData, type ShortKind } from "../docs";
 import { DocForm, emptyData, formErrors } from "../DocForm";
-
-function serverErrorText(e: unknown): string {
-  if (e instanceof ApiError && Array.isArray(e.details)) {
-    return `${e.message} ${(e.details as { loc: string[]; msg: string }[]).map((d) => `${d.loc.join(".")}: ${d.msg}`).join("; ")}`;
-  }
-  return errorMessage(e);
-}
 
 function Back() {
   return (
@@ -132,8 +125,8 @@ export function DocumentPage() {
       if (isNew) navigate(`/lifecycle/documents/${d.id}`, { replace: true });
     },
     onError: (e) => {
-      setServerError(serverErrorText(e));
-      announce(serverErrorText(e));
+      setServerError(errorDetails(e));
+      announce(errorDetails(e));
     },
   });
 
@@ -144,7 +137,7 @@ export function DocumentPage() {
       await refresh(d);
       toast.success(`Đã chốt biên bản ${d.number}. Mở PDF để in cho các bên ký.`);
     },
-    onError: (e) => toast.error(serverErrorText(e)),
+    onError: (e) => toast.error(errorDetails(e)),
   });
 
   const uploadSigned = useMutation({
@@ -157,7 +150,6 @@ export function DocumentPage() {
       await refresh(d);
       toast.success("Đã tải lên bản đã ký.");
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
 
   const attach = useMutation({
@@ -180,7 +172,6 @@ export function DocumentPage() {
       await refresh(d);
       toast.success(d.number ? `Đã huỷ biên bản ${d.number}.` : "Đã huỷ bản nháp.");
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
 
   const submitSave = () => {

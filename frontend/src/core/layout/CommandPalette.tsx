@@ -6,11 +6,7 @@ import { Dialog } from "@/core/ui/dialog";
 import { Input } from "@/core/ui/field";
 import { iconFor } from "@/core/ui/icons";
 import { cn } from "@/core/lib/cn";
-
-/** Removes Vietnamese diacritics so "ket noi" finds "Kết nối". */
-export function fold(s: string): string {
-  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
-}
+import { fold } from "@/core/lib/format";
 
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { me } = useAuth();

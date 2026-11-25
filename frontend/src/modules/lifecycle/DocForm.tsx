@@ -4,10 +4,11 @@ import { DateInput } from "@/core/ui/date-input";
 import { Panel } from "@/core/ui/feedback";
 import { Field, Input, Select } from "@/core/ui/field";
 import { cn } from "@/core/lib/cn";
+import { isoDateVn } from "@/core/lib/format";
 import type { AssetLine, Check, Condition, DocData, Meta, ShortKind } from "./docs";
 
 export function emptyData(kind: ShortKind, meta: Meta, defaults: Partial<DocData> = {}): DocData {
-  const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Ho_Chi_Minh" });
+  const today = isoDateVn();
   return {
     employee: { id: "", full_name: "", department: "", job_title: "", work_location: "" },
     date: today,

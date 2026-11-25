@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, KeyRound, Pencil, PlugZap, ScrollText, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
+import { api } from "@/core/api/client";
 import type { ConnectionProfile, ConnectorType, Purpose, TestResult } from "@/core/api/types";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { Button } from "@/core/ui/button";
@@ -40,7 +40,6 @@ function CredentialPanel({ profile, type, purpose }: { profile: ConnectionProfil
       else toast.error(msg);
       announce(msg);
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
 
   const remove = useMutation({
@@ -51,7 +50,6 @@ function CredentialPanel({ profile, type, purpose }: { profile: ConnectionProfil
       await qc.invalidateQueries({ queryKey: connectionsKey });
       toast.success(`Đã xoá credential ${PURPOSE_NAME[purpose]}.`);
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
 
   return (
@@ -164,7 +162,6 @@ export function ConnectionDetailPage() {
       toast.success("Đã xoá kết nối.");
       navigate("/settings/connections");
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
 
   const back = (

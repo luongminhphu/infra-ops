@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
+import { api } from "@/core/api/client";
 
 export type TicketState = "open" | "pending" | "in_progress" | "on_hold" | "overdue" | "done" | "cancelled" | "all";
 export type DeviceNeed = "replace" | "upgrade" | "repair";
@@ -75,7 +75,6 @@ export function useSyncNow() {
       toast.success("Đã yêu cầu đồng bộ, dữ liệu sẽ cập nhật sau ít phút.");
       void qc.invalidateQueries({ queryKey: ["workload", "sync"] });
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
 }
 

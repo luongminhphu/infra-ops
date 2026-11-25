@@ -7,7 +7,7 @@ import { Button } from "@/core/ui/button";
 import { Dialog } from "@/core/ui/dialog";
 import { Field, Input } from "@/core/ui/field";
 import { announce } from "@/core/ui/live-region";
-import { fold } from "@/core/layout/CommandPalette";
+import { fold } from "@/core/lib/format";
 
 function slug(name: string): string {
   return fold(name).replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "role";

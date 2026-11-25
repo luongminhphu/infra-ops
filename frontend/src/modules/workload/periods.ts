@@ -1,5 +1,4 @@
-import { formatInTimeZone } from "date-fns-tz";
-import { TIME_ZONE } from "@/core/lib/format";
+import { isoDateVn } from "@/core/lib/format";
 
 export type PresetKey = "week" | "month" | "quarter" | "half" | "year" | "custom";
 
@@ -13,7 +12,7 @@ export const PRESETS: { key: PresetKey; label: string }[] = [
 ];
 
 export function todayVn(now: Date = new Date()): string {
-  return formatInTimeZone(now, TIME_ZONE, "yyyy-MM-dd");
+  return isoDateVn(0, now);
 }
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);

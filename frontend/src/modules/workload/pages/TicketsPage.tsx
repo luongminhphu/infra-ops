@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { ArrowRightLeft, ListChecks, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { useSearchParams } from "react-router-dom";
-import { api, errorMessage } from "@/core/api/client";
+import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { Button } from "@/core/ui/button";
 import { DataTable } from "@/core/ui/data-table";
@@ -14,6 +14,7 @@ import { Field, Input, Select, Textarea } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
 import { formatDateTime, formatRelative } from "@/core/lib/format";
 import { cn } from "@/core/lib/cn";
+import { useDebounced } from "@/core/lib/useDebounced";
 import { useSyncNow, useSyncStatus, useTechnicians, type Ticket, type TicketState } from "../api";
 import { USUAL_SDP_STATUS, ticketBadge } from "../labels";
 
@@ -46,7 +47,6 @@ function ReassignDialog({ tickets, onClose, onDone }: { tickets: Ticket[]; onClo
       void qc.invalidateQueries({ queryKey: ["workload"] });
       onDone();
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const options = (techs.data?.items ?? []).filter((t) => t.active);
   const target = options.find((t) => t.id === to);
@@ -131,12 +131,10 @@ function PendingReassignments() {
       toast.success("Đã gửi lại yêu cầu chuyển việc.");
       void qc.invalidateQueries({ queryKey: ["workload"] });
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const cancel = useMutation({
     mutationFn: (id: string) => api(`/api/core/jobs/${id}/cancel`, { method: "POST", json: { reason: "Manager bỏ yêu cầu chuyển việc lỗi" } }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["workload"] }),
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const items = jobs.data?.items ?? [];
   if (!items.length) return null;
@@ -171,13 +169,9 @@ export function TicketsPage() {
   const tech = params.get("tech") ?? "";
   // ?q= lets other pages (dashboard overdue rows) open the list on one request.
   const [q, setQ] = useState(params.get("q") ?? "");
-  const [debounced, setDebounced] = useState(q);
+  const debounced = useDebounced(q);
   const [selected, setSelected] = useState<string[]>([]);
   const [dialog, setDialog] = useState(false);
-  useEffect(() => {
-    const t = window.setTimeout(() => setDebounced(q), 300);
-    return () => window.clearTimeout(t);
-  }, [q]);
   const set = (k: string, v: string) => {
     const next = new URLSearchParams(params);
     if (v) next.set(k, v);

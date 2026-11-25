@@ -9,15 +9,16 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import raiseload
 
 from app.core.connections.service import personal_key_item
-from app.core.settings.service import load_settings
 from app.core.workflow.api import stalled_minutes
 from app.core.workflow.engine import today_vn
 from app.core.workflow.models import Job
 from app.modules.lifecycle.assignment import JOB_WORKFLOWS
+from app.modules.lifecycle.settings import load as load_module_settings
 
 KIND = {"lifecycle.onboard": "Onboard", "lifecycle.offboard": "Offboard"}
 
@@ -74,16 +75,18 @@ async def load(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
     today = today_vn()
     items = [i for j in jobs if (i := job_item(j, today))]
     if user.has("lifecycle.job.execute"):  # Job steps read/write SDP with the person's own key
-        from app.modules.lifecycle.settings import MODULE_ID, SETTINGS_KEY, LifecycleSettings
-
-        s = await load_settings(session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
+        s = await load_module_settings(session)
         if key := await personal_key_item(session, user.id, "sdp", s.sdp_profile_id):
             items.append(key)
     # Whoever coordinates jobs gets the stalled ones (anyone's) as work: the worker needs checking.
     if user.has("lifecycle.job.assign"):
         running = (
             await session.scalars(
-                select(Job).where(Job.workflow_key.in_(JOB_WORKFLOWS), Job.status == "running")
+                select(Job)
+                .where(Job.workflow_key.in_(JOB_WORKFLOWS), Job.status == "running")
+                .options(
+                    raiseload(Job.steps), raiseload(Job.evidence), raiseload(Job.assignments)
+                )  # only status / updated_at are read
             )
         ).all()
         stalled = [j for j in running if stalled_minutes(j)]
@@ -105,17 +108,20 @@ async def load(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
 
 async def summary(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
     """My onboard/offboard jobs: completed in 7 days, past the effective date, due within 3 days, open."""
+    week_ago = datetime.now(UTC) - timedelta(days=7)
     jobs = (
         await session.scalars(
             select(Job).where(
                 Job.assignee_user_id == user.id,
                 Job.workflow_key.in_(JOB_WORKFLOWS),
                 Job.status != "cancelled",
+                or_(
+                    Job.status != "completed", Job.closed_at >= week_ago
+                ),  # older completed jobs are not counted
             )
         )
     ).all()
     today = today_vn()
-    week_ago = datetime.now(UTC) - timedelta(days=7)
     soon = str(today + timedelta(days=3))
     active = [j for j in jobs if j.status != "completed"]
 

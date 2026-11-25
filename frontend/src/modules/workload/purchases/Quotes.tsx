@@ -2,8 +2,8 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { BadgeCheck, ExternalLink, FileText, Image, PackageX, Paperclip, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
-import { formatVnd } from "@/core/lib/format";
+import { api } from "@/core/api/client";
+import { formatNumber, formatVnd } from "@/core/lib/format";
 import { Button } from "@/core/ui/button";
 import { Field, Input } from "@/core/ui/field";
 import { HelpTip } from "@/core/ui/help-tip";
@@ -11,7 +11,7 @@ import { useSuppliers, type Purchase } from "../api";
 import { pastedImage } from "../evidence";
 
 const digits = (s: string) => s.replace(/\D/g, "").slice(0, 11);
-const group = (s: string) => (s ? new Intl.NumberFormat("vi-VN").format(Number(s)) : "");
+const group = (s: string) => (s ? formatNumber(Number(s)) : "");
 
 interface ReadResult {
   file_id: string;
@@ -58,7 +58,6 @@ export function QuotesBlock({ p, onChange }: { p: Purchase; onChange: (p: Purcha
           : "Không nhận ra nhà cung cấp – nhập tên và đơn giá tay (hoặc thêm từ khoá ở thẻ Nhà cung cấp).",
       );
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const add = useMutation({
     mutationFn: () => {
@@ -80,12 +79,10 @@ export function QuotesBlock({ p, onChange }: { p: Purchase; onChange: (p: Purcha
       reset();
       toast.success(mode === "stock" ? "Đã ghi nhận nhà cung cấp không có hàng." : "Đã thêm báo giá.");
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const remove = useMutation({
     mutationFn: (id: string) => api<Purchase>(`/api/workload/purchases/${p.id}/quotes/${id}`, { method: "DELETE" }),
     onSuccess: onChange,
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const bad = { vendor: vendor.trim().length < 2, price: mode === "quote" && !price, file: !file && !read };
   const rule = p.quote_rule;

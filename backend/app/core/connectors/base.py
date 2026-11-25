@@ -124,6 +124,11 @@ class TestReport:
     def ok(self) -> bool:
         return not any(s.status == "fail" for s in self.steps)
 
+    @classmethod
+    def fail(cls, key: str, label: str, message: str, hint: str = "") -> TestReport:
+        """A report with a single failed step (e.g. no credential to test)."""
+        return cls(steps=[TestStep(key, label, "fail", message, hint)])
+
     def add(self, step: TestStep) -> TestStep:
         self.steps.append(step)
         return step

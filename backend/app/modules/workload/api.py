@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
@@ -19,17 +18,18 @@ from app.core.connections.models import ConnectionProfile
 from app.core.db import get_session
 from app.core.errors import AppError, NotFound
 from app.core.scheduler.service import get_task, request_run, task_out
-from app.core.settings.service import load_settings, save_settings
+from app.core.settings.service import save_settings
+from app.core.timeutil import TZ
 from app.core.workflow.api import job_out
 from app.core.workflow.engine import create_job, start_job
 from app.modules.workload.models import Technician, Ticket
 from app.modules.workload.po import repack
 from app.modules.workload.rules import pick_bucket
 from app.modules.workload.settings import MODULE_ID, SETTINGS_KEY, WorkloadSettings
+from app.modules.workload.settings import load as load_module_settings
 from app.modules.workload.sync import SYNC_TASK_KEY, auto_link, reclassify
 
 router = APIRouter(tags=["workload"])
-TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 view = require("workload.tickets.view")
 assign = require("workload.tickets.assign")
 stats_perm = require("workload.stats.view")
@@ -272,7 +272,6 @@ async def reassign(
         subject_key=target.id,
         subject_label=f"Chuyển {len(ids)} request cho {target.name}",
         external_ref=None,
-        idempotency_key=f"workload.reassign:{uuid.uuid4()}",
     )
     await start_job(session, user.actor, job, None)
     await record(
@@ -394,7 +393,7 @@ async def sync_now(
 async def get_settings_(
     _: CurrentUser = Depends(manage), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
-    settings = await load_settings(session, MODULE_ID, SETTINGS_KEY, WorkloadSettings)
+    settings = await load_module_settings(session)
     profiles = (
         await session.scalars(
             select(ConnectionProfile)

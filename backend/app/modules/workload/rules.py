@@ -79,16 +79,6 @@ def normalize_ticket(raw: dict[str, Any], settings: WorkloadSettings) -> dict[st
     }
 
 
-def is_overdue(t: dict[str, Any], now: datetime) -> bool:
-    """Open past its due time, or finished after it."""
-    due = t.get("due_by")
-    if due is None:
-        return False
-    if t["state"] == "open":
-        return due < now
-    return t["state"] == "done" and t.get("completed_at") is not None and t["completed_at"] > due
-
-
 def pick_bucket(days: int) -> str:
     """Chart granularity for a period length in days."""
     if days <= 31:

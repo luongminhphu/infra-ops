@@ -6,6 +6,7 @@ import { CheckCircle2, ChevronLeft, FileSpreadsheet, LoaderCircle, PackageCheck,
 import { api, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { formatDate, formatDateTime } from "@/core/lib/format";
+import { isSettled } from "@/core/lib/jobs";
 import { Button } from "@/core/ui/button";
 import { EmptyState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input } from "@/core/ui/field";
@@ -54,7 +55,6 @@ interface ReceiveJob {
   steps: { message: string | null; output: { assets?: unknown[] } }[];
 }
 type Result = { id: string; name: string; ok: boolean; message?: string; job?: string; received?: boolean };
-const settled = (status: string) => ["completed", "failed", "cancelled"].includes(status);
 
 const waitingItems = (po: ReceivablePo) => po.items.filter((p) => p.status === "ordered" && !p.receive_job);
 
@@ -109,12 +109,11 @@ export function ReceivePage() {
     queryKey: ["workload", "receive-follow", jobIds],
     queryFn: () => Promise.all(jobIds.map((id) => api<ReceiveJob>(`/api/core/jobs/${id}`))),
     enabled: i === 3 && jobIds.length > 0,
-    refetchInterval: (q) => ((q.state.data ?? []).some((j) => !settled(j.status)) ? 3000 : false),
+    refetchInterval: (q) => ((q.state.data ?? []).some((j) => !isSettled(j.status)) ? 3000 : false),
   });
   const retry = useMutation({
     mutationFn: (id: string) => api(`/api/core/jobs/${id}/steps/receive/retry`, { method: "POST" }),
     onSuccess: () => { toast.success("Đã yêu cầu nhập kho lại."); void followed.refetch(); },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const allocation = useQuery({
     queryKey: ["lifecycle", "allocation"],
@@ -142,6 +141,7 @@ export function ReceivePage() {
       setI(3);
       void qc.invalidateQueries({ queryKey: ["workload"] });
     },
+    meta: { silentError: true },
   });
 
   const setUnit = (p: Purchase, k: number, patch: Partial<Unit>) =>

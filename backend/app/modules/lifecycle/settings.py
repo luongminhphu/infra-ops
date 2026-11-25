@@ -6,6 +6,9 @@ import uuid
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.settings.service import load_settings
 
 EventKind = Literal["onboard", "probation_to_official", "transfer", "offboard", "ignore"]
 
@@ -143,3 +146,7 @@ def main_biostar(settings: LifecycleSettings) -> dict[str, Any]:
     if settings.biostar_profile_id:
         return {"profile_id": settings.biostar_profile_id}
     return {"exclude": [s.profile_id for s in settings.biostar_sources]}
+
+
+async def load(session: AsyncSession) -> LifecycleSettings:
+    return await load_settings(session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)

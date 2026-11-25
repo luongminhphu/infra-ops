@@ -132,3 +132,8 @@ export function WizardProgress({ steps, current, className }: { steps: WizardSte
     </div>
   );
 }
+
+/** Small source tag: tells the operator where a pre-filled value comes from (font-normal: also used inside field labels). */
+export function From({ children }: { children: string }) {
+  return <span className="ml-2 rounded-xs bg-surface-2 px-1.5 py-0.5 text-xs font-normal text-muted">{children}</span>;
+}

@@ -1,6 +1,7 @@
 /** Pure helpers for the receive wizard: asset tag suggestion and filling serials from a handover file. */
 
-import { fold, words } from "./text";
+import { fold } from "@/core/lib/format";
+import { words } from "./text";
 
 export interface Unit {
   serial: string;

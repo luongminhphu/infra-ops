@@ -1,5 +1,6 @@
+import { fold } from "@/core/lib/format";
+
 /** Accent- and case-insensitive word matching for Vietnamese device names. */
-export const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/gi, "d").toLowerCase();
 
 export const words = (s: string) => new Set(fold(s).split(/[^a-z0-9]+/).filter((w) => w.length > 1));
 

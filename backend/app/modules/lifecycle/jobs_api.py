@@ -17,7 +17,6 @@ from app.core.connectors.base import Purpose
 from app.core.connectors.biostar import BioStarClient
 from app.core.db import get_session
 from app.core.errors import AppError, Conflict, NotFound
-from app.core.settings.service import load_settings
 from app.core.workflow import engine
 from app.core.workflow.api import job_out
 from app.core.workflow.models import Job
@@ -25,7 +24,8 @@ from app.modules.lifecycle.assignment import ASSIGN, JOB_WORKFLOWS, assign_from_
 from app.modules.lifecycle.models import LifecycleRequest, ReconRow, Snapshot
 from app.modules.lifecycle.parsing import fold
 from app.modules.lifecycle.queries import latest_run
-from app.modules.lifecycle.settings import MODULE_ID, SETTINGS_KEY, LifecycleSettings, main_biostar
+from app.modules.lifecycle.settings import MODULE_ID, main_biostar
+from app.modules.lifecycle.settings import load as load_module_settings
 from app.modules.lifecycle.workflows import WORKFLOW_BY_KIND
 
 router = APIRouter(tags=["lifecycle-jobs"])
@@ -108,7 +108,7 @@ async def create_job_for_request(
 
 async def auto_create_jobs(session: AsyncSession) -> int:
     """Called after a sync: one draft job per onboard/offboard request (drafts never touch external systems)."""
-    settings = await load_settings(session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
+    settings = await load_module_settings(session)
     if not settings.auto_create_jobs:
         return 0
     reqs = (
@@ -216,7 +216,7 @@ async def in_store_assets(
     product_type: str = "",
 ) -> dict[str, Any]:
     """In Store assets from the latest sync (re-checked live when the step runs)."""
-    settings = await load_settings(session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
+    settings = await load_module_settings(session)
     run = await latest_run(session)
     if run is None:
         return {"items": [], "as_of": None, "types": []}
@@ -272,7 +272,7 @@ async def biostar_groups(
     _: CurrentUser = Depends(require("lifecycle.settings.manage")),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    settings = await load_settings(session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
+    settings = await load_module_settings(session)
     _, ctx = await open_connection(session, "biostar", Purpose.READ, **main_biostar(settings))
     async with BioStarClient(ctx) as c:
         ug = await c.user_groups()
@@ -339,7 +339,6 @@ async def assign_job(
         subject_key=job.subject_key,
         subject_label=f"Chuyển {job.subject_label} cho {target.display_name}",
         external_ref=str(job.id),
-        idempotency_key=f"lifecycle.assign:{uuid.uuid4()}",
     )
     await engine.start_job(session, user.actor, assign_job_, None)
     await record(

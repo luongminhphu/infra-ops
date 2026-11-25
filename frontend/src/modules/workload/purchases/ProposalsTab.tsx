@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { AlertTriangle, Copy, LoaderCircle, Paperclip, ShoppingCart, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
+import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { cn } from "@/core/lib/cn";
 import { formatDate, formatVnd } from "@/core/lib/format";
@@ -52,12 +52,10 @@ function EvidenceBlock({ p, onChange }: { p: Purchase; onChange: (p: Purchase) =
   const add = useMutation({
     mutationFn: (f: File) => uploadEvidence(p.id, f),
     onSuccess: (np) => { onChange(np); toast.success("Đã đính kèm bằng chứng."); },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const remove = useMutation({
     mutationFn: (id: string) => api<Purchase>(`/api/workload/purchases/${p.id}/evidence/${id}`, { method: "DELETE" }),
     onSuccess: onChange,
-    onError: (e) => toast.error(errorMessage(e)),
   });
   return (
     <section aria-label="Bằng chứng Function Head" onPaste={(e) => { const f = editable && pastedImage(e); if (f) add.mutate(f); }}>
@@ -92,7 +90,6 @@ function ReceiveState({ p, onRetried }: { p: Purchase; onRetried: () => void }) 
   const retry = useMutation({
     mutationFn: (id: string) => api(`/api/core/jobs/${id}/steps/receive/retry`, { method: "POST" }),
     onSuccess: () => { toast.success("Đã yêu cầu nhập kho lại."); onRetried(); },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const j = p.receive_job;
   if (!j || p.status !== "ordered") return null;
@@ -143,7 +140,6 @@ function ApproveDialog({ p: initial, dup, onClose, onDone }: { p: Purchase; dup:
       toast.success(`Đã duyệt “${np.catalog_item?.name ?? np.item}” và xếp vào ${np.po?.number ?? "PO nháp"}.`);
       onDone();
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const byQuote = !!cat?.needs_quotes;
   const price = byQuote ? (p.quotes.find((q) => q.lowest)?.unit_price ?? null) : (cat?.unit_price ?? null);
@@ -255,7 +251,6 @@ export function ProposalsTab() {
       setRejecting(null);
       refresh();
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const items = q.data?.items ?? [];
   // Deep link from "Việc tiếp theo": ?open=<id> opens that proposal.
@@ -293,7 +288,6 @@ export function ProposalsTab() {
       setRejecting(null);
       refresh();
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const counts = q.data?.counts ?? {};
   const total = Object.values(counts).reduce((a, b) => a + b, 0);

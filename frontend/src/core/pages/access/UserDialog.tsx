@@ -67,7 +67,6 @@ export function UserDialog({ open, onClose, user, roles }: { open: boolean; onCl
       await qc.invalidateQueries({ queryKey: ["users"] });
       toast.success("Đã mở khoá tài khoản.");
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
 
   const submit = (e: FormEvent) => {

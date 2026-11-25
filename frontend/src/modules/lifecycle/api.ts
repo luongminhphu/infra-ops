@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
+import { api } from "@/core/api/client";
 
 export type Kind = "onboard" | "probation_to_official" | "transfer" | "offboard" | "ignore";
 export type Severity = "high" | "medium" | "low";
@@ -111,7 +111,13 @@ export function useSyncStatus(poll = false) {
   return useQuery({
     queryKey: ["lifecycle", "sync"],
     queryFn: () => api<{ task: TaskState | null; runs: SyncRun[] }>("/api/lifecycle/sync"),
-    refetchInterval: poll ? 3000 : false,
+    // Every 3 s while a sync runs or is due/requested; idle: 30 s, so a run someone else starts still shows up.
+    refetchInterval: (q) => {
+      const t = q.state.data?.task;
+      if (!poll) return false;
+      if (!t || t.running || Date.parse(t.next_run_at) <= Date.now()) return 3000;
+      return 30_000;
+    },
   });
 }
 
@@ -124,6 +130,5 @@ export function useSyncNow() {
       toast.info("Đã yêu cầu đồng bộ. Dữ liệu sẽ cập nhật khi worker chạy xong.");
       await qc.invalidateQueries({ queryKey: ["lifecycle", "sync"] });
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
 }

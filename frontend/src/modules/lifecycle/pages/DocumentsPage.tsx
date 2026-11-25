@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -10,19 +10,16 @@ import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui
 import { Field, Input, Select } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
 import { formatDate, formatDateTime } from "@/core/lib/format";
+import { useDebounced } from "@/core/lib/useDebounced";
 import { DOC_STATUS, KIND_SHORT_TITLE, SHORT_OF, useKinds, type Doc, type DocStatus } from "../docs";
 
 export function DocumentsPage() {
   const navigate = useNavigate();
   const kinds = useKinds();
   const [q, setQ] = useState("");
-  const [debounced, setDebounced] = useState("");
+  const debounced = useDebounced(q);
   const [kind, setKind] = useState("");
   const [status, setStatus] = useState<"" | DocStatus>("");
-  useEffect(() => {
-    const t = window.setTimeout(() => setDebounced(q), 300);
-    return () => window.clearTimeout(t);
-  }, [q]);
   const list = useQuery({
     queryKey: ["documents", debounced, kind, status],
     queryFn: () => api<{ total: number; items: Doc[] }>(`/api/core/documents?${new URLSearchParams({ q: debounced, kind, status, limit: "500" })}`),

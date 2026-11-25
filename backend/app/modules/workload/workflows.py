@@ -12,10 +12,10 @@ from app.core.connectors.base import Purpose
 from app.core.connectors.sdp import SdpClient
 from app.core.errors import NotFound
 from app.core.scheduler.service import request_run
-from app.core.settings.service import load_settings
 from app.core.workflow.definitions import StepContext, StepDefinition, StepOutcome, WorkflowDefinition
 from app.modules.workload.models import PurchaseRequest, Ticket
-from app.modules.workload.settings import MODULE_ID, SETTINGS_KEY, WorkloadSettings
+from app.modules.workload.settings import MODULE_ID
+from app.modules.workload.settings import load as load_module_settings
 
 ASSIGN = "workload.tickets.assign"
 MANAGE_PURCHASE = "workload.purchase.manage"
@@ -30,7 +30,7 @@ async def _reassign(ctx: StepContext) -> StepOutcome:
     """Idempotent: reads each request first and only writes when the technician differs."""
     p = ctx.params
     target = str(p["to_technician_id"])
-    settings = await load_settings(ctx.session, MODULE_ID, SETTINGS_KEY, WorkloadSettings)
+    settings = await load_module_settings(ctx.session)
     # As the person who started it (reassign: the manager; receive: whoever received the goods).
     _, conn = await open_connection(
         ctx.session, "sdp", Purpose.WRITE, profile_id=settings.sdp_profile_id, as_user=ctx.job.created_by
@@ -44,9 +44,7 @@ async def _reassign(ctx: StepContext) -> StepOutcome:
                 current = (await client.get_request(rid)).get("technician") or {}
                 if str(current.get("id") or "") != target:
                     before.setdefault(rid, current.get("name"))
-                    await client.write(
-                        "PUT", f"/api/v3/requests/{rid}", {"request": {"technician": {"id": target}}}
-                    )
+                    await client.set_request_technician(rid, target)
                     moved.append(rid)
                 ticket = await ctx.session.get(Ticket, rid)
                 if ticket is not None:
@@ -101,7 +99,7 @@ async def _receive(ctx: StepContext) -> StepOutcome:
     purchase = await ctx.session.get(PurchaseRequest, uuid.UUID(p["purchase_id"]), with_for_update=True)
     if purchase is None:
         return StepOutcome("failed", "Đề xuất không còn tồn tại.", {}, None)
-    settings = await load_settings(ctx.session, MODULE_ID, SETTINGS_KEY, WorkloadSettings)
+    settings = await load_module_settings(ctx.session)
     # As the person who started it (reassign: the manager; receive: whoever received the goods).
     _, conn = await open_connection(
         ctx.session, "sdp", Purpose.WRITE, profile_id=settings.sdp_profile_id, as_user=ctx.job.created_by

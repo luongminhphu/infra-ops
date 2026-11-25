@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, ApiError, errorMessage } from "@/core/api/client";
+import { api, errorDetails } from "@/core/api/client";
 import { Button } from "@/core/ui/button";
 import { ErrorState, LoadingRows, PageHeader, Panel } from "@/core/ui/feedback";
 import { Field, Input, Select, Switch } from "@/core/ui/field";
@@ -107,10 +107,7 @@ export function SettingsPage() {
       toast.success(`Đã lưu cấu hình và đọc lại ${r.reparsed} request. Bấm “Đồng bộ ngay” để cập nhật đối soát.`);
     },
     onError: (e) => {
-      const msg =
-        e instanceof ApiError && Array.isArray(e.details)
-          ? `${e.message} ${(e.details as { loc: string[]; msg: string }[]).map((d) => `${d.loc.join(".")}: ${d.msg}`).join("; ")}`
-          : errorMessage(e);
+      const msg = errorDetails(e);
       setServerError(msg);
       announce(msg);
     },

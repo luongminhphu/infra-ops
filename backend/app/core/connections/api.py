@@ -24,7 +24,7 @@ from app.core.connections.service import (
     set_personal_credential,
     validate_config,
 )
-from app.core.connectors.base import Purpose, TestReport, TestStep
+from app.core.connectors.base import Purpose, TestReport
 from app.core.connectors.registry import all_connectors
 from app.core.db import get_session
 from app.core.errors import AppError, Conflict, NotFound
@@ -501,42 +501,30 @@ async def test_profile(
     connector = connector_or_404(profile.system_type)
     cred = next((c for c in profile.credentials if c.purpose == purpose.value), None)
     if cred is None:
-        report = TestReport()
-        report.add(
-            TestStep(
-                "credential",
-                "Credential",
-                "fail",
-                f"Chưa nhập credential {purpose.value.capitalize()}.",
-                "Nhập credential rồi kiểm tra lại.",
-            )
+        report = TestReport.fail(
+            "credential",
+            "Credential",
+            f"Chưa nhập credential {purpose.value.capitalize()}.",
+            "Nhập credential rồi kiểm tra lại.",
         )
         return report.to_dict()
     try:
         ctx = build_context(profile, purpose, get_settings().connector_timeout_seconds)
         report = await connector.test_connection(ctx)
     except DecryptionError:
-        report = TestReport()
-        report.add(
-            TestStep(
-                "credential",
-                "Giải mã secret",
-                "fail",
-                "Không giải mã được secret.",
-                "Master key có thể đã thay đổi. Nhập lại secret.",
-            )
+        report = TestReport.fail(
+            "credential",
+            "Giải mã secret",
+            "Không giải mã được secret.",
+            "Master key có thể đã thay đổi. Nhập lại secret.",
         )
     except Exception as exc:  # A buggy connector must not take down the API.
         log.exception("connection_test_crashed", system_type=profile.system_type)
-        report = TestReport()
-        report.add(
-            TestStep(
-                "internal",
-                "Kiểm tra",
-                "fail",
-                f"Lỗi không mong đợi: {type(exc).__name__}",
-                "Xem log máy chủ với mã yêu cầu (X-Request-ID).",
-            )
+        report = TestReport.fail(
+            "internal",
+            "Kiểm tra",
+            f"Lỗi không mong đợi: {type(exc).__name__}",
+            "Xem log máy chủ với mã yêu cầu (X-Request-ID).",
         )
     result = report.to_dict()
     result["tested_at"] = datetime.now(UTC).isoformat()
@@ -693,11 +681,8 @@ async def test_my_credential(
     profile = await _personal_profile(session, profile_id)
     cred = await _mine(session, user.id, profile.id)
     if cred is None:
-        report = TestReport()
-        report.add(
-            TestStep(
-                "credential", "API key", "fail", "Chưa nhập API key cá nhân.", "Nhập key rồi kiểm tra lại."
-            )
+        report = TestReport.fail(
+            "credential", "API key", "Chưa nhập API key cá nhân.", "Nhập key rồi kiểm tra lại."
         )
         return report.to_dict()
     try:
@@ -706,12 +691,10 @@ async def test_my_credential(
         )
         report = await connector_or_404(profile.system_type).test_connection(ctx)
     except DecryptionError:
-        report = TestReport()
-        report.add(TestStep("credential", "Giải mã key", "fail", "Không giải mã được key.", "Nhập lại key."))
+        report = TestReport.fail("credential", "Giải mã key", "Không giải mã được key.", "Nhập lại key.")
     except Exception as exc:  # a buggy connector must not take down the API
         log.exception("personal_credential_test_crashed", system_type=profile.system_type)
-        report = TestReport()
-        report.add(TestStep("internal", "Kiểm tra", "fail", f"Lỗi không mong đợi: {type(exc).__name__}", ""))
+        report = TestReport.fail("internal", "Kiểm tra", f"Lỗi không mong đợi: {type(exc).__name__}", "")
     result = report.to_dict()
     result["tested_at"] = datetime.now(UTC).isoformat()
     cred.last_test_at = datetime.now(UTC)

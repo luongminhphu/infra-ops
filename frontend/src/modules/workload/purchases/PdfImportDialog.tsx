@@ -2,8 +2,8 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { FileSearch, Paperclip } from "lucide-react";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
-import { formatVnd } from "@/core/lib/format";
+import { api } from "@/core/api/client";
+import { formatNumber, formatVnd } from "@/core/lib/format";
 import { Button } from "@/core/ui/button";
 import { DateInput } from "@/core/ui/date-input";
 import { Dialog } from "@/core/ui/dialog";
@@ -26,7 +26,7 @@ interface ReadResult {
 }
 
 const digits = (s: string) => s.replace(/\D/g, "").slice(0, 11);
-const group = (n: number | string) => (n ? new Intl.NumberFormat("vi-VN").format(Number(n)) : "");
+const group = (n: number | string) => (n ? formatNumber(Number(n)) : "");
 
 /** Read a vendor's PDF quote, let the supervisor confirm the matched prices, then update the price list. */
 export function PdfImportDialog({ onClose }: { onClose: () => void }) {
@@ -50,7 +50,6 @@ export function PdfImportDialog({ onClose }: { onClose: () => void }) {
       if (r.supplier) setVendor(r.supplier.name);
       setRows(Object.fromEntries(r.suggestions.map((s) => [s.id, { on: true, price: String(s.price) }])));
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const chosen = result?.suggestions.filter((s) => rows[s.id]?.on && Number(rows[s.id]!.price) > 0) ?? [];
   const apply = useMutation({
@@ -64,7 +63,6 @@ export function PdfImportDialog({ onClose }: { onClose: () => void }) {
       void qc.invalidateQueries({ queryKey: ["workload"] });
       onClose();
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const vendorBad = vendor.trim().length < 2;
 

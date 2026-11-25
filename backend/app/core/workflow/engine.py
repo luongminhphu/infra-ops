@@ -11,7 +11,7 @@ from __future__ import annotations
 import traceback
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
+from uuid import uuid4
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,12 +20,12 @@ from app.core.audit.service import Actor, record
 from app.core.errors import AppError, Conflict, NotFound, PermissionDenied, PersonalCredentialMissing
 from app.core.logging import get_logger
 from app.core.modules.registry import get_registry
+from app.core.timeutil import today_vn
 from app.core.workflow.checklist import check_verification, snapshot, verifies
 from app.core.workflow.definitions import StepContext, StepDefinition, StepOutcome, WorkflowDefinition
 from app.core.workflow.models import Job, JobAssignment, JobEvent, JobStep
 
 log = get_logger(__name__)
-TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 PUMP_TASK_KEY = "core.workflow"
 ACTIVE = ("running", "waiting")
 FINISHED_STEP = ("done", "skipped")
@@ -33,10 +33,6 @@ FINISHED_STEP = ("done", "skipped")
 
 def now() -> datetime:
     return datetime.now(UTC)
-
-
-def today_vn() -> date:
-    return datetime.now(TZ).date()
 
 
 def workflow_or_404(key: str) -> tuple[str, WorkflowDefinition]:
@@ -82,9 +78,11 @@ async def create_job(
     subject_key: str,
     subject_label: str,
     external_ref: str | None,
-    idempotency_key: str,
+    idempotency_key: str | None = None,
 ) -> tuple[Job, bool]:
-    """Create a draft job, or return the existing one for the same idempotency key."""
+    """Create a draft job, or return the existing one for the same idempotency key (default: always new)."""
+    if idempotency_key is None:
+        idempotency_key = f"{workflow_key}:{uuid4()}"
     module_id, wf = workflow_or_404(workflow_key)
     existing = await session.scalar(select(Job).where(Job.idempotency_key == idempotency_key))
     if existing is not None:

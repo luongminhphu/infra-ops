@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -9,8 +9,9 @@ import { DataTable } from "@/core/ui/data-table";
 import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input, Select } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
-import { formatDate, formatRelative } from "@/core/lib/format";
+import { formatDate, formatRelative, isoDateVn } from "@/core/lib/format";
 import { cn } from "@/core/lib/cn";
+import { useDebounced } from "@/core/lib/useDebounced";
 import { JOB_STATUS, JOB_WORKFLOWS, WORKFLOW_LABEL, jobStatusLabel, type Job, type JobStatus } from "../jobs";
 
 const CHIPS: { value: string; label: string }[] = [
@@ -26,15 +27,13 @@ const CHIPS: { value: string; label: string }[] = [
   { value: "", label: "Tất cả" },
 ];
 
-const today = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Ho_Chi_Minh" }); // yyyy-MM-dd
-const plusDays = (n: number) => new Date(Date.now() + n * 86_400_000).toLocaleDateString("sv-SE", { timeZone: "Asia/Ho_Chi_Minh" });
 /** Views over the open jobs, filtered here (links from "Việc của tôi" land on exactly the counted jobs). */
 const VIEWS: Record<string, ((j: Job) => boolean) | undefined> = {
   // Waiting for a person or stalled (worker not advancing it): the dashboard's "Cần xử lý tiếp".
   needs: (j) => j.status === "waiting" || !!j.stalled_minutes,
   // Past the effective date and waiting on a person (a job stuck on an automatic step is not late work).
-  late: (j) => !!j.params.effective_date && j.params.effective_date < today() && !j.stalled_minutes && j.status !== "running" && j.status !== "scheduled",
-  soon: (j) => !!j.params.effective_date && j.params.effective_date >= today() && j.params.effective_date <= plusDays(3),
+  late: (j) => !!j.params.effective_date && j.params.effective_date < isoDateVn() && !j.stalled_minutes && j.status !== "running" && j.status !== "scheduled",
+  soon: (j) => !!j.params.effective_date && j.params.effective_date >= isoDateVn() && j.params.effective_date <= isoDateVn(3),
 };
 
 export function JobsPage() {
@@ -44,11 +43,7 @@ export function JobsPage() {
   const workflow = params.get("workflow") ?? "";
   const assignee = params.get("assignee") === "me" ? "me" : ""; // from "Việc của tôi": only my Jobs
   const [q, setQ] = useState("");
-  const [debounced, setDebounced] = useState("");
-  useEffect(() => {
-    const t = window.setTimeout(() => setDebounced(q), 300);
-    return () => window.clearTimeout(t);
-  }, [q]);
+  const debounced = useDebounced(q);
   const set = (key: string, value: string) => {
     const next = new URLSearchParams(params);
     next.set(key, value);

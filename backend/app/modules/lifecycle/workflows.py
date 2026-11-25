@@ -6,9 +6,7 @@ Every write step reads the current state first (idempotent on retry), keeps the 
 
 from __future__ import annotations
 
-from datetime import date, datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,21 +19,17 @@ from app.core.connectors.http import ConnectorHttpError
 from app.core.connectors.sdp import SdpClient
 from app.core.documents import service as documents
 from app.core.errors import AppError, PersonalCredentialMissing
-from app.core.settings.service import load_settings
 from app.core.storage.service import read_file
+from app.core.timeutil import today_vn
 from app.core.workflow.definitions import StepContext, StepDefinition, StepOutcome, WorkflowDefinition
 from app.modules.lifecycle import normalize
 from app.modules.lifecycle.documents import HANDOVER, RETURN
 from app.modules.lifecycle.models import ReconRow, Snapshot
 from app.modules.lifecycle.queries import latest_run
-from app.modules.lifecycle.settings import MODULE_ID, SETTINGS_KEY, LifecycleSettings, main_biostar
+from app.modules.lifecycle.settings import MODULE_ID, main_biostar
+from app.modules.lifecycle.settings import load as load_module_settings
 
-TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 VIEW, EXECUTE, OVERRIDE = "lifecycle.job.view", "lifecycle.job.execute", "lifecycle.job.override_close"
-
-
-def _today() -> date:
-    return datetime.now(TZ).date()
 
 
 def _fmt(iso: str | None) -> str:
@@ -45,21 +39,17 @@ def _fmt(iso: str | None) -> str:
     return f"{d}/{m}/{y}"
 
 
-async def _settings(session: AsyncSession) -> LifecycleSettings:
-    return await load_settings(session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
-
-
 async def _sdp(ctx: StepContext, purpose: Purpose) -> SdpClient:
     """SDP as the person responsible for the Job (its assignee, else whoever created it): their own API key
     reads and writes, so SDP records who did the work."""
     who = ctx.job.assignee_user_id or ctx.job.created_by
-    s = await _settings(ctx.session)
+    s = await load_module_settings(ctx.session)
     _, conn = await open_connection(ctx.session, "sdp", purpose, profile_id=s.sdp_profile_id, as_user=who)
     return SdpClient(conn)
 
 
 async def _biostar(ctx: StepContext, purpose: Purpose) -> BioStarClient:
-    s = await _settings(ctx.session)
+    s = await load_module_settings(ctx.session)
     _, conn = await open_connection(ctx.session, "biostar", purpose, **main_biostar(s))
     return BioStarClient(conn)
 
@@ -81,7 +71,7 @@ def _sdp_user_id(ctx: StepContext) -> str | None:
 # ------------------------------------------------------------------ common steps
 async def check_request(ctx: StepContext) -> StepOutcome:
     rid = ctx.params["request_id"]
-    s = await _settings(ctx.session)
+    s = await load_module_settings(ctx.session)
     try:
         async with await _sdp(ctx, Purpose.READ) as c:
             req = await c.get_request(rid)
@@ -115,7 +105,7 @@ async def find_sdp_user(ctx: StepContext) -> StepOutcome:
             f"Dùng user SDP đã chọn: {ctx.params.get('sdp_user_name') or ctx.params['sdp_user_id']}.",
             {"sdp_user_id": ctx.params["sdp_user_id"], "sdp_user_name": ctx.params.get("sdp_user_name")},
         )
-    s = await _settings(ctx.session)
+    s = await load_module_settings(ctx.session)
     emp = _emp(ctx)
     try:
         async with await _sdp(ctx, Purpose.READ) as c:
@@ -187,9 +177,9 @@ async def _document_step(ctx: StepContext, kind_short: str) -> StepOutcome:
             {"document_id": doc_id},
             retry_in_seconds=60,
         )
-    s = await _settings(ctx.session)
+    s = await load_module_settings(ctx.session)
     emp = _emp(ctx)
-    today = _today().isoformat()
+    today = today_vn().isoformat()
     if kind_short == "handover":
         assets = [
             {"name": a["name"], "tag": a.get("tag") or "", "date": today, "note": "", "sdp_asset_id": a["id"]}
@@ -236,7 +226,7 @@ async def _document_step(ctx: StepContext, kind_short: str) -> StepOutcome:
 
 async def close_request(ctx: StepContext) -> StepOutcome:
     """Attach the signed record, add a note and set the request status. Each part runs once (retry-safe)."""
-    s = await _settings(ctx.session)
+    s = await load_module_settings(ctx.session)
     rid = ctx.params["request_id"]
     done = dict(ctx.step.output or {})
     doc_key = "handover_doc" if ctx.params.get("kind") == "onboard" else "return_doc"
@@ -301,7 +291,7 @@ def _summary_html(ctx: StepContext) -> str:
 
 
 async def preview_close(ctx: StepContext) -> list[str]:
-    s = await _settings(ctx.session)
+    s = await load_module_settings(ctx.session)
     out = ["Đính kèm bản scan biên bản đã ký vào request."]
     if s.sdp_add_note:
         out.append("Thêm ghi chú tóm tắt kết quả các bước vào request.")
@@ -311,7 +301,7 @@ async def preview_close(ctx: StepContext) -> list[str]:
 
 # ------------------------------------------------------------------ onboard
 async def assign_assets(ctx: StepContext) -> StepOutcome:
-    s = await _settings(ctx.session)
+    s = await load_module_settings(ctx.session)
     wanted = ctx.params.get("assets") or []
     if not wanted:
         return StepOutcome("done", "Job không có tài sản cần gán.", {"assigned": []})
@@ -354,7 +344,7 @@ async def assign_assets(ctx: StepContext) -> StepOutcome:
 
 
 async def preview_assign(ctx: StepContext) -> list[str]:
-    s = await _settings(ctx.session)
+    s = await load_module_settings(ctx.session)
     assets = ctx.params.get("assets") or []
     if not assets:
         return [
@@ -368,9 +358,9 @@ async def preview_assign(ctx: StepContext) -> list[str]:
 
 
 async def biostar_create(ctx: StepContext) -> StepOutcome:
-    s = await _settings(ctx.session)
+    s = await load_module_settings(ctx.session)
     emp = _emp(ctx)
-    start = ctx.params.get("effective_date") or _today().isoformat()
+    start = ctx.params.get("effective_date") or today_vn().isoformat()
     payload = {
         "user_id": emp["id"],
         "name": emp.get("full_name") or emp["id"],
@@ -402,8 +392,6 @@ async def biostar_create(ctx: StepContext) -> StepOutcome:
                 )
             await c.create_user(payload)
     except Exception as exc:
-        if isinstance(exc, PersonalCredentialMissing):
-            raise  # the step waits for the person's own key (engine), it does not fail
         return StepOutcome("failed", f"BioStar: {_err(exc)}")
     return StepOutcome(
         "done",
@@ -414,7 +402,7 @@ async def biostar_create(ctx: StepContext) -> StepOutcome:
 
 
 async def preview_biostar_create(ctx: StepContext) -> list[str]:
-    s = await _settings(ctx.session)
+    s = await load_module_settings(ctx.session)
     emp = _emp(ctx)
     groups = ", ".join(s.biostar_access_group_ids) or "chưa cấu hình (không gán)"
     return [
@@ -431,8 +419,6 @@ async def biostar_enroll(ctx: StepContext) -> StepOutcome:
         async with await _biostar(ctx, Purpose.READ) as c:
             user = await c.get_user(emp["id"])
     except Exception as exc:
-        if isinstance(exc, PersonalCredentialMissing):
-            raise  # the step waits for the person's own key (engine), it does not fail
         if ctx.input.get("force"):
             return StepOutcome(
                 "done",
@@ -549,7 +535,7 @@ async def collect_assets(ctx: StepContext) -> StepOutcome:
 
 
 async def return_assets(ctx: StepContext) -> StepOutcome:
-    s = await _settings(ctx.session)
+    s = await load_module_settings(ctx.session)
     rows = [
         r
         for r in (ctx.outputs.get("collect_assets") or {}).get("returned", [])
@@ -584,7 +570,7 @@ async def return_assets(ctx: StepContext) -> StepOutcome:
 
 
 async def preview_return(ctx: StepContext) -> list[str]:
-    s = await _settings(ctx.session)
+    s = await load_module_settings(ctx.session)
     rows = (ctx.outputs.get("collect_assets") or {}).get("returned")
     if rows is None:
         return [
@@ -600,7 +586,7 @@ async def preview_return(ctx: StepContext) -> list[str]:
 
 
 async def biostar_offboard(ctx: StepContext) -> StepOutcome:
-    s = await _settings(ctx.session)
+    s = await load_module_settings(ctx.session)
     emp = _emp(ctx)
     try:
         async with await _biostar(ctx, Purpose.WRITE) as c:
@@ -616,14 +602,12 @@ async def biostar_offboard(ctx: StepContext) -> StepOutcome:
                 await c.update_user(emp["id"], {"disabled": "true", "access_groups": []})
                 msg = f"Đã vô hiệu hoá user BioStar {emp['id']} và gỡ khỏi mọi nhóm quyền ra vào."
     except Exception as exc:
-        if isinstance(exc, PersonalCredentialMissing):
-            raise  # the step waits for the person's own key (engine), it does not fail
         return StepOutcome("failed", f"BioStar: {_err(exc)}")
     return StepOutcome("done", msg, {"action": s.biostar_offboard_action}, {"user": user})
 
 
 async def preview_biostar_offboard(ctx: StepContext) -> list[str]:
-    s = await _settings(ctx.session)
+    s = await load_module_settings(ctx.session)
     emp = _emp(ctx)
     lines = [
         f"Xoá user BioStar {emp.get('id')}."
@@ -641,8 +625,6 @@ async def preview_biostar_offboard(ctx: StepContext) -> list[str]:
         else:
             lines.append("Hiện không có user BioStar mang mã này.")
     except Exception as exc:
-        if isinstance(exc, PersonalCredentialMissing):
-            raise  # the step waits for the person's own key (engine), it does not fail
         lines.append(f"(Không đọc được BioStar: {_err(exc)})")
     lines.append("Cần nhập lại Mã NV để xác nhận trước khi chạy.")
     return lines

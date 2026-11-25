@@ -4,9 +4,10 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import type { ColumnDef } from "@tanstack/react-table";
 import { Archive, ArchiveRestore, CircleAlert, PackageCheck, PackageX, Undo2, UserCheck, UserRound } from "lucide-react";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
+import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { cn } from "@/core/lib/cn";
+import { chip } from "../chip";
 import { formatDate, formatDateTime } from "@/core/lib/format";
 import { Button } from "@/core/ui/button";
 import { ConfirmDangerDialog } from "@/core/ui/confirm-danger-dialog";
@@ -18,6 +19,8 @@ import { HelpTip } from "@/core/ui/help-tip";
 import { announce } from "@/core/ui/live-region";
 import { StatusBadge } from "@/core/ui/status";
 import { Tabs } from "@/core/ui/tabs";
+import { isSettled } from "@/core/lib/jobs";
+import { useDebounced } from "@/core/lib/useDebounced";
 import { OnboardTab, type Allocation, type PurchaseLite } from "./InventoryPage";
 
 type Origin = "new" | "returned" | "pending";
@@ -59,11 +62,7 @@ const ORIGINS: { v: OriginView; label: string }[] = [
   { v: "returned", label: "Thu hồi" },
 ];
 const MISSING = (i: StockItem) => i.missing.length > 0;
-const chip = (on: boolean) =>
-  cn(
-    "h-8 cursor-pointer rounded-full border px-3 text-sm transition-colors duration-150",
-    on ? "border-primary bg-primary-soft font-medium text-primary" : "border-line-strong bg-surface hover:bg-surface-2",
-  );
+const ofOrigin = (o: OriginView) => (i: StockItem) => !o || i.status === o;
 const STOCK_KEY = ["lifecycle", "stock"] as const;
 const ALLOC_KEY = ["lifecycle", "allocation"] as const;
 
@@ -120,11 +119,11 @@ function AssetsTab({ d }: { d: Stock }) {
     setParams(next, { replace: true });
     setPicked([]);
   };
+  const debouncedSearch = useDebounced(search);
   useEffect(() => {
-    const t = window.setTimeout(() => search !== (params.get("q") ?? "") && setParam("q", search), 300);
-    return () => window.clearTimeout(t);
+    if (debouncedSearch !== (params.get("q") ?? "")) setParam("q", debouncedSearch);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [debouncedSearch]);
   useEffect(() => setJobs({}), [d.as_of]); // a new sync shows the real SDP state
   const jobIds = [...new Set(Object.values(jobs))];
   const jobStates = useQueries({
@@ -132,7 +131,7 @@ function AssetsTab({ d }: { d: Stock }) {
       queryKey: ["jobs", id],
       queryFn: () => api<{ status: string }>(`/api/core/jobs/${id}`),
       refetchInterval: (q: { state: { data?: { status: string } } }) =>
-        ["completed", "failed", "cancelled"].includes(q.state.data?.status ?? "") ? false : 3000,
+        isSettled(q.state.data?.status) ? false : 3000,
     })),
   });
   const jobStatus = Object.fromEntries(jobIds.map((id, k) => [id, jobStates[k]?.data?.status]));
@@ -144,19 +143,23 @@ function AssetsTab({ d }: { d: Stock }) {
 
   const types = useMemo(() => [...new Set(d.items.map((i) => i.product_type ?? "Khác"))].sort(), [d.items]);
   const test = (VIEWS.find((x) => x.v === view) ?? VIEWS[0]!).test;
-  const ofOrigin = (o: OriginView) => (i: StockItem) => !o || i.status === o;
   const needle = (params.get("q") ?? "").trim().toLowerCase();
-  const shown = d.items.filter(
-    (i) =>
-      test(i) &&
-      ofOrigin(originView)(i) &&
-      (!onlyMissing || MISSING(i)) &&
-      (!type || (i.product_type ?? "Khác") === type) &&
-      (!needle || [i.asset_tag, i.serial, i.name, i.product, i.reserved_for?.name].some((x) => x?.toLowerCase().includes(needle))),
+  const shown = useMemo(
+    () =>
+      d.items.filter(
+        (i) =>
+          test(i) &&
+          ofOrigin(originView)(i) &&
+          (!onlyMissing || MISSING(i)) &&
+          (!type || (i.product_type ?? "Khác") === type) &&
+          (!needle || [i.asset_tag, i.serial, i.name, i.product, i.reserved_for?.name].some((x) => x?.toLowerCase().includes(needle))),
+      ),
+    [d.items, test, originView, onlyMissing, type, needle],
   );
-  const selected = d.items.filter((i) => picked.includes(i.id));
+  const pickedSet = useMemo(() => new Set(picked), [picked]);
+  const selected = d.items.filter((i) => pickedSet.has(i.id));
   const shownIds = shown.map((i) => i.id);
-  const allOn = shownIds.length > 0 && shownIds.every((id) => picked.includes(id));
+  const allOn = shownIds.length > 0 && shownIds.every((id) => pickedSet.has(id));
   const canPick = d.can.manage || d.can.dispose;
   useEffect(() => {
     if (picked.length) announce(`Đã chọn ${picked.length} tài sản.`);
@@ -171,7 +174,6 @@ function AssetsTab({ d }: { d: Stock }) {
       await qc.invalidateQueries({ queryKey: STOCK_KEY });
       await qc.invalidateQueries({ queryKey: ALLOC_KEY });
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   const change = useMutation({
     mutationFn: (to: "pending" | "in_store" | "disposed") =>
@@ -188,7 +190,6 @@ function AssetsTab({ d }: { d: Stock }) {
       setPicked([]);
       setConfirm(null);
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
 
   const box = (i: StockItem) => (
@@ -196,7 +197,7 @@ function AssetsTab({ d }: { d: Stock }) {
       type="checkbox"
       className="size-4 accent-[var(--primary)]"
       aria-label={`Chọn ${i.asset_tag ?? i.name ?? i.id}`}
-      checked={picked.includes(i.id)}
+      checked={pickedSet.has(i.id)}
       disabled={!!updating(i)}
       onChange={() => toggle(i.id)}
     />

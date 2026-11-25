@@ -11,17 +11,17 @@ from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import raiseload
 
 from app.core.auth.models import User
 from app.core.connections.service import open_connection
 from app.core.connectors.base import Purpose
 from app.core.connectors.sdp import SdpClient
-from app.core.settings.service import load_settings
 from app.core.workflow import engine
 from app.core.workflow.definitions import StepContext, StepDefinition, StepOutcome, WorkflowDefinition
 from app.core.workflow.models import Job
 from app.modules.lifecycle.models import LifecycleRequest
-from app.modules.lifecycle.settings import MODULE_ID, SETTINGS_KEY, LifecycleSettings
+from app.modules.lifecycle.settings import load as load_module_settings
 
 ASSIGN = "lifecycle.job.assign"
 JOB_WORKFLOWS = ("lifecycle.onboard", "lifecycle.offboard")
@@ -52,6 +52,9 @@ async def sync_assignees(session: AsyncSession) -> int:
             select(Job, LifecycleRequest)
             .join(LifecycleRequest, LifecycleRequest.id == Job.external_ref)
             .where(Job.workflow_key.in_(JOB_WORKFLOWS), Job.status.notin_(["completed", "cancelled"]))
+            .options(
+                raiseload(Job.steps), raiseload(Job.evidence)
+            )  # set_assignee appends to job.assignments: keep it
         )
     ).all()
     return sum([await assign_from_request(session, job, req) for job, req in rows])
@@ -60,7 +63,7 @@ async def sync_assignees(session: AsyncSession) -> int:
 async def _reassign(ctx: StepContext) -> StepOutcome:
     """Read first: find the technician by e-mail, write only when the request has someone else."""
     p = ctx.params
-    s = await load_settings(ctx.session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
+    s = await load_module_settings(ctx.session)
     # Run as whoever asked for the hand-over: SDP records them as the one who changed the technician.
     _, conn = await open_connection(
         ctx.session, "sdp", Purpose.WRITE, profile_id=s.sdp_profile_id, as_user=ctx.job.created_by
@@ -78,9 +81,7 @@ async def _reassign(ctx: StepContext) -> StepOutcome:
         current = (await c.get_request(p["request_id"])).get("technician") or {}
         before = {"technician": current.get("name")}
         if str(current.get("id") or "") != str(tech["id"]):
-            await c.write(
-                "PUT", f"/api/v3/requests/{p['request_id']}", {"request": {"technician": {"id": tech["id"]}}}
-            )
+            await c.set_request_technician(p["request_id"], tech["id"])
     req = await ctx.session.get(LifecycleRequest, p["request_id"])
     if req is not None:
         req.technician_id, req.technician_name, req.technician_email = (

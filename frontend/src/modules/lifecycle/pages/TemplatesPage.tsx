@@ -57,7 +57,6 @@ function KindTemplates({ kind }: { kind: KindInfo }) {
       await invalidate();
       toast.success(`Biên bản mới sẽ dùng mẫu phiên bản ${v.version}.`);
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
 
   const submit = (e: FormEvent) => {

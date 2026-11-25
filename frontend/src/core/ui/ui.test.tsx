@@ -5,7 +5,7 @@ import { Field, Input } from "./field";
 import { StatusBadge } from "./status";
 import { SystemRail } from "./system-rail";
 import { ConfirmDangerDialog } from "./confirm-danger-dialog";
-import { fold } from "@/core/layout/CommandPalette";
+import { fold } from "@/core/lib/format";
 
 beforeAll(() => {
   // jsdom lacks the <dialog> modal API.

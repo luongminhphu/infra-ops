@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 from typing import Any, Literal
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
@@ -22,8 +20,8 @@ from app.core.db import get_session
 from app.core.documents.api import document_out
 from app.core.documents.service import add_event, get_document
 from app.core.errors import AppError, Conflict, NotFound
-from app.core.settings.service import load_settings
 from app.core.storage.service import read_file
+from app.core.timeutil import today_vn
 from app.modules.lifecycle.documents import (
     CONDITION_LABEL,
     HANDOVER_CHECKLIST,
@@ -33,12 +31,12 @@ from app.modules.lifecycle.documents import (
 )
 from app.modules.lifecycle.models import LifecycleRequest, ReconRow, Snapshot
 from app.modules.lifecycle.queries import latest_run
-from app.modules.lifecycle.settings import MODULE_ID, SETTINGS_KEY, LifecycleSettings
+from app.modules.lifecycle.settings import MODULE_ID
+from app.modules.lifecycle.settings import load as load_module_settings
 
 router = APIRouter(tags=["lifecycle-documents"])
 view = require("lifecycle.documents.view")
 create = require("lifecycle.documents.create")
-TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 
 @router.get("/documents/meta")
@@ -60,7 +58,7 @@ async def prefill(
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     """Suggest form data from the latest RTR request and the latest SDP asset snapshot."""
-    settings = await load_settings(session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
+    settings = await load_module_settings(session)
     wanted = {"handover": ("onboard", "transfer"), "return": ("offboard", "transfer")}[kind]
     reqs = (
         await session.scalars(
@@ -93,7 +91,7 @@ async def prefill(
     if req is None and row is None:
         raise NotFound(f"Không tìm thấy dữ liệu của Mã NV {employee_id}. Đồng bộ dữ liệu hoặc nhập tay.")
 
-    today = datetime.now(TZ).date().isoformat()
+    today = today_vn().isoformat()
     in_use = [a for a in assets if a.get("state") == settings.asset_state_in_use] or assets
     lines: list[dict[str, Any]] = [
         {
@@ -149,7 +147,7 @@ async def attach_to_sdp(
         raise AppError(
             "Biên bản chưa gắn với request SDP nào. Nhập số request để đính kèm.", code="no_request"
         )
-    settings = await load_settings(session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
+    settings = await load_module_settings(session)
     f, data = await read_file(session, doc.signed_file_id)
     _, ctx = await open_connection(
         session, "sdp", Purpose.WRITE, profile_id=settings.sdp_profile_id, as_user=user.id

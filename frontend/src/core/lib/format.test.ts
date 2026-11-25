@@ -1,4 +1,4 @@
-import { formatDate, formatDateTime, pluralDays, formatRelative } from "./format";
+import { formatDate, formatDateTime, pluralDays, formatRelative, isoDateVn, formatVnd } from "./format";
 
 describe("format (Asia/Ho_Chi_Minh)", () => {
   it("formats dd/MM/yyyy in Vietnam time even across UTC midnight", () => {
@@ -18,5 +18,10 @@ describe("format (Asia/Ho_Chi_Minh)", () => {
     const now = new Date("2026-11-16T10:00:00Z");
     expect(formatRelative("2026-11-16T09:55:00Z", now)).toBe("5 phút trước");
     expect(formatRelative(null, now)).toBe("Chưa có");
+  });
+  it("gives ISO dates in Vietnam time with a day offset, and groups numbers", () => {
+    expect(isoDateVn(0, new Date("2026-11-23T18:30:00Z"))).toBe("2026-11-24");
+    expect(isoDateVn(7, new Date("2026-12-28T00:00:00Z"))).toBe("2027-01-04");
+    expect(formatVnd(1234567)).toBe("1.234.567 đ");
   });
 });

@@ -1,17 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { useAuth } from "@/core/auth/AuthProvider";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Ticket, X } from "lucide-react";
-import { api, errorMessage } from "@/core/api/client";
+import { api } from "@/core/api/client";
 import { Button } from "@/core/ui/button";
 import { DataTable } from "@/core/ui/data-table";
 import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input, Select } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
 import { formatDate, formatDateTime } from "@/core/lib/format";
+import { useDebounced } from "@/core/lib/useDebounced";
 import type { RtrRequest } from "../api";
 import { KIND_LABEL } from "../labels";
 import { JOB_STATUS, type Job } from "../jobs";
@@ -31,7 +31,6 @@ function JobLink({ r }: { r: RtrRequest }) {
       await qc.invalidateQueries({ queryKey: ["jobs"] });
       navigate(`/lifecycle/jobs/${j.id}`);
     },
-    onError: (e) => toast.error(errorMessage(e)),
   });
   if (!can("lifecycle.job.view") || !r.kind || !["onboard", "offboard"].includes(r.kind)) return null;
   const job = jobs.data?.items.find((j) => j.external_ref === r.id);
@@ -103,14 +102,10 @@ function RequestPanel({ id, onClose }: { id: string; onClose: () => void }) {
 export function RequestsPage() {
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState("");
-  const [debounced, setDebounced] = useState("");
+  const debounced = useDebounced(q);
   const [kind, setKind] = useState("");
   const [errorsOnly, setErrorsOnly] = useState(false);
   const open = params.get("open");
-  useEffect(() => {
-    const t = window.setTimeout(() => setDebounced(q), 300);
-    return () => window.clearTimeout(t);
-  }, [q]);
   const list = useQuery({
     queryKey: ["lifecycle", "requests", debounced, kind, errorsOnly],
     queryFn: () =>
