@@ -81,13 +81,16 @@ export function ConnectionsPage() {
   };
 
   const importCfg = useMutation({
-    mutationFn: async (file: File) => api<{ created: string[]; updated: string[]; errors: { name: string; error: string }[] }>(
+    mutationFn: async (file: File) => api<{ created: string[]; updated: string[]; errors: { name: string; error: string }[]; credentials_cleared: string[] }>(
       "/api/core/connections/import",
       { method: "POST", json: JSON.parse(await file.text()) },
     ),
     onSuccess: async (r) => {
       await qc.invalidateQueries({ queryKey: connectionsKey });
-      const msg = `Đã nhập: ${r.created.length} mới, ${r.updated.length} cập nhật.`;
+      const cleared = r.credentials_cleared.length
+        ? ` Đã xoá credential do đổi địa chỉ máy chủ, cần nhập lại: ${r.credentials_cleared.join(", ")}.`
+        : "";
+      const msg = `Đã nhập: ${r.created.length} mới, ${r.updated.length} cập nhật.${cleared}`;
       if (r.errors.length) toast.warning(`${msg} ${r.errors.length} kết nối lỗi: ${r.errors.map((e) => `${e.name} (${e.error})`).join("; ")}`);
       else toast.success(`${msg} Nhập lại secret cho các kết nối mới.`);
     },

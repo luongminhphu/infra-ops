@@ -40,7 +40,8 @@ class CurrentUser:
 
 
 def client_ip(request: Request) -> str | None:
-    return request.client.host if request.client else None
+    # Clipped to the String(64) audit/session columns; the value may come from X-Forwarded-For.
+    return request.client.host[:64] if request.client else None
 
 
 async def current_user(request: Request, session: AsyncSession = Depends(get_session)) -> CurrentUser:

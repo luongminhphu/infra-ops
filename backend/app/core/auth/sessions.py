@@ -56,8 +56,13 @@ async def destroy_session(session: AsyncSession, token: str) -> None:
     await session.execute(delete(UserSession).where(UserSession.token_hash == _hash(token)))
 
 
-async def destroy_user_sessions(session: AsyncSession, user_id: uuid.UUID) -> None:
-    await session.execute(delete(UserSession).where(UserSession.user_id == user_id))
+async def destroy_user_sessions(
+    session: AsyncSession, user_id: uuid.UUID, keep_token: str | None = None
+) -> None:
+    stmt = delete(UserSession).where(UserSession.user_id == user_id)
+    if keep_token:
+        stmt = stmt.where(UserSession.token_hash != _hash(keep_token))
+    await session.execute(stmt)
 
 
 def set_session_cookie(response: Response, settings: Settings, token: str) -> None:

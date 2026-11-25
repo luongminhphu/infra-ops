@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -59,6 +60,8 @@ class ProfileOut(BaseModel):
     credentials: dict[str, dict[str, Any] | None]
     status: Literal["ok", "warning", "error", "untested", "disabled", "incomplete"]
     status_text: str
+    # True when this save changed the server address and the stored credentials were deleted.
+    credentials_cleared: bool = False
 
 
 def _status(profile: ConnectionProfile, creds: dict[str, dict[str, Any] | None]) -> tuple[str, str]:
@@ -140,6 +143,35 @@ class ProfilePatch(BaseModel):
     enabled: bool | None = None
     config: dict[str, Any] | None = None
     notes: str | None = Field(default=None, max_length=4000)
+
+
+def _origin(url: str) -> tuple[str, str | None, int | None]:
+    parts = urlsplit(url)
+    return parts.scheme.lower(), parts.hostname, parts.port
+
+
+async def _clear_credentials_if_moved(
+    session: AsyncSession, user: CurrentUser, profile: ConnectionProfile, old_url: str
+) -> bool:
+    """Drop stored secrets when the profile now points at another host, so they are never sent there."""
+    if not profile.credentials or _origin(old_url) == _origin(profile.base_url):
+        return False
+    purposes = [c.purpose for c in profile.credentials]
+    profile.credentials.clear()
+    await record(
+        session,
+        actor=user.actor,
+        module_id="core",
+        system_type=profile.system_type,
+        action="connection.credentials_cleared",
+        target_type="connection",
+        target_id=str(profile.id),
+        target_label=profile.name,
+        message="base_url host changed",
+        before={"base_url": old_url, "purposes": purposes},
+        after={"base_url": profile.base_url},
+    )
+    return True
 
 
 async def _ensure_unique_name(session: AsyncSession, name: str, exclude: uuid.UUID | None = None) -> None:
@@ -224,7 +256,7 @@ class ImportBody(BaseModel):
 async def import_profiles(
     body: ImportBody, user: CurrentUser = Depends(manage), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
-    created, updated, errors = [], [], []
+    created, updated, errors, cleared = [], [], [], []
     for item in body.connections:
         name = str(item.get("name", ""))
         try:
@@ -240,6 +272,7 @@ async def import_profiles(
                 errors.append({"name": name, "error": "Trùng tên với kết nối khác loại hệ thống."})
                 continue
             before = profile_snapshot(existing)
+            old_url = existing.base_url
             existing.base_url = data.base_url.rstrip("/")
             existing.environment = data.environment
             existing.enabled = data.enabled
@@ -260,6 +293,8 @@ async def import_profiles(
                 before=b,
                 after=a,
             )
+            if await _clear_credentials_if_moved(session, user, existing, old_url):
+                cleared.append(name)
             updated.append(name)
         else:
             profile = ConnectionProfile(
@@ -289,7 +324,7 @@ async def import_profiles(
             )
             created.append(name)
     await session.commit()
-    return {"created": created, "updated": updated, "errors": errors}
+    return {"created": created, "updated": updated, "errors": errors, "credentials_cleared": cleared}
 
 
 @router.get("/connections/{profile_id}", response_model=ProfileOut)
@@ -313,6 +348,7 @@ async def update_profile(
             code="stale_version",
         )
     before = profile_snapshot(profile)
+    old_url = profile.base_url
     if body.name is not None and body.name != profile.name:
         await _ensure_unique_name(session, body.name, exclude=profile.id)
         profile.name = body.name
@@ -344,9 +380,10 @@ async def update_profile(
             before=b,
             after=a,
         )
+    cleared = await _clear_credentials_if_moved(session, user, profile, old_url)
     await session.commit()
     await session.refresh(profile)
-    return _out(profile)
+    return _out(profile).model_copy(update={"credentials_cleared": cleared})
 
 
 @router.delete("/connections/{profile_id}", status_code=204)

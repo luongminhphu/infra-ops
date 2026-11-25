@@ -102,7 +102,9 @@ export function ConnectionFormDialog({
     },
     onSuccess: async (saved) => {
       await qc.invalidateQueries({ queryKey: connectionsKey });
-      toast.success(editing ? "Đã lưu thay đổi kết nối." : "Đã thêm kết nối. Nhập API key (credential Read) để bắt đầu sử dụng.");
+      if (saved.credentials_cleared)
+        toast.warning("Đã lưu. Địa chỉ máy chủ đã đổi nên credential cũ đã bị xoá – hãy nhập lại credential.");
+      else toast.success(editing ? "Đã lưu thay đổi kết nối." : "Đã thêm kết nối. Nhập API key (credential Read) để bắt đầu sử dụng.");
       onClose();
       // Step 2: the detail page opens the Read credential dialog straight away.
       if (!editing) navigate(`/settings/connections/${saved.id}?credential=read`);

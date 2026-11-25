@@ -1,9 +1,9 @@
 import { MyWorkPage } from "@/core/pages/MyWorkPage";
 import { createBrowserRouter, RouterProvider, type RouteObject } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { ApiError } from "@/core/api/client";
-import { AuthProvider } from "@/core/auth/AuthProvider";
+import { AuthProvider, ME_KEY } from "@/core/auth/AuthProvider";
 import { LoginPage } from "@/core/auth/LoginPage";
 import { RequireAuth, RequirePermission } from "@/core/auth/guards";
 import { AppShell } from "@/core/layout/AppShell";
@@ -16,7 +16,16 @@ import { AccessPage } from "@/core/pages/access/AccessPage";
 import { NotFoundPage } from "@/core/pages/NotFoundPage";
 import { modules } from "@/modules";
 
-const queryClient = new QueryClient({
+// Session expired (401 anywhere): re-check /me, which turns into null so RequireAuth redirects to /login.
+// Only while signed in: a wrong password on the login page must not trigger a refetch.
+function onApiError(error: unknown) {
+  if (error instanceof ApiError && error.status === 401 && queryClient.getQueryData(ME_KEY))
+    void queryClient.invalidateQueries({ queryKey: ME_KEY });
+}
+
+const queryClient: QueryClient = new QueryClient({
+  queryCache: new QueryCache({ onError: onApiError }),
+  mutationCache: new MutationCache({ onError: onApiError }),
   defaultOptions: {
     queries: {
       retry: (count, error) => !(error instanceof ApiError && error.status >= 400 && error.status < 500) && count < 2,
