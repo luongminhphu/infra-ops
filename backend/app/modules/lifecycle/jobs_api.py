@@ -25,7 +25,7 @@ from app.modules.lifecycle.assignment import ASSIGN, JOB_WORKFLOWS, assign_from_
 from app.modules.lifecycle.models import LifecycleRequest, ReconRow, Snapshot
 from app.modules.lifecycle.parsing import fold
 from app.modules.lifecycle.queries import latest_run
-from app.modules.lifecycle.settings import MODULE_ID, SETTINGS_KEY, LifecycleSettings
+from app.modules.lifecycle.settings import MODULE_ID, SETTINGS_KEY, LifecycleSettings, main_biostar
 from app.modules.lifecycle.workflows import WORKFLOW_BY_KIND
 
 router = APIRouter(tags=["lifecycle-jobs"])
@@ -273,7 +273,7 @@ async def biostar_groups(
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     settings = await load_settings(session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
-    _, ctx = await open_connection(session, "biostar", Purpose.READ, profile_id=settings.biostar_profile_id)
+    _, ctx = await open_connection(session, "biostar", Purpose.READ, **main_biostar(settings))
     async with BioStarClient(ctx) as c:
         ug = await c.user_groups()
         ag = await c.access_groups()

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -135,3 +135,11 @@ class LifecycleSettings(BaseModel):
 
     def label(self, field: str) -> str:
         return self.field_labels.get(field) or DEFAULT_LABELS[field]
+
+
+def main_biostar(settings: LifecycleSettings) -> dict[str, Any]:
+    """open_connection() arguments for the main BioStar: the chosen profile, or on "Tự động" the first enabled
+    Production one that is not an extra read-only source (jobs must never write to an old office server)."""
+    if settings.biostar_profile_id:
+        return {"profile_id": settings.biostar_profile_id}
+    return {"exclude": [s.profile_id for s in settings.biostar_sources]}
