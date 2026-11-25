@@ -1,4 +1,8 @@
-"""Onboard/offboard items for the "Việc tiếp theo" queue of the job's assignee."""
+"""Onboard/offboard items for the "Việc tiếp theo" queue of the job's assignee.
+
+An item with ``passive: True`` needs nothing from the person (e.g. an automatic step that did not run): the
+queue shows it apart, never as the next thing to do. Supervisors get the actionable side ("kiểm tra worker").
+"""
 
 from __future__ import annotations
 
@@ -45,8 +49,8 @@ def job_item(job: Job, today: Any) -> dict[str, Any] | None:
     if job.status == "running":
         idle = stalled_minutes(job)
         if idle:
-            return {**base, "priority": 3, "title": f"{name} đứng yên ở {label}", "action": "Xem",
-                    "detail": "Bước tự động chưa chạy – báo quản trị kiểm tra worker."}  # fmt: skip
+            return {**base, "priority": 3, "passive": True, "title": f"{name} đang chờ hệ thống ở {label}",
+                    "action": "Xem", "detail": "Bước tự động chưa chạy. Bạn không cần làm gì – Supervisor được báo để xử lý."}  # fmt: skip
         return None
     if job.status == "draft":
         soon = bool(eff) and str(eff) <= str(today + timedelta(days=3))
@@ -66,7 +70,29 @@ async def load(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
         )
     ).all()
     today = today_vn()
-    return [i for j in jobs if (i := job_item(j, today))]
+    items = [i for j in jobs if (i := job_item(j, today))]
+    # Whoever coordinates jobs gets the stalled ones (anyone's) as work: the worker needs checking.
+    if user.has("lifecycle.job.assign"):
+        running = (
+            await session.scalars(
+                select(Job).where(Job.workflow_key.in_(JOB_WORKFLOWS), Job.status == "running")
+            )
+        ).all()
+        stalled = [j for j in running if stalled_minutes(j)]
+        if stalled:
+            items.append(
+                {
+                    "key": "jobs:stalled",
+                    "kind": "job",
+                    "priority": 1,
+                    "title": f"{len(stalled)} Job đứng yên – kiểm tra worker",
+                    "detail": "Bước tự động không chạy: xem log container worker (docker compose logs worker).",
+                    "due": None,
+                    "href": "/lifecycle/jobs?status=needs",
+                    "action": "Kiểm tra",
+                }
+            )
+    return items
 
 
 async def summary(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
@@ -88,19 +114,19 @@ async def summary(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
     def eff(j: Job) -> str:
         return str(j.params.get("effective_date") or "")
 
+    def mine_to_do(j: Job) -> bool:
+        item = job_item(j, today)
+        return bool(item) and not item.get("passive")  # type: ignore[union-attr]
+
     done = sum(1 for j in jobs if j.status == "completed" and j.closed_at and j.closed_at >= week_ago)
-    late = sum(1 for j in active if eff(j) and eff(j) < str(today))
+    # Late = past the effective date and waiting on this person (same rule as the queue); a job stuck on an
+    # automatic step is not the person's lateness.
+    late = sum(1 for j in active if eff(j) and eff(j) < str(today) and mine_to_do(j))
     near = sum(1 for j in active if eff(j) and str(today) <= eff(j) <= soon)
-    href = "/lifecycle/jobs"
+    href = "/lifecycle/jobs?assignee=me&status="
     return [
-        {"key": "jobs:done", "group": "done", "label": "Job", "count": done, "href": href},
-        {"key": "jobs:late", "group": "late", "label": "Job", "count": late, "href": href},
-        {"key": "jobs:soon", "group": "soon", "label": "Job", "count": near, "href": href},
-        {
-            "key": "jobs:open",
-            "group": "open",
-            "label": "Job",
-            "count": len(active),
-            "href": href,
-        },
+        {"key": "jobs:done", "group": "done", "label": "Job", "count": done, "href": href + "completed"},
+        {"key": "jobs:late", "group": "late", "label": "Job", "count": late, "href": href + "late"},
+        {"key": "jobs:soon", "group": "soon", "label": "Job", "count": near, "href": href + "soon"},
+        {"key": "jobs:open", "group": "open", "label": "Job", "count": len(active), "href": href + "open"},
     ]

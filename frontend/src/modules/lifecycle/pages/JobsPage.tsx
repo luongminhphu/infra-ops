@@ -17,6 +17,7 @@ const CHIPS: { value: string; label: string }[] = [
   { value: "open", label: "Đang mở" },
   // Waiting for a person or stalled (worker not advancing it): the dashboard's "Cần xử lý tiếp".
   { value: "needs", label: "Cần xử lý tiếp" },
+  { value: "late", label: "Trễ hạn" },
   { value: "draft", label: "Nháp" },
   { value: "waiting", label: "Chờ xử lý" },
   { value: "failed", label: "Lỗi" },
@@ -25,11 +26,23 @@ const CHIPS: { value: string; label: string }[] = [
   { value: "", label: "Tất cả" },
 ];
 
+const today = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Ho_Chi_Minh" }); // yyyy-MM-dd
+const plusDays = (n: number) => new Date(Date.now() + n * 86_400_000).toLocaleDateString("sv-SE", { timeZone: "Asia/Ho_Chi_Minh" });
+/** Views over the open jobs, filtered here (links from "Việc của tôi" land on exactly the counted jobs). */
+const VIEWS: Record<string, ((j: Job) => boolean) | undefined> = {
+  // Waiting for a person or stalled (worker not advancing it): the dashboard's "Cần xử lý tiếp".
+  needs: (j) => j.status === "waiting" || !!j.stalled_minutes,
+  // Past the effective date and waiting on a person (a job stuck on an automatic step is not late work).
+  late: (j) => !!j.params.effective_date && j.params.effective_date < today() && !j.stalled_minutes && j.status !== "running" && j.status !== "scheduled",
+  soon: (j) => !!j.params.effective_date && j.params.effective_date >= today() && j.params.effective_date <= plusDays(3),
+};
+
 export function JobsPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const status = params.get("status") ?? "open";
   const workflow = params.get("workflow") ?? "";
+  const assignee = params.get("assignee") === "me" ? "me" : ""; // from "Việc của tôi": only my Jobs
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
   useEffect(() => {
@@ -42,17 +55,17 @@ export function JobsPage() {
     setParams(next, { replace: true });
   };
   const list = useQuery({
-    queryKey: ["jobs", status, workflow, debounced],
+    queryKey: ["jobs", status, workflow, assignee, debounced],
     queryFn: () => api<{ total: number; counts: Record<string, number>; items: Job[] }>(
-      `/api/core/jobs?${new URLSearchParams({ status: status === "needs" ? "open" : status, workflow, workflows: JOB_WORKFLOWS, q: debounced, limit: "500" })}`),
+      `/api/core/jobs?${new URLSearchParams({ status: VIEWS[status] ? "open" : status, workflow, assignee, workflows: JOB_WORKFLOWS, q: debounced, limit: "500" })}`),
     refetchInterval: 10000,
   });
-  const items = (list.data?.items ?? []).filter((j) => status !== "needs" || j.status === "waiting" || !!j.stalled_minutes);
+  const items = (list.data?.items ?? []).filter((j) => !VIEWS[status] || VIEWS[status]!(j));
   const counts = list.data?.counts ?? {};
   const countOf = (v: string) =>
     v === "open" ? Object.entries(counts).filter(([k]) => !["completed", "cancelled"].includes(k)).reduce((n, [, c]) => n + c, 0)
       : v === "" ? Object.values(counts).reduce((n, c) => n + c, 0)
-      : v === "needs" ? (status === "needs" ? items.length : null) : counts[v] ?? 0;
+      : VIEWS[v] ? (status === v ? items.length : null) : counts[v] ?? 0;
 
   const columns = useMemo<ColumnDef<Job, unknown>[]>(
     () => [
@@ -114,6 +127,12 @@ export function JobsPage() {
         description="Mỗi request RTR (nhân viên mới / nghỉ việc) có một Job. Job nháp được tạo tự động sau mỗi lần đồng bộ; Operator kiểm tra, chọn tài sản rồi bắt đầu."
       />
       {/* Same filter control as the Helpdesk pages; empty states are dimmed, not hidden. */}
+      {assignee && (
+        <p className="mb-2 flex flex-wrap items-center gap-2 text-sm">
+          <span>Chỉ Job bạn phụ trách.</span>
+          <Button size="sm" variant="ghost" onClick={() => set("assignee", "")}>Xem Job của mọi người</Button>
+        </p>
+      )}
       <div className="mb-3 flex flex-wrap gap-1.5" role="group" aria-label="Lọc theo trạng thái">
         {CHIPS.map((c) => {
           const n = countOf(c.value);

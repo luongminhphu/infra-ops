@@ -943,7 +943,7 @@ async def test_next_actions_queue(client, sdp) -> None:  # type: ignore[no-untyp
     assert f"evidence:{p['id']}" in keys
     overdue = [i for i in q["items"] if i["kind"] == "ticket" and i["priority"] == 1]
     assert len(overdue) == 1 and "quá hạn" in overdue[0]["title"]  # one reminder, not one row per task
-    assert overdue[0]["href"] == "/workload/tickets?state=overdue"
+    assert overdue[0]["href"] == "/workload/tickets?tech=me&state=overdue"  # lands on *my* overdue tasks
     summary = (await client.get("/api/core/me/summary")).json()
     assert summary["failed"] == []
     groups = {i["key"]: i for i in summary["items"]}
@@ -962,6 +962,20 @@ async def test_next_actions_queue(client, sdp) -> None:  # type: ignore[no-untyp
     q = (await client.get("/api/core/me/next")).json()
     approval = [i for i in q["items"] if i["kind"] == "purchase_approval"]
     assert approval and approval[0]["href"] == "/workload/purchases?status=proposed"
+
+
+@respx.mock(assert_all_called=False)
+async def test_unlinked_operator_is_told_first(admin, client, sdp) -> None:  # type: ignore[no-untyped-def]
+    # wl-op9 has no SDP technician with that e-mail: its tasks would be silently missing.
+    await _user(admin, "operator", "wl-op9@test.local")
+    await client.login("wl-op9@test.local")
+    q = (await client.get("/api/core/me/next")).json()
+    first = q["items"][0]
+    assert first["key"] == "tickets:unlinked" and first["priority"] == 0 and first["passive"] is True
+    await client.login("wl-mgr@test.local")  # sees all tasks: no notice
+    assert all(
+        i["key"] != "tickets:unlinked" for i in (await client.get("/api/core/me/next")).json()["items"]
+    )
 
 
 async def test_close_refuses_items_without_price(client) -> None:  # type: ignore[no-untyped-def]
