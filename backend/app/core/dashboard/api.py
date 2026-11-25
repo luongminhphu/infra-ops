@@ -55,6 +55,7 @@ async def next_actions(
             except Exception:
                 log.exception("next_action_source_failed", source=src.key)
                 failed.append(m.name)
+    items = list({i["key"]: i for i in items}.values())  # one row per key (e.g. "enter your API key")
     items.sort(key=lambda i: (i["priority"], i.get("due") is None, str(i.get("due") or "")))
     return {"items": items, "failed": failed}
 

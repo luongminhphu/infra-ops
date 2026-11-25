@@ -1066,3 +1066,31 @@ Quyết định:
   IP trong nhật ký không giả mạo được; đóng request SDP không đính kèm/ghi chú trùng khi chạy lại; dữ liệu thô của
   đồng bộ chỉ giữ cho vài lần gần nhất.
 
+## 33. API key SDP cá nhân (25/11/2026)
+
+- Yêu cầu: quyền đọc/ghi SDP khi thực hiện onboard, offboard, cấp phát/nhận hàng, chuyển việc phải do tài khoản của
+  chính người thực hiện chịu trách nhiệm (SDP ghi nhận đúng người), không dùng key Write chung.
+- Quyết định (đã hỏi chủ sản phẩm): thiếu key thì **chặn** – bước chờ, không dùng tạm key chung; phạm vi: Job
+  onboard/offboard (đọc + ghi, theo người phụ trách Job, chưa giao thì người tạo), nhận hàng (người bấm), chuyển việc
+  (Manager/Supervisor bấm), đính kèm biên bản đã ký (người bấm); đồng bộ nền giữ credential Read chung.
+- Core: bảng `core_user_credential` (mã hoá AES-GCM, AAD gắn user + kết nối), `open_connection(..., as_user=)`,
+  `PersonalCredentialMissing` (engine chuyển bước sang chờ 2 phút/lần), API `/api/core/me/credentials` (không bao giờ
+  trả secret; kiểm tra dùng `test_connection` – không ghi dữ liệu), audit đặt/xoá/kiểm tra key. Connector khai báo
+  `personal_credentials` (SDP).
+- UI: trang **Khoá API của tôi** (menu tài khoản), "Việc của tôi" có việc "Nhập API key cá nhân" khi người có quyền
+  thực hiện Job/nhận hàng/chuyển việc chưa có key.
+- Tiếp theo: trang tồn kho mới (Mới / Thu hồi / Chờ thanh lý theo state SDP, thanh lý = state Disposed, chỉ Manager và
+  Administrator được ghi Disposed lên SDP).
+
+## 34. Tồn kho: mới / thu hồi / chờ thanh lý (25/11/2026)
+
+- Yêu cầu: trang quản lý tồn kho trực quan; phân biệt hàng mới, hàng thu hồi, hàng chờ thanh lý; mã tài sản và serial
+  bắt buộc; chọn nhanh / chọn nhiều để chuyển chờ thanh lý và loại khỏi quản lý tài sản.
+- Quyết định (chủ sản phẩm): trạng thái theo **state SDP** (In Store, state "Chờ thanh lý" cấu hình được); "loại bỏ" =
+  đổi state sang **Disposed** (không xoá asset); chỉ **Manager / Administrator** được ghi Disposed lên SDP
+  (`lifecycle.stock.dispose`); Manager / Supervisor chuyển chờ thanh lý, trả về kho, đánh dấu thu hồi
+  (`lifecycle.stock.manage`).
+- SDP chỉ lưu người dùng hiện tại, nên "thu hồi" được ghi trong infra-ops (`lifecycle_asset_return`): đồng bộ so với lần
+  trước (từng gán → nay In Store), hoặc đánh dấu tay; xoá khi tài sản được gán lại hoặc đã thanh lý.
+- Đổi state chạy trong worker (Job `lifecycle.asset_state` / `lifecycle.asset_dispose`, đọc trước khi ghi, chỉ đổi state –
+  không đụng người dùng), bằng API key cá nhân của người yêu cầu (§33); thanh lý chỉ nhận tài sản đang Chờ thanh lý.

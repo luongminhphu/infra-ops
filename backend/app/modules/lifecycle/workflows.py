@@ -20,7 +20,7 @@ from app.core.connectors.biostar import BioStarClient
 from app.core.connectors.http import ConnectorHttpError
 from app.core.connectors.sdp import SdpClient
 from app.core.documents import service as documents
-from app.core.errors import AppError
+from app.core.errors import AppError, PersonalCredentialMissing
 from app.core.settings.service import load_settings
 from app.core.storage.service import read_file
 from app.core.workflow.definitions import StepContext, StepDefinition, StepOutcome, WorkflowDefinition
@@ -50,8 +50,11 @@ async def _settings(session: AsyncSession) -> LifecycleSettings:
 
 
 async def _sdp(ctx: StepContext, purpose: Purpose) -> SdpClient:
+    """SDP as the person responsible for the Job (its assignee, else whoever created it): their own API key
+    reads and writes, so SDP records who did the work."""
+    who = ctx.job.assignee_user_id or ctx.job.created_by
     s = await _settings(ctx.session)
-    _, conn = await open_connection(ctx.session, "sdp", purpose, profile_id=s.sdp_profile_id)
+    _, conn = await open_connection(ctx.session, "sdp", purpose, profile_id=s.sdp_profile_id, as_user=who)
     return SdpClient(conn)
 
 
@@ -83,6 +86,8 @@ async def check_request(ctx: StepContext) -> StepOutcome:
         async with await _sdp(ctx, Purpose.READ) as c:
             req = await c.get_request(rid)
     except Exception as exc:
+        if isinstance(exc, PersonalCredentialMissing):
+            raise  # the step waits for the person's own key (engine), it does not fail
         return StepOutcome("failed", f"Không đọc được request #{rid} trên SDP: {_err(exc)}")
     status = ((req.get("status") or {}).get("name")) or ""
     out = {"status": status, "subject": req.get("subject")}
@@ -116,6 +121,8 @@ async def find_sdp_user(ctx: StepContext) -> StepOutcome:
         async with await _sdp(ctx, Purpose.READ) as c:
             users = await c.find_users(s.sdp_user_employee_id_field, emp["id"])
     except Exception as exc:
+        if isinstance(exc, PersonalCredentialMissing):
+            raise  # the step waits for the person's own key (engine), it does not fail
         return StepOutcome("failed", f"Không tìm được user SDP: {_err(exc)}")
     users = [normalize.sdp_user(u, s.sdp_user_employee_id_field) for u in users]
     users = [u for u in users if u.get("employee_id") == emp["id"]] or users
@@ -268,6 +275,8 @@ async def close_request(ctx: StepContext) -> StepOutcome:
                 await c.set_request_status(rid, s.sdp_close_status)
                 done["status_set"] = s.sdp_close_status
     except Exception as exc:
+        if isinstance(exc, PersonalCredentialMissing):
+            raise  # the step waits for the person's own key (engine), it does not fail
         return StepOutcome("failed", f"SDP: {_err(exc)}", done)
     parts = [
         f"đính kèm {done['attached']}" if done.get("attached") else None,
@@ -332,6 +341,8 @@ async def assign_assets(ctx: StepContext) -> StepOutcome:
                 await c.update_asset(a["id"], s.asset_state_in_use, uid)
                 done[a["id"]] = a
     except Exception as exc:
+        if isinstance(exc, PersonalCredentialMissing):
+            raise  # the step waits for the person's own key (engine), it does not fail
         return StepOutcome("failed", _err(exc), {"assigned": list(done.values())}, {"assets": before})
     names = ", ".join(f"{a['name']} ({a.get('tag') or '—'})" for a in done.values())
     return StepOutcome(
@@ -391,6 +402,8 @@ async def biostar_create(ctx: StepContext) -> StepOutcome:
                 )
             await c.create_user(payload)
     except Exception as exc:
+        if isinstance(exc, PersonalCredentialMissing):
+            raise  # the step waits for the person's own key (engine), it does not fail
         return StepOutcome("failed", f"BioStar: {_err(exc)}")
     return StepOutcome(
         "done",
@@ -418,6 +431,8 @@ async def biostar_enroll(ctx: StepContext) -> StepOutcome:
         async with await _biostar(ctx, Purpose.READ) as c:
             user = await c.get_user(emp["id"])
     except Exception as exc:
+        if isinstance(exc, PersonalCredentialMissing):
+            raise  # the step waits for the person's own key (engine), it does not fail
         if ctx.input.get("force"):
             return StepOutcome(
                 "done",
@@ -557,6 +572,8 @@ async def return_assets(ctx: StepContext) -> StepOutcome:
                     await c.update_asset(r["id"], s.asset_state_in_store, None)
                 done.add(r["id"])
     except Exception as exc:
+        if isinstance(exc, PersonalCredentialMissing):
+            raise  # the step waits for the person's own key (engine), it does not fail
         return StepOutcome("failed", _err(exc), {"returned_ids": sorted(done)}, {"assets": before})
     return StepOutcome(
         "done",
@@ -599,6 +616,8 @@ async def biostar_offboard(ctx: StepContext) -> StepOutcome:
                 await c.update_user(emp["id"], {"disabled": "true", "access_groups": []})
                 msg = f"Đã vô hiệu hoá user BioStar {emp['id']} và gỡ khỏi mọi nhóm quyền ra vào."
     except Exception as exc:
+        if isinstance(exc, PersonalCredentialMissing):
+            raise  # the step waits for the person's own key (engine), it does not fail
         return StepOutcome("failed", f"BioStar: {_err(exc)}")
     return StepOutcome("done", msg, {"action": s.biostar_offboard_action}, {"user": user})
 
@@ -622,6 +641,8 @@ async def preview_biostar_offboard(ctx: StepContext) -> list[str]:
         else:
             lines.append("Hiện không có user BioStar mang mã này.")
     except Exception as exc:
+        if isinstance(exc, PersonalCredentialMissing):
+            raise  # the step waits for the person's own key (engine), it does not fail
         lines.append(f"(Không đọc được BioStar: {_err(exc)})")
     lines.append("Cần nhập lại Mã NV để xác nhận trước khi chạy.")
     return lines

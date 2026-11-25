@@ -184,6 +184,9 @@ async def sdp(admin, respx_mock):  # type: ignore[no-untyped-def]
 
     async with get_sessionmaker()() as s:
         assert await run_sync(s) == {"technicians": 2, "tickets": 5}
+    from tests.personal_keys import give_personal_keys
+
+    await give_personal_keys(prof["id"])  # reassign / receive run with the person's own SDP key
     return fake
 
 
@@ -969,9 +972,17 @@ async def test_unlinked_operator_is_told_first(admin, client, sdp) -> None:  # t
     # wl-op9 has no SDP technician with that e-mail: its tasks would be silently missing.
     await _user(admin, "operator", "wl-op9@test.local")
     await client.login("wl-op9@test.local")
+    for c in (
+        await client.get("/api/core/me/credentials")
+    ).json():  # other tests' fixtures may have given one
+        await client.delete(f"/api/core/me/credentials/{c['profile_id']}")
     q = (await client.get("/api/core/me/next")).json()
-    first = q["items"][0]
-    assert first["key"] == "tickets:unlinked" and first["priority"] == 0 and first["passive"] is True
+    top = {i["key"]: i for i in q["items"] if i["priority"] == 0}
+    assert top["tickets:unlinked"]["passive"] is True
+    # A new operator has no personal SDP key yet: asked once per SDP connection in use (sources dedupe by key).
+    keys = [i for i in q["items"] if i["kind"] == "personal_key"]
+    assert keys and len({k["key"] for k in keys}) == len(keys)
+    assert any("SDP WL" in k["title"] for k in keys) and all(k["href"] == "/me/credentials" for k in keys)
     await client.login("wl-mgr@test.local")  # sees all tasks: no notice
     assert all(
         i["key"] != "tickets:unlinked" for i in (await client.get("/api/core/me/next")).json()["items"]

@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { KeyRound, LogOut, Monitor, Moon, Search, Sun, UserRound } from "lucide-react";
@@ -20,6 +21,7 @@ const THEMES: { key: ThemeChoice; label: string; icon: typeof Sun }[] = [
 const ROLE_LABEL: Record<string, string> = { admin: "Administrator", manager: "Manager", supervisor: "Supervisor", operator: "Operator", viewer: "Viewer" };
 
 export function Topbar() {
+  const navigate = useNavigate();
   const { me } = useAuth();
   const qc = useQueryClient();
   const [theme, setThemeState] = useState<ThemeChoice>(getTheme);
@@ -103,6 +105,10 @@ export function Topbar() {
             </p>
           </div>
           <MenuSeparator />
+          <MenuItem onSelect={() => navigate("/me/credentials")}>
+            <KeyRound className="size-4" aria-hidden="true" />
+            Khoá API của tôi
+          </MenuItem>
           {me?.is_local && (
             <MenuItem onSelect={() => setPwOpen(true)}>
               <KeyRound className="size-4" aria-hidden="true" />

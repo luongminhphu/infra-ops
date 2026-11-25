@@ -194,6 +194,11 @@ class SdpClient:
         asset: dict[str, Any] = {"state": {"name": state}, "user": {"id": user_id} if user_id else None}
         return (await self.write("PUT", f"/api/v3/assets/{asset_id}", {"asset": asset})).get("asset") or {}
 
+    async def set_asset_state(self, asset_id: str, state: str) -> dict[str, Any]:
+        """Change only the state (the user stays as it is)."""
+        asset = {"state": {"name": state}}
+        return (await self.write("PUT", f"/api/v3/assets/{asset_id}", {"asset": asset})).get("asset") or {}
+
     async def add_note(self, request_id: str, html: str) -> dict[str, Any]:
         note = {
             "description": html,
@@ -266,6 +271,8 @@ class SdpConnector(ConnectorType):
     base_url_hint = "https://sdp.congty.local:8080"
     config_model = SdpConfig
     auth_types = ("api_key", "oauth2_refresh_token")
+    # Each technician's own API key: Jobs, receiving goods and reassigning tasks run as that person on SDP.
+    personal_credentials = True
 
     READ_PROBES = (
         ("Đọc request", "/api/v3/requests"),

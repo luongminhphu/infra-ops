@@ -17,7 +17,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit.service import Actor, record
-from app.core.errors import AppError, Conflict, NotFound, PermissionDenied
+from app.core.errors import AppError, Conflict, NotFound, PermissionDenied, PersonalCredentialMissing
 from app.core.logging import get_logger
 from app.core.modules.registry import get_registry
 from app.core.workflow.checklist import check_verification, snapshot, verifies
@@ -608,6 +608,9 @@ async def advance(session: AsyncSession, job: Job, worker_actor: Actor) -> None:
         try:
             assert definition.run is not None
             outcome = await definition.run(ctx)
+        except PersonalCredentialMissing as exc:
+            # Not a failure: the responsible person enters their own key, the step runs on its next check.
+            outcome = StepOutcome("waiting", exc.message, retry_in_seconds=120)
         except AppError as exc:
             outcome = StepOutcome("failed", exc.message)
         except Exception as exc:

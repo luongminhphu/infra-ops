@@ -55,6 +55,15 @@ class CapabilityUnavailable(AppError):
     code = "capability_unavailable"
 
 
+class PersonalCredentialMissing(CapabilityUnavailable):
+    """The person responsible has not entered their own credential (e.g. SDP API key) yet.
+
+    Job steps wait on it instead of failing: once the key is saved, the step runs on its next check.
+    """
+
+    code = "personal_credential_missing"
+
+
 def _envelope(code: str, message: str, details: Any = None) -> dict[str, Any]:
     return {"error": {"code": code, "message": message, "details": details}}
 

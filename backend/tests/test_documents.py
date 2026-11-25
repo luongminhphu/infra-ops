@@ -253,9 +253,9 @@ async def test_handover_lifecycle_end_to_end(admin, respx_mock) -> None:  # type
     got = await admin.get(f"/api/core/documents/{doc['id']}/file/signed")
     assert got.content.startswith(b"%PDF") and got.headers["x-content-type-options"] == "nosniff"
 
-    # Attach to SDP needs a Write credential
+    # Attach to SDP runs as the person: their own API key, never the shared Write credential
     no_write = await admin.post(f"/api/lifecycle/documents/{doc['id']}/attach-sdp", json={})
-    assert no_write.json()["error"]["code"] == "capability_unavailable"
+    assert no_write.json()["error"]["code"] in ("capability_unavailable", "personal_credential_missing")
     existing = {p["name"]: p for p in (await admin.get("/api/core/connections")).json()}
     sdp = (
         existing.get("SDP Docs")
@@ -280,9 +280,20 @@ async def test_handover_lifecycle_end_to_end(admin, respx_mock) -> None:  # type
     upload = respx_mock.post("https://sdp-docs.test.local/api/v3/requests/1001/_uploads").mock(
         return_value=httpx.Response(200, json={"response_status": {"status_code": 2000, "status": "success"}})
     )
+    shared_only = await admin.post(f"/api/lifecycle/documents/{doc['id']}/attach-sdp", json={})
+    assert shared_only.json()["error"]["code"] == "personal_credential_missing"
+    assert "Khoá API của tôi" in shared_only.json()["error"]["message"]
+    mine = await admin.put(
+        f"/api/core/me/credentials/{sdp['id']}",
+        json={"auth_type": "api_key", "secrets": {"api_key": "me-00000000042"}},
+    )
+    assert mine.status_code == 200 and mine.json()["hint"] == "0042" and "me-00000000042" not in mine.text
     ok = await admin.post(f"/api/lifecycle/documents/{doc['id']}/attach-sdp", json={})
     assert ok.status_code == 200, ok.text
     assert upload.called and b"%fake scan" in upload.calls[0].request.content
+    assert (
+        upload.calls[0].request.headers["authtoken"] == "me-00000000042"
+    )  # SDP sees the person, not a shared key
     assert ok.json()["events"][-1]["ok"] is True
 
     # Listing / search

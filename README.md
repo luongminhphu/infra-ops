@@ -358,6 +358,12 @@ Lưu ý:
 2. Đăng nhập SDP bằng technician đó → avatar → **Generate API Key** (đặt ngày hết hạn).
 3. Trong infra-ops: Base URL `https://sdp.congty.local:8080`, phương thức **API key / Auth token**,
    nhập ngày hết hạn để Dashboard cảnh báo trước.
+4. **Key cá nhân của từng người (bắt buộc cho thao tác ghi):** credential Read chung chỉ dùng cho đồng bộ nền. Job
+   onboard/offboard (đọc + ghi, theo người phụ trách Job), nhận hàng, chuyển việc và đính kèm biên bản chạy bằng
+   **API key SDP của chính người thực hiện**, nên SDP ghi nhận đúng ai làm. Mỗi người vào menu tài khoản →
+   **Khoá API của tôi**, dán API key technician của mình (SDP: ảnh đại diện → Hồ sơ cá nhân → tạo API key), bấm
+   **Kiểm tra**. Key mã hoá khi lưu, không ai xem lại được (kể cả quản trị). Chưa nhập key thì bước Job dừng ở trạng
+   thái chờ và tự chạy lại sau khi lưu; "Việc của tôi" nhắc "Nhập API key cá nhân".
 
 ### Module Vòng đời nhân sự – đối soát
 1. Tạo 2 kết nối trên (ít nhất credential **Read**).
@@ -513,6 +519,18 @@ Mã NV…) hoặc *Không cần làm gì* khi hệ thống đang tự chạy.
    đã *Giữ cho* nhân viên sắp onboard; tìm nhanh theo tên, tag, serial hoặc người nhận. **Chọn tài sản tận dụng vào Job** ghi
    gợi ý vào Job nháp.
 3. Nút **?** cạnh tiêu đề / trường giải thích cách vận hành từng phần.
+
+### Tồn kho (Vòng đời nhân sự)
+- Danh sách mọi tài sản chưa gán người dùng theo lần đồng bộ gần nhất, chia tab **Mới**, **Thu hồi**, **Chờ thanh lý**
+  (kèm số lượng), lọc theo loại, tìm theo mã tài sản / serial / tên. Mã tài sản và serial là bắt buộc: tài sản thiếu
+  được đánh dấu đỏ (tab **Thiếu mã TS / serial**) để bổ sung trên SDP.
+- **Thu hồi**: đồng bộ tự nhận ra tài sản lần trước đang gán cho ai đó nay về In Store (ghi người trả, ngày); Manager /
+  Supervisor có thể đánh dấu tay hoặc chuyển về hàng mới.
+- Chọn nhiều (ô đầu dòng, chọn tất cả theo bộ lọc) rồi **Chuyển Chờ thanh lý** / **Trả về kho** (Manager, Supervisor) hoặc
+  **Thanh lý trên SDP** (chỉ **Manager** và **Administrator**, nhập `THANH LY` để xác nhận; chỉ áp dụng cho hàng đang
+  Chờ thanh lý). Thay đổi chạy bằng Job nền với API key cá nhân của người bấm.
+- Trên SDP cần có trạng thái tài sản cho "Chờ thanh lý" (mặc định tên `Chờ thanh lý`) và "Disposed"; đổi tên ở
+  **Cấu hình module → Trạng thái “chờ thanh lý” / “đã thanh lý”**.
 
 ### Suprema BioStar 2
 1. Tạo tài khoản BioStar riêng: Read = quyền xem User/Access Group; Write = Operator/Administrator có quyền quản lý User.

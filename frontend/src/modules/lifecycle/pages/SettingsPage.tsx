@@ -26,6 +26,8 @@ interface Values {
   asset_product_types: string[];
   asset_state_in_use: string;
   asset_state_in_store: string;
+  asset_state_pending_disposal: string;
+  asset_state_disposed: string;
   onboard_grace_days: number;
   offboard_grace_days: number;
   snapshot_retention_days: number;
@@ -287,6 +289,12 @@ export function SettingsPage() {
             </Field>
             <Field label="Trạng thái “trong kho”">
               <Input value={v.asset_state_in_store} onChange={(e) => set("asset_state_in_store", e.target.value)} />
+            </Field>
+            <Field label="Trạng thái “chờ thanh lý”" hint="Tên trạng thái tài sản đã tạo trên SDP (trang Tồn kho).">
+              <Input value={v.asset_state_pending_disposal} onChange={(e) => set("asset_state_pending_disposal", e.target.value)} />
+            </Field>
+            <Field label="Trạng thái “đã thanh lý”" hint="Thường là Disposed trên SDP.">
+              <Input value={v.asset_state_disposed} onChange={(e) => set("asset_state_disposed", e.target.value)} />
             </Field>
           </div>
           <div className="mt-4">

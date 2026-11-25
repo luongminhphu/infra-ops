@@ -151,7 +151,9 @@ async def attach_to_sdp(
         )
     settings = await load_settings(session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
     f, data = await read_file(session, doc.signed_file_id)
-    _, ctx = await open_connection(session, "sdp", Purpose.WRITE, profile_id=settings.sdp_profile_id)
+    _, ctx = await open_connection(
+        session, "sdp", Purpose.WRITE, profile_id=settings.sdp_profile_id, as_user=user.id
+    )
     path = settings.sdp_attach_path.replace("{request_id}", request_id)
     try:
         async with SdpClient(ctx) as client:

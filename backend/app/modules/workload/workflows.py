@@ -31,7 +31,10 @@ async def _reassign(ctx: StepContext) -> StepOutcome:
     p = ctx.params
     target = str(p["to_technician_id"])
     settings = await load_settings(ctx.session, MODULE_ID, SETTINGS_KEY, WorkloadSettings)
-    _, conn = await open_connection(ctx.session, "sdp", Purpose.WRITE, profile_id=settings.sdp_profile_id)
+    # As the person who started it (reassign: the manager; receive: whoever received the goods).
+    _, conn = await open_connection(
+        ctx.session, "sdp", Purpose.WRITE, profile_id=settings.sdp_profile_id, as_user=ctx.job.created_by
+    )
     before: dict[str, Any] = dict((ctx.step.before_state or {}).get("technicians") or {})
     moved: list[str] = []
     failed: dict[str, str] = {}
@@ -99,7 +102,10 @@ async def _receive(ctx: StepContext) -> StepOutcome:
     if purchase is None:
         return StepOutcome("failed", "Đề xuất không còn tồn tại.", {}, None)
     settings = await load_settings(ctx.session, MODULE_ID, SETTINGS_KEY, WorkloadSettings)
-    _, conn = await open_connection(ctx.session, "sdp", Purpose.WRITE, profile_id=settings.sdp_profile_id)
+    # As the person who started it (reassign: the manager; receive: whoever received the goods).
+    _, conn = await open_connection(
+        ctx.session, "sdp", Purpose.WRITE, profile_id=settings.sdp_profile_id, as_user=ctx.job.created_by
+    )
     existing: dict[str, str] = dict((ctx.step.before_state or {}).get("existing") or {})
     assets: list[dict[str, Any]] = []
     failed: dict[str, str] = {}
