@@ -46,6 +46,15 @@ def matches(asset: dict[str, Any], item: StandardItem) -> bool:
     return not item.product_contains or fold(item.product_contains) in text
 
 
+def returned_first(stock: list[dict[str, Any]], returned: set[str]) -> list[dict[str, Any]]:
+    """Stock in suggestion order: returned (thu hồi) assets before new ones, so used devices in good shape go
+    out first and new stock is kept. Each asset is tagged with ``returned``."""
+    tagged = [{**a, "returned": a["id"] in returned} for a in stock]
+    return sorted(
+        tagged, key=lambda a: not a["returned"]
+    )  # stable: keeps the snapshot order within each group
+
+
 def allocate(
     needs: list[Need], standard: list[StandardItem], stock: list[dict[str, Any]]
 ) -> dict[str, list[Line]]:

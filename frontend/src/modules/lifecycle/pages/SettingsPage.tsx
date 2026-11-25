@@ -399,7 +399,7 @@ export function SettingsPage() {
               </HelpTip>
             </span>
           }
-          description="Dùng ở trang Kho & cấp phát để gợi ý tận dụng tài sản In Store hoặc đề xuất mua mới."
+          description="Dùng ở trang Kho thiết bị để gợi ý lấy tài sản trong kho (hàng thu hồi trước) hoặc đề xuất mua mới."
         >
           <div className="space-y-3">
             {std.map((r, i) => {

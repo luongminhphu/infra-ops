@@ -203,7 +203,7 @@ export function ReceivePage() {
           <ChevronLeft className="size-4" aria-hidden="true" />PO tổng
         </Link>
       </nav>
-      <PageHeader title="Nhận hàng theo PO" description="Quét serial từng thiết bị; hệ thống tạo tài sản In Store trên ServiceDesk Plus và cập nhật Kho & cấp phát." />
+      <PageHeader title="Nhận hàng theo PO" description="Quét serial từng thiết bị; hệ thống tạo tài sản In Store trên ServiceDesk Plus và cập nhật Kho thiết bị." />
     </>
   );
   if (pos.isLoading) return <>{header}<LoadingRows rows={5} /></>;
@@ -366,7 +366,7 @@ export function ReceivePage() {
             )}
             {items.length > tracked.length && <li>Đánh dấu đã nhận {items.length - tracked.length} hạng mục linh kiện/sửa chữa.</li>}
             <li>Tài sản đã tạo <b>không tự xoá được</b> – nhập sai thì sửa trực tiếp trên ServiceDesk Plus.</li>
-            <li>Xong, Kho & cấp phát được đồng bộ lại để gợi ý thiết bị mới cho nhân viên sắp onboard.</li>
+            <li>Xong, Kho thiết bị được đồng bộ lại để gợi ý thiết bị mới cho nhân viên sắp onboard.</li>
           </ul>
         </Wizard>
       </>

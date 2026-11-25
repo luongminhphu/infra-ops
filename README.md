@@ -39,7 +39,7 @@ Tài liệu: [cài đặt Ubuntu + Docker](docs/install-ubuntu-docker.md) · [ki
 - **Job Onboard / Offboard** tự tạo từ request: gán/thu hồi tài sản SDP, tạo/vô hiệu hoá user BioStar, biên bản,
   ghi chú và đóng request. Chạy ngay hoặc theo ngày hiệu lực; Operator xác nhận từng bước theo checklist kèm bằng
   chứng; người phụ trách theo technician của request, chuyển Job (ghi sang SDP); lưu đồ swimlane theo người.
-- **Kho & cấp phát**: band trong RTR × tiêu chuẩn cấp phát × tài sản In Store → tận dụng thiết bị trong kho hoặc
+- **Kho thiết bị**: band trong RTR × tiêu chuẩn cấp phát × tài sản In Store → tận dụng thiết bị trong kho hoặc
   **lập đề xuất mua** (điền sẵn) cho phần còn thiếu.
 
 ### Module Công việc Helpdesk
@@ -53,7 +53,7 @@ Tài liệu: [cài đặt Ubuntu + Docker](docs/install-ubuntu-docker.md) · [ki
   và Finance (bảng so sánh báo giá, đính kèm Excel, PDF báo giá, bằng chứng).
 - **Nhận hàng → nhập kho SDP** từng bước: chọn PO → serial từng máy (quét mã vạch hoặc **đọc từ file biên bản bàn
   giao** PDF/Excel của nhà cung cấp) → **mã tài sản gợi ý** `HCM-<năm>-<loại>-<4 ký tự cuối serial>` → worker tạo
-  tài sản *In Store* trên SDP (không tạo trùng serial) → Kho & cấp phát gợi ý ngay cho nhân viên sắp onboard.
+  tài sản *In Store* trên SDP (không tạo trùng serial) → Kho thiết bị gợi ý ngay cho nhân viên sắp onboard.
 
 Kết nối Microsoft (Entra ID provisioning, AD, Exchange hybrid) đang **tạm hoãn** theo quyết định của chủ sản phẩm.
 
@@ -233,8 +233,8 @@ Test không bao giờ gọi hệ thống thật: SDP/BioStar được mock bằn
 | 6 | Lưu đồ Onboard/Offboard, checklist từng bước, Operator xác nhận kèm bằng chứng | Xong |
 | 7 | Giao diện “Phòng điều khiển”: rail phân hệ + menu con, màu cobalt, font Inter, cho toàn app | Xong |
 | 8 | **Việc của tôi** cho Operator (task SDP theo trạng thái, Job onboard/offboard, việc cần chuẩn bị), tự tạo tài khoản Operator, Job theo technician request RTR + chuyển Job (ghi sang SDP), lưu đồ swimlane theo người, đề xuất mua thiết bị | Xong |
-| 9 | **PO tổng** theo hạn mức (mặc định 200 triệu, tự mở PO tiếp theo), bảng giá do Supervisor cập nhật, bằng chứng Function Head, **Chốt PO** → email nháp .eml; **Kho & cấp phát**: band trong RTR × tiêu chuẩn cấp phát × tài sản In Store → tận dụng hoặc đề xuất mua; tooltip hướng dẫn | Xong |
-| 10 | **Nhận hàng → nhập kho SDP**: nhập serial/asset tag, worker tạo tài sản In Store trên SDP (không tạo trùng serial), Kho & cấp phát đồng bộ lại để gợi ý cho onboard | Xong |
+| 9 | **PO tổng** theo hạn mức (mặc định 200 triệu, tự mở PO tiếp theo), bảng giá do Supervisor cập nhật, bằng chứng Function Head, **Chốt PO** → email nháp .eml; **Kho thiết bị**: band trong RTR × tiêu chuẩn cấp phát × tài sản In Store → tận dụng hoặc đề xuất mua; tooltip hướng dẫn | Xong |
+| 10 | **Nhận hàng → nhập kho SDP**: nhập serial/asset tag, worker tạo tài sản In Store trên SDP (không tạo trùng serial), Kho thiết bị đồng bộ lại để gợi ý cho onboard | Xong |
 | 11 | Operator chỉ đề xuất thiết bị (không thấy giá); PC/Laptop định giá theo **báo giá từng đề xuất** (trên 20 triệu cần 3 báo giá, lấy giá thấp nhất); thiết bị khác **cập nhật giá từ file báo giá PDF** | Xong |
 | 12 | **Nhận diện báo giá theo nhà cung cấp** (từ khoá + cột đơn giá của từng mẫu), xác nhận **không có hàng** kèm ảnh chụp website, **email trình phê duyệt PO** cho Head of IT và Finance (bảng so sánh báo giá) | Xong |
 | 13 | **Làm từng bước (wizard)**: khung Wizard dùng chung; Job Onboard/Offboard cho Operator mở thẳng dạng từng bước, dữ liệu biết trước được điền sẵn để chỉ cần xác nhận | Xong |
@@ -432,7 +432,7 @@ Lưu ý:
    Operator** để mỗi technician có e-mail mà chưa có tài khoản được tạo tài khoản vai trò Operator (đăng nhập SSO
    bằng e-mail đó) và liên kết sẵn.
 6. **Đề xuất mua thiết bị** (chỉ lưu trong infra-ops, không ghi lên SDP):
-   - Gợi ý từ request có từ khoá thay thế / nâng cấp / sửa chữa (ở **Việc của tôi**) và từ **Kho & cấp phát**
+   - Gợi ý từ request có từ khoá thay thế / nâng cấp / sửa chữa (ở **Việc của tôi**) và từ **Kho thiết bị**
      (onboard thiếu thiết bị). Operator **Lập đề xuất**: chọn thiết bị trong bảng giá, số lượng, người dùng, lý do và
      đính kèm **bằng chứng Function Head đã duyệt** (PNG/JPG/PDF, dán ảnh Ctrl+V).
    - Operator chỉ chọn thiết bị cần cấp – **không thấy giá**, PO tổng hay Bảng giá (quyền `workload.price.view`
@@ -465,7 +465,7 @@ Lưu ý:
      loại theo nhóm bảng giá chỉnh ở Cấu hình công việc; mặc định LT = Laptop, PC = PC/Desktop, MN = Màn hình, nhóm khác
      lấy chữ cái đầu), sửa tay được; serial/mã trùng bị chặn, dữ liệu đang nhập giữ lại khi tải lại trang. Xác nhận →
      worker tạo tài sản *In Store* trên SDP bằng credential Write (serial đã có trên SDP thì giữ nguyên, lỗi giữa chừng
-     **Thử lại** an toàn), đề xuất thành *Đã nhận hàng*, **Kho & cấp phát** đồng bộ lại để gợi ý cho nhân viên sắp
+     **Thử lại** an toàn), đề xuất thành *Đã nhận hàng*, **Kho thiết bị** đồng bộ lại để gợi ý cho nhân viên sắp
      onboard. Linh kiện/sửa chữa (không có *Sản phẩm trên SDP* trong bảng giá) chỉ đánh dấu đã nhận.
    - **Xuất Excel** toàn bộ đề xuất (đơn giá, thành tiền, PO).
 
@@ -504,33 +504,31 @@ Operator mở một Job Onboard/Offboard là vào **chế độ từng bước**
 Khi Job chạy, màn hình chỉ hiện **bước hiện tại** với một dòng *Bạn cần: …* (xác nhận checklist, bằng chứng, nhập
 Mã NV…) hoặc *Không cần làm gì* khi hệ thống đang tự chạy.
 
-**Đề xuất mua thiết bị** cũng làm từng bước (*Lập đề xuất* ở Việc của tôi, *Lập đề xuất mua* ở Kho & cấp phát, hoặc
+**Đề xuất mua thiết bị** cũng làm từng bước (*Lập đề xuất* ở Việc của tôi, *Lập đề xuất mua* ở Kho thiết bị, hoặc
 *Đề xuất mới*): **Thiết bị** (mô tả, loại, số lượng điền sẵn từ request/onboard) → **Người dùng & lý do** →
 **Bằng chứng Function Head** (chọn file hoặc dán ảnh; *Chưa có – bổ sung sau* nếu cần) → **Xem lại & gửi**.
 
-### Kho & cấp phát (Vòng đời nhân sự)
+### Kho thiết bị (Vòng đời nhân sự)
+Một trang cho cả cấp phát và tồn kho (đường dẫn cũ `/lifecycle/inventory` tự chuyển về đây). Đầu trang là ô theo loại
+thiết bị: *Còn trống*, *Đang giữ*, *Cần mua* (+ số chờ thanh lý); bấm ô để xem danh sách tài sản của loại đó.
 1. **Cấu hình module → Tiêu chuẩn cấp phát thiết bị theo band**: mỗi dòng là một thiết bị (band áp dụng, loại tài
    sản SDP, model chứa – tuỳ chọn, số lượng, tên trong bảng giá). Band lấy từ dòng `Band:` trong request RTR (đổi
-   nhãn ở mục Request RTR); thiếu band thì Operator nhập tay trên trang Kho & cấp phát.
-2. **Kho & cấp phát** dùng tài sản In Store, chưa gán user, của lần đồng bộ gần nhất: nhân viên có ngày hiệu lực
-   sớm hơn được ưu tiên; tài sản đã chọn trên Job nháp giữ cho Job đó. Mỗi dòng hiện *Tận dụng* (tài sản cụ thể) hoặc
-   *Cần mua* → **Lập đề xuất mua** (điền sẵn thiết bị, số lượng, người dùng). Bấm **Xem chi tiết** trên ô tồn kho của từng loại thiết bị để
-   xem danh sách tài sản In Store (tên, asset tag, serial, sản phẩm, số lượng theo model) và tài sản nào *Còn trống* hay
-   đã *Giữ cho* nhân viên sắp onboard; tìm nhanh theo tên, tag, serial hoặc người nhận. **Chọn tài sản tận dụng vào Job** ghi
-   gợi ý vào Job nháp.
-3. Nút **?** cạnh tiêu đề / trường giải thích cách vận hành từng phần.
-
-### Tồn kho (Vòng đời nhân sự)
-- Danh sách mọi tài sản chưa gán người dùng theo lần đồng bộ gần nhất, chia tab **Mới**, **Thu hồi**, **Chờ thanh lý**
-  (kèm số lượng), lọc theo loại, tìm theo mã tài sản / serial / tên. Mã tài sản và serial là bắt buộc: tài sản thiếu
-  được đánh dấu đỏ (tab **Thiếu mã TS / serial**) để bổ sung trên SDP.
-- **Thu hồi**: đồng bộ tự nhận ra tài sản lần trước đang gán cho ai đó nay về In Store (ghi người trả, ngày); Manager /
-  Supervisor có thể đánh dấu tay hoặc chuyển về hàng mới.
-- Chọn nhiều (ô đầu dòng, chọn tất cả theo bộ lọc) rồi **Chuyển Chờ thanh lý** / **Trả về kho** (Manager, Supervisor) hoặc
-  **Thanh lý trên SDP** (chỉ **Manager** và **Administrator**, nhập `THANH LY` để xác nhận; chỉ áp dụng cho hàng đang
-  Chờ thanh lý). Thay đổi chạy bằng Job nền với API key cá nhân của người bấm.
-- Trên SDP cần có trạng thái tài sản cho "Chờ thanh lý" (mặc định tên `Chờ thanh lý`) và "Disposed"; đổi tên ở
-  **Cấu hình module → Trạng thái “chờ thanh lý” / “đã thanh lý”**.
+   nhãn ở mục Request RTR); thiếu band thì Operator nhập tay ở tab **Nhân viên mới**.
+2. Tab **Nhân viên mới** chia nhóm *Đã qua ngày bắt đầu* / *Bắt đầu trong 7 ngày* / *Sau đó*. Tài sản In Store, chưa
+   gán user, của lần đồng bộ gần nhất được gợi ý theo ngày hiệu lực; **hàng thu hồi được gợi ý trước hàng mới**; tài
+   sản đã chọn trên Job nháp giữ cho Job đó. Mỗi dòng hiện *Lấy từ kho* (bấm để xem tài sản) hoặc *Cần mua* → **Lập đề
+   xuất mua**. **Chọn N tài sản từ kho vào Job** ghi gợi ý vào Job nháp.
+3. Tab **Tài sản trong kho**: lọc *Còn trống*, *Đang giữ*, *Hàng thu hồi*, *Chờ thanh lý*, *Tất cả*, theo loại, tìm theo
+   mã tài sản / serial / tên. Mã tài sản và serial là bắt buộc: tài sản thiếu được đánh dấu đỏ (lọc **Thiếu mã TS /
+   serial**) để bổ sung trên SDP.
+   - **Thu hồi**: đồng bộ tự nhận ra tài sản lần trước đang gán cho ai đó nay về In Store (ghi người trả, ngày); Manager /
+     Supervisor có thể đánh dấu tay hoặc chuyển về hàng mới.
+   - Chọn nhiều rồi **Chuyển Chờ thanh lý** / **Trả về kho** (Manager, Supervisor) hoặc **Thanh lý trên SDP** (chỉ
+     **Manager** và **Administrator**, nhập `THANH LY` để xác nhận; chỉ áp dụng cho hàng đang Chờ thanh lý). Thay đổi
+     chạy bằng Job nền với API key cá nhân của người bấm; dòng tài sản hiện tiến độ cho tới lần đồng bộ sau.
+   - Trên SDP cần có trạng thái tài sản cho "Chờ thanh lý" (mặc định tên `Chờ thanh lý`) và "Disposed"; đổi tên ở
+     **Cấu hình module → Trạng thái “chờ thanh lý” / “đã thanh lý”**.
+4. Nút **?** cạnh tiêu đề / trường giải thích cách vận hành từng phần.
 
 ### Suprema BioStar 2
 1. Tạo tài khoản BioStar riêng: Read = quyền xem User/Access Group; Write = Operator/Administrator có quyền quản lý User.

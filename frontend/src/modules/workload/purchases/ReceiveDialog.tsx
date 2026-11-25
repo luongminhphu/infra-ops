@@ -85,7 +85,7 @@ export function ReceiveDialog({ p, onClose, onDone }: { p: Purchase; onClose: ()
             <HelpTip title="Nhập kho trên SDP">
               <span className="block">Serial bắt buộc, không trùng; asset tag (nếu có) dùng làm tên tài sản.</span>
               <span className="block">Worker tìm serial trên SDP trước: serial đã có thì giữ nguyên, không tạo trùng – bấm lại an toàn khi lỗi giữa chừng.</span>
-              <span className="block">Xong, trang <b>Kho & cấp phát</b> được đồng bộ lại để gợi ý thiết bị mới cho nhân viên sắp onboard.</span>
+              <span className="block">Xong, trang <b>Kho thiết bị</b> được đồng bộ lại để gợi ý thiết bị mới cho nhân viên sắp onboard.</span>
             </HelpTip>
           </legend>
           <ol className="space-y-2">
