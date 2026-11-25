@@ -162,6 +162,8 @@ class ConnectorType(ABC):
     display_name: ClassVar[str]
     description: ClassVar[str]
     icon: ClassVar[str] = "plug"
+    # People may enter their own credential (e.g. a technician API key) used for the work they do.
+    personal_credentials: ClassVar[bool] = False
     base_url_hint: ClassVar[str] = ""
     config_model: ClassVar[type[BaseModel]]
     auth_types: ClassVar[tuple[str, ...]]

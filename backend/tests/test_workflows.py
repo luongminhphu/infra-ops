@@ -236,6 +236,9 @@ async def systems(admin, respx_mock):  # type: ignore[no-untyped-def]
                 "secrets": {"password": "p"},
             },
         )
+    from tests.personal_keys import give_personal_keys
+
+    await give_personal_keys(sdp["id"])  # job steps run with the responsible person's own SDP key
     values = (await admin.get("/api/lifecycle/settings")).json()["values"]
     await admin.put(
         "/api/lifecycle/settings",
@@ -761,8 +764,16 @@ async def test_job_assignee_follows_sdp_and_reassign_writes_back(admin, client, 
     j = (await admin.get(f"/api/core/jobs/{j['id']}")).json()
     assert j["assignee"]["name"] == "Tech 72" and j["assignments"][-1]["source"] == "sdp"
 
-    # A supervisor hands it to op-assign2: SDP is written by the worker, then the job changes hands.
+    # A supervisor hands it to op-assign2: SDP is written by the worker (with the supervisor's own key).
     await client.login("sup-assign@test.local")
+    sdp_id = {p["name"]: p["id"] for p in (await admin.get("/api/core/connections")).json()}["SDP WF"]
+    r = await client.get("/api/core/me/credentials")
+    assert [c["credential"] for c in r.json() if c["profile_id"] == sdp_id] == [None]  # not entered yet
+    r = await client.put(
+        f"/api/core/me/credentials/{sdp_id}",
+        json={"auth_type": "api_key", "secrets": {"api_key": "sup-0000000001"}},
+    )
+    assert r.status_code == 200 and "sup-0000000001" not in r.text
     people = {p["upn"]: p["id"] for p in (await client.get("/api/lifecycle/assignees")).json()}
     assert "op-assign2@test.local" in people and "sup-assign@test.local" in people
     r = await client.post(
@@ -819,3 +830,39 @@ async def test_pump_is_not_starved_by_jobs_waiting_on_people(admin) -> None:  # 
         async with get_sessionmaker()() as s:
             await s.execute(Job.__table__.delete().where(Job.id.in_(ids)))
             await s.commit()
+
+
+async def test_step_waits_for_the_responsible_persons_own_sdp_key(admin, systems) -> None:  # type: ignore[no-untyped-def]
+    """No personal key: the SDP step waits (not fails) with how to fix it; with the key it runs as that person."""
+    from app.core.workflow.models import JobStep
+
+    sdp_id = {p["name"]: p["id"] for p in (await admin.get("/api/core/connections")).json()}["SDP WF"]
+    assert (await admin.delete(f"/api/core/me/credentials/{sdp_id}")).status_code == 204
+    async with get_sessionmaker()() as s:  # a fresh job for 9101 (other tests may have run it)
+        from sqlalchemy import delete
+
+        from app.core.workflow.models import Job
+
+        await s.execute(delete(Job).where(Job.external_ref == "9101"))
+        await s.commit()
+    systems.calls.clear()
+    j = (await admin.post("/api/lifecycle/jobs", json={"request_id": "9101"})).json()
+    j = (await admin.post(f"/api/core/jobs/{j['id']}/start", json={"version": j["version"]})).json()
+    await run_worker()
+    j = await job(admin, j["id"])
+    first = step(j, "check_request")
+    assert j["status"] == "waiting" and first["status"] == "waiting", j
+    assert "chưa nhập API key cá nhân" in first["message"] and "Khoá API của tôi" in first["message"]
+    assert systems.calls == []  # nothing was sent with the shared key
+
+    mine = await admin.put(
+        f"/api/core/me/credentials/{sdp_id}",
+        json={"auth_type": "api_key", "secrets": {"api_key": "admin-key-0001"}},
+    )
+    assert mine.status_code == 200
+    async with get_sessionmaker()() as s:  # do not wait the 2 minutes of the next check
+        st = await s.scalar(select(JobStep).where(JobStep.job_id == j["id"], JobStep.key == "check_request"))
+        st.next_run_at = None
+        await s.commit()
+    await run_worker()
+    assert step(await job(admin, j["id"]), "check_request")["status"] == "verify"

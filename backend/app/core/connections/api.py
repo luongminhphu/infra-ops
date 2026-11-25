@@ -11,15 +11,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit.service import diff, record
-from app.core.auth.deps import CurrentUser, require
+from app.core.auth.deps import CurrentUser, current_user, require
 from app.core.config import get_settings
-from app.core.connections.models import ConnectionProfile
+from app.core.connections.models import ConnectionProfile, UserCredential
 from app.core.connections.service import (
     apply_credential,
     build_context,
     connector_or_404,
     credential_summary,
+    personal_context,
     profile_snapshot,
+    set_personal_credential,
     validate_config,
 )
 from app.core.connectors.base import Purpose, TestReport, TestStep
@@ -552,6 +554,178 @@ async def test_profile(
         target_label=f"{profile.name} ({purpose.value})",
         result="success" if report.ok else "failure",
         after={"steps": [{"key": s.key, "status": s.status} for s in report.steps]},
+    )
+    await session.commit()
+    return result
+
+
+# ------------------------------------------------------------------ personal credentials ("Khoá API của tôi")
+class PersonalCredentialIn(BaseModel):
+    auth_type: str
+    public: dict[str, Any] = Field(default_factory=dict)
+    # Write-only. Empty values keep the stored secret (same auth type).
+    secrets: dict[str, str] = Field(default_factory=dict)
+
+
+def _personal_out(cred: UserCredential | None) -> dict[str, Any] | None:
+    if cred is None:
+        return None
+    return {
+        "auth_type": cred.auth_type,
+        "public": cred.public,
+        "hint": cred.hint,
+        "updated_at": cred.updated_at,
+        "last_test_at": cred.last_test_at,
+        "last_test_ok": cred.last_test_ok,
+    }
+
+
+async def _personal_profile(session: AsyncSession, profile_id: uuid.UUID) -> ConnectionProfile:
+    profile = await session.get(ConnectionProfile, profile_id)
+    if profile is None or not connector_or_404(profile.system_type).personal_credentials:
+        raise NotFound("Không tìm thấy kết nối dùng API key cá nhân.")
+    return profile
+
+
+async def _mine(session: AsyncSession, user_id: uuid.UUID, profile_id: uuid.UUID) -> UserCredential | None:
+    return await session.scalar(
+        select(UserCredential).where(
+            UserCredential.user_id == user_id, UserCredential.profile_id == profile_id
+        )
+    )
+
+
+@router.get("/me/credentials")
+async def my_credentials(
+    user: CurrentUser = Depends(current_user), session: AsyncSession = Depends(get_session)
+) -> list[dict[str, Any]]:
+    """Connections where the person's own key is used for their work, with what they entered (never the secret)."""
+    types = {c.system_type: c for c in all_connectors() if c.personal_credentials}
+    profiles = (
+        await session.scalars(
+            select(ConnectionProfile)
+            .where(ConnectionProfile.system_type.in_(list(types)), ConnectionProfile.enabled.is_(True))
+            .order_by(ConnectionProfile.created_at)
+        )
+    ).all()
+    mine = {
+        c.profile_id: c
+        for c in (
+            await session.scalars(select(UserCredential).where(UserCredential.user_id == user.id))
+        ).all()
+    }
+    return [
+        {
+            "profile_id": p.id,
+            "name": p.name,
+            "system_name": types[p.system_type].display_name,
+            "base_url": p.base_url,
+            "type": types[p.system_type].describe(),
+            "credential": _personal_out(mine.get(p.id)),
+        }
+        for p in profiles
+    ]
+
+
+@router.put("/me/credentials/{profile_id}")
+async def put_my_credential(
+    profile_id: uuid.UUID,
+    body: PersonalCredentialIn,
+    user: CurrentUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    profile = await _personal_profile(session, profile_id)
+    existing = await _mine(session, user.id, profile.id)
+    try:
+        cred, changed = set_personal_credential(
+            profile, user.id, existing, body.auth_type, body.public, body.secrets
+        )
+    except DecryptionError as exc:
+        raise AppError("Không giải mã được key cũ. Nhập lại toàn bộ.", code="decrypt_failed") from exc
+    session.add(cred)
+    await record(
+        session,
+        actor=user.actor,
+        module_id="core",
+        system_type=profile.system_type,
+        action="connection.personal_credential_set",
+        target_type="connection",
+        target_id=str(profile.id),
+        target_label=f"{profile.name} – key của {user.upn}",
+        after={"auth_type": cred.auth_type, "hint": cred.hint, "secret_changed": changed},
+    )
+    await session.commit()
+    await session.refresh(cred)
+    return _personal_out(cred)  # type: ignore[return-value]
+
+
+@router.delete("/me/credentials/{profile_id}", status_code=204)
+async def delete_my_credential(
+    profile_id: uuid.UUID,
+    user: CurrentUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    profile = await _personal_profile(session, profile_id)
+    cred = await _mine(session, user.id, profile.id)
+    if cred is None:
+        return
+    await session.delete(cred)
+    await record(
+        session,
+        actor=user.actor,
+        module_id="core",
+        system_type=profile.system_type,
+        action="connection.personal_credential_removed",
+        target_type="connection",
+        target_id=str(profile.id),
+        target_label=f"{profile.name} – key của {user.upn}",
+    )
+    await session.commit()
+
+
+@router.post("/me/credentials/{profile_id}/test")
+async def test_my_credential(
+    profile_id: uuid.UUID,
+    user: CurrentUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Same checks as the connection test with the Write purpose (read-only calls: connectors never write in tests)."""
+    profile = await _personal_profile(session, profile_id)
+    cred = await _mine(session, user.id, profile.id)
+    if cred is None:
+        report = TestReport()
+        report.add(
+            TestStep(
+                "credential", "API key", "fail", "Chưa nhập API key cá nhân.", "Nhập key rồi kiểm tra lại."
+            )
+        )
+        return report.to_dict()
+    try:
+        ctx = await personal_context(
+            session, profile, user.id, Purpose.WRITE, get_settings().connector_timeout_seconds
+        )
+        report = await connector_or_404(profile.system_type).test_connection(ctx)
+    except DecryptionError:
+        report = TestReport()
+        report.add(TestStep("credential", "Giải mã key", "fail", "Không giải mã được key.", "Nhập lại key."))
+    except Exception as exc:  # a buggy connector must not take down the API
+        log.exception("personal_credential_test_crashed", system_type=profile.system_type)
+        report = TestReport()
+        report.add(TestStep("internal", "Kiểm tra", "fail", f"Lỗi không mong đợi: {type(exc).__name__}", ""))
+    result = report.to_dict()
+    result["tested_at"] = datetime.now(UTC).isoformat()
+    cred.last_test_at = datetime.now(UTC)
+    cred.last_test_ok = report.ok
+    await record(
+        session,
+        actor=user.actor,
+        module_id="core",
+        system_type=profile.system_type,
+        action="connection.personal_credential_tested",
+        target_type="connection",
+        target_id=str(profile.id),
+        target_label=f"{profile.name} – key của {user.upn}",
+        result="success" if report.ok else "failure",
     )
     await session.commit()
     return result

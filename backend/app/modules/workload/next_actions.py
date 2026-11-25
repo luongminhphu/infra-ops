@@ -9,8 +9,11 @@ from urllib.parse import urlencode
 from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.connections.service import personal_key_item
+from app.core.settings.service import load_settings
 from app.modules.workload.api import _my_technician
 from app.modules.workload.models import PurchaseEvidence, PurchaseRequest, Ticket
+from app.modules.workload.settings import MODULE_ID, SETTINGS_KEY, WorkloadSettings
 
 
 def _days(delta: timedelta) -> int:
@@ -21,6 +24,10 @@ async def load(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
     now = datetime.now(UTC)
     items: list[dict[str, Any]] = []
     me = await _my_technician(session, user)
+    if user.has("workload.purchase.receive") or user.has("workload.tickets.assign"):
+        settings = await load_settings(session, MODULE_ID, SETTINGS_KEY, WorkloadSettings)
+        if key := await personal_key_item(session, user.id, "sdp", settings.sdp_profile_id):
+            items.append(key)  # same key as the lifecycle one: the queue shows it once
     if me is None and not user.has("workload.tickets.view_all"):
         # Without the link the person's SDP tasks are silently missing: say so first.
         manager = user.has("workload.settings.manage")

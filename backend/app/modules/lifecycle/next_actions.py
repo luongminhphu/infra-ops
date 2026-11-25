@@ -12,6 +12,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.connections.service import personal_key_item
+from app.core.settings.service import load_settings
 from app.core.workflow.api import stalled_minutes
 from app.core.workflow.engine import today_vn
 from app.core.workflow.models import Job
@@ -71,6 +73,12 @@ async def load(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
     ).all()
     today = today_vn()
     items = [i for j in jobs if (i := job_item(j, today))]
+    if user.has("lifecycle.job.execute"):  # Job steps read/write SDP with the person's own key
+        from app.modules.lifecycle.settings import MODULE_ID, SETTINGS_KEY, LifecycleSettings
+
+        s = await load_settings(session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
+        if key := await personal_key_item(session, user.id, "sdp", s.sdp_profile_id):
+            items.append(key)
     # Whoever coordinates jobs gets the stalled ones (anyone's) as work: the worker needs checking.
     if user.has("lifecycle.job.assign"):
         running = (

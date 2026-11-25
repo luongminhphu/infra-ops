@@ -77,3 +77,30 @@ class Credential(UUIDPk, Timestamps, Base):
         UniqueConstraint("profile_id", "purpose", name="uq_core_credential_profile_purpose"),
         CheckConstraint("purpose in ('read','write')", name="purpose"),
     )
+
+
+class UserCredential(UUIDPk, Timestamps, Base):
+    """A person's own credential for a profile (e.g. their SDP technician API key).
+
+    Work a person is responsible for (their Jobs, receiving goods, reassigning tasks) reads and writes the
+    external system with it, so the system's own audit shows who did what. Encrypted like ``Credential``
+    (AAD bound to user + profile); the secret is never returned or shown to anyone, admins included.
+    """
+
+    __tablename__ = "core_user_credential"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("core_user.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    profile_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("core_connection_profile.id", ondelete="CASCADE"), nullable=False
+    )
+    auth_type: Mapped[str] = mapped_column(String(48), nullable=False)
+    public: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    key_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    hint: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+    last_test_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_test_ok: Mapped[bool | None] = mapped_column(Boolean)
+
+    __table_args__ = (UniqueConstraint("user_id", "profile_id", name="uq_core_user_credential_user_profile"),)

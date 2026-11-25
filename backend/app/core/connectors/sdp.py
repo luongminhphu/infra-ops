@@ -266,6 +266,8 @@ class SdpConnector(ConnectorType):
     base_url_hint = "https://sdp.congty.local:8080"
     config_model = SdpConfig
     auth_types = ("api_key", "oauth2_refresh_token")
+    # Each technician's own API key: Jobs, receiving goods and reassigning tasks run as that person on SDP.
+    personal_credentials = True
 
     READ_PROBES = (
         ("Đọc request", "/api/v3/requests"),

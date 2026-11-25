@@ -61,7 +61,10 @@ async def _reassign(ctx: StepContext) -> StepOutcome:
     """Read first: find the technician by e-mail, write only when the request has someone else."""
     p = ctx.params
     s = await load_settings(ctx.session, MODULE_ID, SETTINGS_KEY, LifecycleSettings)
-    _, conn = await open_connection(ctx.session, "sdp", Purpose.WRITE, profile_id=s.sdp_profile_id)
+    # Run as whoever asked for the hand-over: SDP records them as the one who changed the technician.
+    _, conn = await open_connection(
+        ctx.session, "sdp", Purpose.WRITE, profile_id=s.sdp_profile_id, as_user=ctx.job.created_by
+    )
     async with SdpClient(conn) as c:
         found = await c.list_all(
             "/api/v3/technicians",
