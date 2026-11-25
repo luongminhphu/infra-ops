@@ -387,7 +387,7 @@ async def test_second_biostar_with_prefix_rule(admin, configured, respx_mock) ->
     assert "103551" not in rows  # consolidated under the real employee ID
     assert rows["003551"]["cells"]["biostar"]["label"] == "Hoạt động"
     assert "BS Office (user 103551)" in rows["003551"]["cells"]["biostar"]["detail"]
-    assert rows["002100"]["cells"]["biostar"]["label"] == "Nhóm nghỉ việc"
+    assert rows["002100"]["cells"]["biostar"]["label"] == "Nghỉ việc"
 
     # "Tự động" main must skip a connection listed as an extra source: here BS E2E (created first) is the extra
     # source, so the automatic main is BS Office and both systems are still read.

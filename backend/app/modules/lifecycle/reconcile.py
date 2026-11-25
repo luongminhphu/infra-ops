@@ -170,10 +170,9 @@ def reconcile(
 
     bs_by_emp = {b.get("employee_id") or b["user_id"]: b for b in biostar_users if b.get("user_id")}
 
-    # Users moved to a "left the company" BioStar group are not reconciled on their own (no SDP check).
-    employees = (
-        set(req_by_emp) | set(users_by_emp) | {e for e, b in bs_by_emp.items() if not b.get("retired")}
-    )
+    # People moved to the "left the company" BioStar group are hidden unless an RTR request still concerns them.
+    retired = {e for e, b in bs_by_emp.items() if b.get("retired")}
+    employees = set(req_by_emp) | ((set(users_by_emp) | set(bs_by_emp)) - retired)
     rows: list[Row] = []
     for emp in sorted(employees):
         reqs = req_by_emp.get(emp, [])
@@ -245,7 +244,7 @@ def reconcile(
             row.cells["biostar"] = {"status": "pending", "label": "Không có", "detail": ""}
         else:
             state = (
-                "Nhóm nghỉ việc"
+                "Nghỉ việc"
                 if bs.get("retired")
                 else ("Hoạt động" if bs["active"] else ("Vô hiệu" if bs["disabled"] else "Hết hạn"))
             )

@@ -30,6 +30,7 @@ function SyncBanner({ data }: { data: ReconResponse }) {
         Dữ liệu lúc <strong className="font-medium text-ink">{formatRelative(run.finished_at)}</strong> ·{" "}
         {run.stats.employees ?? 0} nhân viên · {run.stats.requests ?? 0} request RTR · {run.stats.assets ?? 0} tài sản ·{" "}
         {run.stats.biostar_users ?? 0} user BioStar
+        {run.stats.biostar_retired ? ` (ẩn ${run.stats.biostar_retired} user nhóm nghỉ việc)` : ""}
       </span>
       {failed.length > 0 && (
         <Link to="/lifecycle/sync" className="inline-flex items-center gap-1 text-waiting hover:underline">

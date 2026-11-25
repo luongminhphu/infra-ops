@@ -21,7 +21,7 @@ interface Detail {
   sdp_users: { id: string; name: string; email: string | null; employee_id: string | null; department: string | null }[];
   assets: { id: string; name: string; asset_tag: string | null; serial: string | null; product: string | null; product_type: string | null; state: string | null }[];
   biostar: {
-    user_id: string; name: string; group: string | null; access_groups: string[]; active: boolean; disabled: boolean;
+    user_id: string; name: string; group: string | null; access_groups: string[]; active: boolean; disabled: boolean; retired?: boolean;
     expired: boolean; expiry: string | null; cards: number; fingerprints: number; faces: number;
   } | null;
   history: { at: string; issue_count: number; max_severity: string | null }[];
@@ -250,7 +250,7 @@ export function EmployeePanel({ employeeId, onClose }: { employeeId: string; onC
               <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
                 <dt className="text-muted">Trạng thái</dt>
                 <dd>
-                  <StatusBadge status={d.biostar.active ? "done" : "disabled"} label={d.biostar.active ? "Hoạt động" : d.biostar.disabled ? "Vô hiệu hoá" : "Hết hạn"} />
+                  <StatusBadge status={d.biostar.active ? "done" : "disabled"} label={d.biostar.retired ? "Nghỉ việc" : d.biostar.active ? "Hoạt động" : d.biostar.disabled ? "Vô hiệu hoá" : "Hết hạn"} />
                 </dd>
                 <dt className="text-muted">Tên</dt>
                 <dd>{d.biostar.name}</dd>

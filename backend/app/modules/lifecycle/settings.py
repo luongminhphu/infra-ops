@@ -78,6 +78,7 @@ class BioStarSource(BaseModel):
     profile_id: uuid.UUID
     id_prefix: str = Field("", max_length=8)
     id_prefix_to: str = Field("", max_length=8)
+    id_keep_last: int = Field(0, ge=0, le=20)  # 0 = whole ID; 6 keeps "002352" of "1002352"
 
 
 class LifecycleSettings(BaseModel):

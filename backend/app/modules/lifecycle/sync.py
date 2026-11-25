@@ -227,21 +227,25 @@ async def _sync(
     # Main BioStar, then the extra systems with their employee-ID prefix rule. BioStar counts as read only when
     # every system was read: never judge "no BioStar user" on a partial picture.
     main = main_biostar(settings)
-    reads: list[tuple[str, dict[str, Any], str, str]] = [("biostar", main, "", "")]
+    reads: list[tuple[str, dict[str, Any], tuple[str, str, int]]] = [("biostar", main, ("", "", 0))]
     reads += [
-        (f"biostar:{s.profile_id}", {"profile_id": s.profile_id}, s.id_prefix, s.id_prefix_to)
+        (
+            f"biostar:{s.profile_id}",
+            {"profile_id": s.profile_id},
+            (s.id_prefix, s.id_prefix_to, s.id_keep_last),
+        )
         for s in settings.biostar_sources
         if s.profile_id != main.get("profile_id")  # an extra source chosen as main is read once, as main
     ]
     read_users: list[dict[str, Any]] = []
     retired_groups = {g.strip().lower() for g in settings.biostar_retired_groups if g.strip()}
-    for err_key, which, prefix, prefix_to in reads:
+    for err_key, which, id_rule in reads:
         try:
             profile, ctx = await open_connection(session, "biostar", Purpose.READ, **which)
             async with BioStarClient(ctx) as client:
                 for u in await client.list_users():
                     n = normalize.biostar_user(u)
-                    n["employee_id"] = normalize.map_employee_id(n["user_id"], prefix, prefix_to)
+                    n["employee_id"] = normalize.map_employee_id(n["user_id"], *id_rule)
                     if (n.get("group") or "").strip().lower() in retired_groups:
                         n["retired"], n["active"] = True, False  # moved to the "left" group = offboarded
                     n["source"] = profile.name
@@ -305,7 +309,8 @@ async def _sync(
             "requests": len(requests),
             "sdp_users": len(sdp_users),
             "assets": len(assets),
-            "biostar_users": len(bs_users),
+            "biostar_users": sum(1 for b in bs_users if not b.get("retired")),
+            "biostar_retired": sum(1 for b in bs_users if b.get("retired")),
             "employees": len(result.rows),
             "issues": issue_total,
         }

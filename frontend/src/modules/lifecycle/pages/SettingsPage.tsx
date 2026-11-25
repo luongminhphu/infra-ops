@@ -48,10 +48,14 @@ interface BioStarSource {
   profile_id: string;
   id_prefix: string;
   id_prefix_to: string;
+  id_keep_last: number;
 }
 
 /** What a BioStar user ID becomes after the prefix rule (mirrors backend normalize.map_employee_id). */
-const mapId = (id: string, prefix: string, to: string) => (prefix && id.startsWith(prefix) ? to + id.slice(prefix.length) : id);
+const mapId = (id: string, src: BioStarSource) => {
+  const mapped = src.id_prefix && id.startsWith(src.id_prefix) ? src.id_prefix_to + id.slice(src.id_prefix.length) : id;
+  return src.id_keep_last && mapped.length > src.id_keep_last ? mapped.slice(-src.id_keep_last) : mapped;
+};
 
 interface StandardItem {
   label: string;
@@ -179,7 +183,7 @@ export function SettingsPage() {
             {v.biostar_sources.map((src, k) => {
               const upd = (patch: Partial<BioStarSource>) => set("biostar_sources", v.biostar_sources.map((x, j) => (j === k ? { ...x, ...patch } : x)));
               return (
-                <li key={k} className="grid items-end gap-3 rounded-sm border border-line p-3 sm:grid-cols-[1fr_9rem_9rem_auto]">
+                <li key={k} className="grid items-end gap-3 rounded-sm border border-line p-3 sm:grid-cols-[1fr_8rem_8rem_8rem_auto]">
                   <Field label="Kết nối BioStar">
                     <Select value={src.profile_id} onChange={(e) => upd({ profile_id: e.target.value })}>
                       {profileOptions("biostar").map((p) => <option key={p.id} value={p.id}>{p.name}{p.enabled ? "" : " (đang tắt)"}</option>)}
@@ -191,12 +195,18 @@ export function SettingsPage() {
                   <Field label="Thay bằng">
                     <Input value={src.id_prefix_to} maxLength={8} onChange={(e) => upd({ id_prefix_to: e.target.value.trim() })} placeholder="0" />
                   </Field>
+                  <Field label="Giữ số cuối (0 = tất cả)">
+                    <Input type="number" min={0} max={20} value={src.id_keep_last ?? 0} onChange={(e) => upd({ id_keep_last: Math.min(20, Math.max(0, Number(e.target.value) || 0)) })} />
+                  </Field>
                   <Button size="icon" variant="ghost" aria-label="Bỏ hệ thống BioStar này" onClick={() => set("biostar_sources", v.biostar_sources.filter((_, j) => j !== k))}>
                     <Trash2 className="size-4" aria-hidden="true" />
                   </Button>
-                  {src.id_prefix && (
-                    <p className="text-sm text-muted sm:col-span-4">
-                      Ví dụ: user <span className="font-mono">{src.id_prefix}00002</span> → Mã NV <span className="font-mono">{mapId(`${src.id_prefix}00002`, src.id_prefix, src.id_prefix_to)}</span>
+                  {(src.id_prefix || src.id_keep_last > 0) && (
+                    <p className="text-sm text-muted sm:col-span-5">
+                      Ví dụ:{" "}
+                      {[`${src.id_prefix}00002`, `${src.id_prefix}002352`].map((ex, j) => (
+                        <span key={ex}>{j > 0 && " · "}user <span className="font-mono">{ex}</span> → Mã NV <span className="font-mono">{mapId(ex, src)}</span></span>
+                      ))}
                     </p>
                   )}
                 </li>
@@ -208,7 +218,7 @@ export function SettingsPage() {
             disabled={profileOptions("biostar").length === 0 || v.biostar_sources.length >= 5}
             onClick={() => {
               const other = profileOptions("biostar").find((p) => p.id !== v.biostar_profile_id) ?? profileOptions("biostar")[0]!;
-              set("biostar_sources", [...v.biostar_sources, { profile_id: other.id, id_prefix: "", id_prefix_to: "" }]);
+              set("biostar_sources", [...v.biostar_sources, { profile_id: other.id, id_prefix: "", id_prefix_to: "", id_keep_last: 0 }]);
             }}
           >
             <Plus className="size-4" aria-hidden="true" />Thêm hệ thống BioStar
