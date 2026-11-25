@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { CheckCircle2, ChevronLeft, FileSpreadsheet, LoaderCircle, PackageCheck, TriangleAlert } from "lucide-react";
 import { api, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
@@ -45,6 +46,16 @@ interface Allocation {
   requests: { id: string; display_id: string | null; full_name: string | null; effective_date: string | null; status: string; job: { id: string } | null; lines: { label: string; buy: number }[] }[];
 }
 
+// The SDP receive job, read from core jobs: operators follow and retry it here (the proposals list
+// only shows them their own proposals).
+interface ReceiveJob {
+  id: string;
+  status: string;
+  steps: { message: string | null; output: { assets?: unknown[] } }[];
+}
+type Result = { id: string; name: string; ok: boolean; message?: string; job?: string; received?: boolean };
+const settled = (status: string) => ["completed", "failed", "cancelled"].includes(status);
+
 const waitingItems = (po: ReceivablePo) => po.items.filter((p) => p.status === "ordered" && !p.receive_job);
 
 /**
@@ -70,7 +81,7 @@ export function ReceivePage() {
     }
   }, [units]);
   const [tried, setTried] = useState(false);
-  const [results, setResults] = useState<{ id: string; ok: boolean; message?: string }[]>([]);
+  const [results, setResults] = useState<Result[]>([]);
   const pos = useQuery({ queryKey: ["workload", "receivable"], queryFn: () => api<{ closed: ReceivablePo[] }>("/api/workload/purchases/receivable") });
   const target = useQuery({ queryKey: ["workload", "receive-target"], queryFn: () => api<Target>("/api/workload/purchases/receive-target") });
   const open = (pos.data?.closed ?? []).filter((po) => waitingItems(po).length > 0);
@@ -93,11 +104,17 @@ export function ReceivePage() {
   const fieldIds = tracked.flatMap((p) => unitsOf(p).map((_, k) => `rcv-${p.id}-${k}`));
 
   // Results step: follow the SDP jobs until each proposal is received or failed.
+  const jobIds = results.flatMap((r) => (r.job ? [r.job] : []));
   const followed = useQuery({
-    queryKey: ["workload", "purchases", "receive-follow", poId],
-    queryFn: () => api<{ items: Purchase[] }>("/api/workload/purchases?status=").then((r) => r.items.filter((p) => results.some((x) => x.id === p.id))),
-    enabled: i === 3 && results.length > 0,
-    refetchInterval: (q) => ((q.state.data ?? []).some((p) => p.status === "ordered" && p.receive_job?.status !== "failed") ? 3000 : false),
+    queryKey: ["workload", "receive-follow", jobIds],
+    queryFn: () => Promise.all(jobIds.map((id) => api<ReceiveJob>(`/api/core/jobs/${id}`))),
+    enabled: i === 3 && jobIds.length > 0,
+    refetchInterval: (q) => ((q.state.data ?? []).some((j) => !settled(j.status)) ? 3000 : false),
+  });
+  const retry = useMutation({
+    mutationFn: (id: string) => api(`/api/core/jobs/${id}/steps/receive/retry`, { method: "POST" }),
+    onSuccess: () => { toast.success("Đã yêu cầu nhập kho lại."); void followed.refetch(); },
+    onError: (e) => toast.error(errorMessage(e)),
   });
   const allocation = useQuery({
     queryKey: ["lifecycle", "allocation"],
@@ -108,13 +125,14 @@ export function ReceivePage() {
 
   const receive = useMutation({
     mutationFn: async () => {
-      const out: { id: string; ok: boolean; message?: string }[] = [];
+      const out: Result[] = [];
       for (const p of items) {
+        const name = p.catalog_item?.name ?? p.item;
         try {
-          await api(`/api/workload/purchases/${p.id}/receive`, { method: "POST", json: { units: p.sdp_product ? unitsOf(p).map((u) => ({ serial: u.serial.trim(), asset_tag: u.asset_tag.trim() })) : [] } });
-          out.push({ id: p.id, ok: true });
+          const got = await api<Purchase>(`/api/workload/purchases/${p.id}/receive`, { method: "POST", json: { units: p.sdp_product ? unitsOf(p).map((u) => ({ serial: u.serial.trim(), asset_tag: u.asset_tag.trim() })) : [] } });
+          out.push({ id: p.id, name, ok: true, job: got.receive_job?.id, received: got.status === "received" });
         } catch (e) {
-          out.push({ id: p.id, ok: false, message: errorMessage(e) });
+          out.push({ id: p.id, name, ok: false, message: errorMessage(e) });
         }
       }
       return out;
@@ -356,7 +374,7 @@ export function ReceivePage() {
   }
 
   // Results + what can now be allocated.
-  const rows = followed.data ?? [];
+  const jobs = followed.data ?? [];
   const needs = (allocation.data?.requests ?? []).filter((r) => r.status === "buy");
   return (
     <>
@@ -364,16 +382,21 @@ export function ReceivePage() {
       <Wizard label="Nhận hàng" steps={STEPS} current={3} title="Kết quả nhập kho" description="Trạng thái cập nhật tự động.">
         <ul className="divide-y divide-line rounded-sm border border-line text-sm">
           {results.map((r) => {
-            const p = rows.find((x) => x.id === r.id) ?? items.find((x) => x.id === r.id);
-            const failed = !r.ok || p?.receive_job?.status === "failed";
-            const done = p?.status === "received";
+            const j = jobs.find((x) => x.id === r.job);
+            const step = j?.steps[0];
+            const n = step?.output.assets?.length ?? 0;
+            const failed = !r.ok || j?.status === "failed";
+            const done = r.received || j?.status === "completed";
             return (
               <li key={r.id} className="flex flex-wrap items-center gap-2 px-3 py-2">
                 {done ? <CheckCircle2 className="size-4 text-done" aria-hidden="true" /> : failed ? <TriangleAlert className="size-4 text-failed" aria-hidden="true" /> : <LoaderCircle className="size-4 text-progress motion-safe:animate-spin" aria-hidden="true" />}
-                <span className="min-w-0 flex-1 font-medium">{p?.catalog_item?.name ?? p?.item}</span>
+                <span className="min-w-0 flex-1 font-medium">{r.name}</span>
                 <span className={done ? "text-done" : failed ? "text-failed" : "text-progress"}>
-                  {done ? `Đã nhập kho${p?.received_assets.length ? ` (${p.received_assets.length} tài sản)` : ""}` : failed ? `Lỗi: ${r.message ?? p?.receive_job?.error ?? ""} – thử lại ở danh sách đề xuất` : "Đang tạo tài sản trên SDP…"}
+                  {done ? `Đã nhập kho${n ? ` (${n} tài sản)` : ""}` : failed ? `Lỗi: ${r.message ?? step?.message ?? ""}` : "Đang tạo tài sản trên SDP…"}
                 </span>
+                {j?.status === "failed" && (
+                  <Button size="sm" loading={retry.isPending && retry.variables === j.id} onClick={() => retry.mutate(j.id)}>Thử lại</Button>
+                )}
               </li>
             );
           })}

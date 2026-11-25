@@ -25,6 +25,11 @@ def ms(month: int, day: int, year: int = 2026) -> dict[str, str]:
     return {"value": str(int(datetime(year, month, day, 3, tzinfo=UTC).timestamp() * 1000))}
 
 
+def close_body(po: dict) -> dict:  # type: ignore[type-arg]
+    """What PoTab sends: the total and the items it displays."""
+    return {"version_total": po["total"], "item_ids": [i["id"] for i in po["items"]]}
+
+
 def req(
     rid: str, status: str, tech: str | None, created: int, due: dict | None, done: int | None = None
 ) -> dict:  # type: ignore[type-arg]
@@ -76,6 +81,7 @@ class FakeSdp:
         self.puts: list[str] = []
         self.assets: list[dict] = [{"id": "900", "serial_number": "SN-OLD", "name": "OLD"}]
         self.asset_posts: list[dict] = []
+        self.fail_assets = False
         self.techs = [
             {"id": "11", "name": "Tech 11", "email_id": "wl-op1@test.local"},
             {"id": "12", "name": "Tech 12", "email_id": "wl-op2@test.local"},
@@ -106,6 +112,10 @@ class FakeSdp:
 
         def assets(request: httpx.Request) -> httpx.Response:
             if request.method == "POST":
+                if self.fail_assets:
+                    return httpx.Response(
+                        500, json={"response_status": {"status_code": 4000, "status": "failed"}}
+                    )
                 body = json.loads(parse_qs(request.content.decode())["input_data"][0])["asset"]
                 created = {**body, "id": str(1000 + len(self.asset_posts))}
                 self.asset_posts.append(body)
@@ -403,9 +413,7 @@ async def test_portal_accounts_and_purchase_flow(admin, client, sdp) -> None:  #
     assert r.status_code == 200 and r.json()["status"] == "approved" and r.json()["amount"] == 25_000_000
     assert r.json()["po"]["status"] == "open"
     open_po = (await client.get("/api/workload/pos")).json()["open"][0]
-    closed = await client.post(
-        f"/api/workload/pos/{open_po['id']}/close", json={"version_total": open_po["total"]}
-    )
+    closed = await client.post(f"/api/workload/pos/{open_po['id']}/close", json=close_body(open_po))
     assert closed.status_code == 200 and closed.json()["number"].startswith("PO-")
     # Not tracked as an SDP asset (no SDP product): receiving just marks it received.
     assert (
@@ -423,6 +431,13 @@ async def test_portal_accounts_and_purchase_flow(admin, client, sdp) -> None:  #
     await client.login("wl-op2@test.local")
     mine = (await client.get("/api/workload/purchases")).json()["items"]
     assert all(p["created_by"] == "wl-op2@test.local" for p in mine)
+    # ...and cannot act on another operator's request (507 is Tech 11's).
+    assert (await client.post("/api/workload/tickets/507/dismiss-purchase")).status_code == 404
+    other = await client.post(
+        "/api/workload/purchases", json={"ticket_id": "507", "kind": "replace", "item": "Laptop"}
+    )
+    assert other.status_code == 404
+    await client.login("wl-op1@test.local")
     assert (await client.post("/api/workload/tickets/507/dismiss-purchase")).status_code == 204
 
 
@@ -478,17 +493,21 @@ async def test_po_limit_close_and_email(client) -> None:  # type: ignore[no-unty
     data = (await client.get("/api/workload/pos")).json()
     assert [o["total"] for o in data["open"]] == [60_000_000, 60_000_000]
     first = data["open"][0]
-    stale = await client.post(f"/api/workload/pos/{first['id']}/close", json={"version_total": 1})
+    stale = await client.post(
+        f"/api/workload/pos/{first['id']}/close", json={**close_body(first), "version_total": 1}
+    )
     assert stale.json()["error"]["code"] == "po_changed"
+    swapped = {**close_body(first), "item_ids": [i["id"] for i in data["open"][1]["items"]]}  # same total
+    assert (await client.post(f"/api/workload/pos/{first['id']}/close", json=swapped)).json()["error"][
+        "code"
+    ] == "po_changed"
 
     await client.login("wl-op1@test.local")  # operators cannot close POs
     assert (
-        await client.post(f"/api/workload/pos/{first['id']}/close", json={"version_total": first["total"]})
+        await client.post(f"/api/workload/pos/{first['id']}/close", json=close_body(first))
     ).status_code == 403
     await client.login("wl-mgr@test.local")
-    closed = (
-        await client.post(f"/api/workload/pos/{first['id']}/close", json={"version_total": first["total"]})
-    ).json()
+    closed = (await client.post(f"/api/workload/pos/{first['id']}/close", json=close_body(first))).json()
     assert closed["status"] == "closed" and all(i["status"] == "ordered" for i in closed["items"])
     # Frozen: a later price change does not alter the closed PO.
     await client.put(f"/api/workload/catalog/{cat['id']}", json={**cat, "unit_price": 1_000_000})
@@ -543,9 +562,7 @@ async def test_receive_creates_in_store_assets_on_sdp(client, sdp) -> None:  # t
         for o in (await client.get("/api/workload/pos")).json()["open"]
         if any(i["id"] == p["id"] for i in o["items"])
     )
-    assert (
-        await client.post(f"/api/workload/pos/{po['id']}/close", json={"version_total": po["total"]})
-    ).status_code == 200
+    assert (await client.post(f"/api/workload/pos/{po['id']}/close", json=close_body(po))).status_code == 200
 
     queue = (await client.get("/api/core/me/next")).json()["items"]
     assert any(i["key"] == "receive:ordered" and i["href"] == "/workload/purchases/receive" for i in queue)
@@ -832,7 +849,7 @@ async def test_supplier_recognition_out_of_stock_and_approval_email(client) -> N
         for o in (await client.get("/api/workload/pos")).json()["open"]
         if any(i["id"] == p["id"] for i in o["items"])
     )
-    closed = await client.post(f"/api/workload/pos/{po['id']}/close", json={"version_total": po["total"]})
+    closed = await client.post(f"/api/workload/pos/{po['id']}/close", json=close_body(po))
     assert closed.status_code == 200, closed.text
     msg = email.message_from_bytes(
         (await client.get(f"/api/workload/pos/{po['id']}/email")).content, policy=email.policy.default
@@ -919,3 +936,155 @@ async def test_next_actions_queue(client, sdp) -> None:  # type: ignore[no-untyp
     q = (await client.get("/api/core/me/next")).json()
     approval = [i for i in q["items"] if i["kind"] == "purchase_approval"]
     assert approval and approval[0]["href"] == "/workload/purchases?status=proposed"
+
+
+async def test_close_refuses_items_without_price(client) -> None:  # type: ignore[no-untyped-def]
+    """The price list was cleared after approval: closing would freeze no price and undercount the PO."""
+    await client.login("wl-mgr@test.local")
+    cat = (
+        await client.post("/api/workload/catalog", json={"name": "Bàn phím no-price", "unit_price": 300_000})
+    ).json()
+    p = (
+        await client.post(
+            "/api/workload/purchases",
+            json={"kind": "new", "item": "Bàn phím", "quantity": 1, "catalog_item_id": cat["id"]},
+        )
+    ).json()
+    await client.post(
+        f"/api/workload/purchases/{p['id']}/evidence", files={"file": ("ok.png", PNG, "image/png")}
+    )
+    assert (
+        await client.patch(f"/api/workload/purchases/{p['id']}", json={"status": "approved"})
+    ).status_code == 200
+    assert (
+        await client.put(f"/api/workload/catalog/{cat['id']}", json={**cat, "unit_price": None})
+    ).status_code == 200
+    po = next(
+        o
+        for o in (await client.get("/api/workload/pos")).json()["open"]
+        if any(i["id"] == p["id"] for i in o["items"])
+    )
+    r = await client.post(f"/api/workload/pos/{po['id']}/close", json=close_body(po))
+    assert r.json()["error"]["code"] == "price_required"
+    # Price restored: the PO can be closed again.
+    await client.put(f"/api/workload/catalog/{cat['id']}", json={**cat, "unit_price": 300_000})
+    po = next(o for o in (await client.get("/api/workload/pos")).json()["open"] if o["id"] == po["id"])
+    assert (await client.post(f"/api/workload/pos/{po['id']}/close", json=close_body(po))).status_code == 200
+
+
+@respx.mock(assert_all_called=False)
+async def test_operator_retries_failed_receive_and_serials_are_unique(client, sdp) -> None:  # type: ignore[no-untyped-def]
+    await client.login("wl-mgr@test.local")
+    cat = (
+        await client.post(
+            "/api/workload/catalog",
+            json={"name": "Laptop retry", "unit_price": 1_000_000, "sdp_product": "Dell Latitude 5440"},
+        )
+    ).json()
+    ids = []
+    for _ in range(2):
+        p = (
+            await client.post(
+                "/api/workload/purchases",
+                json={"kind": "new", "item": "Laptop", "quantity": 1, "catalog_item_id": cat["id"]},
+            )
+        ).json()
+        await client.post(
+            f"/api/workload/purchases/{p['id']}/evidence", files={"file": ("ok.png", PNG, "image/png")}
+        )
+        assert (
+            await client.patch(f"/api/workload/purchases/{p['id']}", json={"status": "approved"})
+        ).status_code == 200
+        ids.append(p["id"])
+    for po in (await client.get("/api/workload/pos")).json()["open"]:
+        if any(i["id"] in ids for i in po["items"]):
+            assert (
+                await client.post(f"/api/workload/pos/{po['id']}/close", json=close_body(po))
+            ).status_code == 200
+
+    # The operator receives; SDP fails; they can follow and retry the job.
+    await client.login("wl-op1@test.local")
+    sdp.fail_assets = True
+    r = await client.post(f"/api/workload/purchases/{ids[0]}/receive", json={"units": [{"serial": "RT-001"}]})
+    assert r.status_code == 200, r.text
+    job_id = r.json()["receive_job"]["id"]
+    async with get_sessionmaker()() as s:
+        await pump(s)
+    job = await client.get(f"/api/core/jobs/{job_id}")
+    assert job.status_code == 200 and job.json()["status"] == "failed", job.text
+
+    # The same serial (any case) cannot be received for another purchase, even while the job is failed.
+    dup = await client.post(
+        f"/api/workload/purchases/{ids[1]}/receive", json={"units": [{"serial": "rt-001"}]}
+    )
+    assert dup.json()["error"]["code"] == "serial_used" and "rt-001" in dup.json()["error"]["message"].lower()
+
+    sdp.fail_assets = False
+    assert (await client.post(f"/api/core/jobs/{job_id}/steps/receive/retry")).status_code == 200
+    async with get_sessionmaker()() as s:
+        await pump(s)
+    assert (await client.get(f"/api/core/jobs/{job_id}")).json()["status"] == "completed"
+    # Received now: still taken for other purchases.
+    dup = await client.post(
+        f"/api/workload/purchases/{ids[1]}/receive", json={"units": [{"serial": "RT-001"}]}
+    )
+    assert dup.json()["error"]["code"] == "serial_used"
+    ok = await client.post(
+        f"/api/workload/purchases/{ids[1]}/receive", json={"units": [{"serial": "RT-002"}]}
+    )
+    assert ok.status_code == 200, ok.text
+
+
+async def test_unused_quote_files_are_cleaned_up(client) -> None:  # type: ignore[no-untyped-def]
+    """Quote PDFs read by "Đọc báo giá" are audited; after a week, unattached ones are deleted."""
+    import uuid
+    from datetime import timedelta
+
+    from sqlalchemy import select, update
+
+    from app.core.audit.models import AuditLog
+    from app.core.storage.models import StoredFile
+    from app.core.storage.service import get_storage
+    from app.modules.workload.purchases_api import QUOTE_FILE_READ, cleanup_quote_files
+
+    await client.login("wl-mgr@test.local")
+    cat = (await client.post("/api/workload/catalog", json={"name": "Chuot cleanup"})).json()
+    pdf = make_pdf(["1 Chuot cleanup 1 99.000 99.000"])
+    read = []
+    for _ in range(2):
+        r = await client.post(
+            "/api/workload/catalog/quote-pdf", files={"file": ("bg.pdf", pdf, "application/pdf")}
+        )
+        assert r.status_code == 200, r.text
+        read.append(r.json()["file_id"])
+    used, unused = read
+    applied = await client.post(
+        "/api/workload/catalog/apply-quote",
+        json={"file_id": used, "vendor": "Test", "prices": [{"id": cat["id"], "unit_price": 99_000}]},
+    )
+    assert applied.status_code == 200, applied.text
+    # An old evidence upload (not read as a quote) is never touched.
+    p = (
+        await client.post("/api/workload/purchases", json={"kind": "new", "item": "Chuột", "quantity": 1})
+    ).json()
+    await client.post(
+        f"/api/workload/purchases/{p['id']}/evidence", files={"file": ("ok.png", PNG, "image/png")}
+    )
+
+    async with get_sessionmaker()() as s:
+        audited = select(AuditLog.id).where(AuditLog.action == QUOTE_FILE_READ, AuditLog.target_id == unused)
+        assert await s.scalar(audited)
+        key = (await s.get(StoredFile, uuid.UUID(unused))).storage_key  # type: ignore[union-attr]
+        assert (await cleanup_quote_files(s))["deleted"] == 0  # too recent
+        old = datetime.now(UTC) - timedelta(days=8)
+        mine = StoredFile.uploaded_by == "wl-mgr@test.local"  # the quote PDFs and the evidence above
+        await s.execute(update(StoredFile).where(mine).values(created_at=old))
+        await s.commit()
+        assert (await cleanup_quote_files(s))["deleted"] == 1
+        assert await s.get(StoredFile, uuid.UUID(unused)) is None
+        assert await s.get(StoredFile, uuid.UUID(used)) is not None  # referenced by the price list
+        assert not get_storage()._path(key).exists()
+    assert (await client.get(f"/api/workload/catalog/{cat['id']}/quote-file")).content.startswith(b"%PDF")
+    ev = (await client.get("/api/workload/purchases")).json()["items"]
+    ev_id = next(x for x in ev if x["id"] == p["id"])["evidence"][0]["id"]
+    assert (await client.get(f"/api/workload/purchases/{p['id']}/evidence/{ev_id}")).content == PNG

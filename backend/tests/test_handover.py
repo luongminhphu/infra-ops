@@ -1,6 +1,10 @@
 """Serial numbers read from a vendor handover document (pure parsing, no database)."""
 
-from app.modules.workload.handover import rows_from_text
+import io
+
+from openpyxl import Workbook
+
+from app.modules.workload.handover import rows_from_text, rows_from_xlsx
 
 
 def test_labeled_serials() -> None:
@@ -22,3 +26,14 @@ def test_no_serial_header() -> None:
 
 def test_duplicates_removed() -> None:
     assert len(rows_from_text("S/N: AB12345\nSN: ab12345")) == 1
+
+
+def test_xlsx_title_with_serial_is_not_the_header() -> None:
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["DANH SÁCH SERIAL THIẾT BỊ BÀN GIAO"])
+    ws.append(["STT", "Thiết bị", "Serial"])
+    ws.append([1, "Laptop Dell 5440", "5CD1234XYZ"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    assert [r["serial"] for r in rows_from_xlsx(buf.getvalue())] == ["5CD1234XYZ"]

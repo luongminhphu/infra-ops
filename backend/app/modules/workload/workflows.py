@@ -170,7 +170,8 @@ RECEIVE = WorkflowDefinition(
             writes=("sdp",),
         )
     ],
-    view_permission=MANAGE_PURCHASE,
-    execute_permission=MANAGE_PURCHASE,
+    # Operators receive the goods: they follow and retry their receive jobs; only managers override.
+    view_permission="workload.purchase.receive",
+    execute_permission="workload.purchase.receive",
     override_permission=MANAGE_PURCHASE,
 )
