@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Collection
 from datetime import UTC, datetime
 from typing import Any
 
@@ -149,6 +150,7 @@ async def open_connection(
     profile_id: uuid.UUID | None = None,
     environment: str = "prod",
     call_timeout: float = 20.0,
+    exclude: Collection[uuid.UUID] = (),
 ) -> tuple[ConnectionProfile, ConnectionContext]:
     """Resolve the enabled profile for a system and decrypt the credential for ``purpose``.
 
@@ -160,6 +162,8 @@ async def open_connection(
         stmt = stmt.where(ConnectionProfile.id == profile_id)
     else:
         stmt = stmt.where(ConnectionProfile.environment == environment, ConnectionProfile.enabled.is_(True))
+        if exclude:  # automatic choice: skip profiles the caller uses for something else
+            stmt = stmt.where(ConnectionProfile.id.not_in(list(exclude)))
     profiles = (await session.scalars(stmt.order_by(ConnectionProfile.created_at))).all()
     if not profiles:
         raise CapabilityUnavailable(f"Chưa cấu hình kết nối cho hệ thống “{system_type}”.")

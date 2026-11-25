@@ -7,7 +7,6 @@ rules that depend on that system are skipped instead of producing false discrepa
 from __future__ import annotations
 
 import asyncio
-import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -29,7 +28,7 @@ from app.modules.lifecycle import normalize
 from app.modules.lifecycle.models import IssueAck, LifecycleRequest, ReconRow, Snapshot, SyncRun
 from app.modules.lifecycle.parsing import parse_rtr_description
 from app.modules.lifecycle.reconcile import reconcile
-from app.modules.lifecycle.settings import MODULE_ID, SETTINGS_KEY, LifecycleSettings
+from app.modules.lifecycle.settings import MODULE_ID, SETTINGS_KEY, LifecycleSettings, main_biostar
 
 log = get_logger(__name__)
 TZ = ZoneInfo("Asia/Ho_Chi_Minh")
@@ -227,15 +226,17 @@ async def _sync(
 
     # Main BioStar, then the extra systems with their employee-ID prefix rule. BioStar counts as read only when
     # every system was read: never judge "no BioStar user" on a partial picture.
-    reads: list[tuple[str, uuid.UUID | None, str, str]] = [("biostar", settings.biostar_profile_id, "", "")]
+    main = main_biostar(settings)
+    reads: list[tuple[str, dict[str, Any], str, str]] = [("biostar", main, "", "")]
     reads += [
-        (f"biostar:{s.profile_id}", s.profile_id, s.id_prefix, s.id_prefix_to)
+        (f"biostar:{s.profile_id}", {"profile_id": s.profile_id}, s.id_prefix, s.id_prefix_to)
         for s in settings.biostar_sources
+        if s.profile_id != main.get("profile_id")  # an extra source chosen as main is read once, as main
     ]
     read_users: list[dict[str, Any]] = []
-    for err_key, profile_id, prefix, prefix_to in reads:
+    for err_key, which, prefix, prefix_to in reads:
         try:
-            profile, ctx = await open_connection(session, "biostar", Purpose.READ, profile_id=profile_id)
+            profile, ctx = await open_connection(session, "biostar", Purpose.READ, **which)
             async with BioStarClient(ctx) as client:
                 for u in await client.list_users():
                     n = normalize.biostar_user(u)

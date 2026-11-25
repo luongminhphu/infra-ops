@@ -387,6 +387,20 @@ async def test_second_biostar_with_prefix_rule(admin, configured, respx_mock) ->
     assert rows["003551"]["cells"]["biostar"]["label"] == "Hoạt động"
     assert "BS Office (user 103551)" in rows["003551"]["cells"]["biostar"]["detail"]
 
+    # "Tự động" main must skip a connection listed as an extra source: here BS E2E (created first) is the extra
+    # source, so the automatic main is BS Office and both systems are still read.
+    values = (await admin.get("/api/lifecycle/settings")).json()["values"]
+    values["biostar_profile_id"] = None
+    values["biostar_sources"] = [{"profile_id": configured[1]["id"], "id_prefix": "", "id_prefix_to": ""}]
+    assert (await admin.put("/api/lifecycle/settings", json=values)).status_code == 200
+    await _sync()
+    rows = {r["employee_id"]: r for r in (await admin.get("/api/lifecycle/reconciliation")).json()["items"]}
+    assert "103551" in rows  # BS Office read as the (automatic) main system, without a prefix rule
+    assert "BS E2E (user 002100)" in rows["002100"]["cells"]["biostar"]["detail"]
+    values["biostar_profile_id"] = configured[1]["id"]
+    values["biostar_sources"] = [{"profile_id": prof["id"], "id_prefix": "1", "id_prefix_to": "0"}]
+    assert (await admin.put("/api/lifecycle/settings", json=values)).status_code == 200
+
     # One BioStar unreadable → no BioStar judgement at all (never judge a system whose read failed).
     respx_mock.get(f"{BS_OFFICE}/api/users").mock(return_value=httpx.Response(500, json={}))
     summary = await _sync()

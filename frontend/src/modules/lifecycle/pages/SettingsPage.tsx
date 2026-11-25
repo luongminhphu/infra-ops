@@ -148,7 +148,14 @@ export function SettingsPage() {
                 {profileOptions("sdp").map((p) => <option key={p.id} value={p.id}>{p.name}{p.enabled ? "" : " (đang tắt)"}</option>)}
               </Select>
             </Field>
-            <Field label="BioStar" hint="Hệ thống chính: Job onboard/offboard tạo và khoá user ở đây.">
+            <Field
+              label="BioStar"
+              hint={
+                !v.biostar_profile_id && profileOptions("biostar").length > 1
+                  ? "Có nhiều kết nối BioStar: nên chọn đích danh hệ thống chính (Job onboard/offboard tạo và khoá user ở đây)."
+                  : "Hệ thống chính: Job onboard/offboard tạo và khoá user ở đây."
+              }
+            >
               <Select value={v.biostar_profile_id ?? ""} onChange={(e) => set("biostar_profile_id", e.target.value || null)}>
                 <option value="">Tự động</option>
                 {profileOptions("biostar").map((p) => <option key={p.id} value={p.id}>{p.name}{p.enabled ? "" : " (đang tắt)"}</option>)}

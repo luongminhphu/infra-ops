@@ -28,7 +28,7 @@ from app.modules.lifecycle import normalize
 from app.modules.lifecycle.documents import HANDOVER, RETURN
 from app.modules.lifecycle.models import ReconRow, Snapshot
 from app.modules.lifecycle.queries import latest_run
-from app.modules.lifecycle.settings import MODULE_ID, SETTINGS_KEY, LifecycleSettings
+from app.modules.lifecycle.settings import MODULE_ID, SETTINGS_KEY, LifecycleSettings, main_biostar
 
 TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 VIEW, EXECUTE, OVERRIDE = "lifecycle.job.view", "lifecycle.job.execute", "lifecycle.job.override_close"
@@ -57,7 +57,7 @@ async def _sdp(ctx: StepContext, purpose: Purpose) -> SdpClient:
 
 async def _biostar(ctx: StepContext, purpose: Purpose) -> BioStarClient:
     s = await _settings(ctx.session)
-    _, conn = await open_connection(ctx.session, "biostar", purpose, profile_id=s.biostar_profile_id)
+    _, conn = await open_connection(ctx.session, "biostar", purpose, **main_biostar(s))
     return BioStarClient(conn)
 
 
