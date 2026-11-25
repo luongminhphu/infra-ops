@@ -20,7 +20,8 @@ import { modules } from "@/modules";
 // Only while signed in: a wrong password on the login page must not trigger a refetch.
 function onApiError(error: unknown) {
   if (error instanceof ApiError && error.status === 401 && queryClient.getQueryData(ME_KEY))
-    void queryClient.invalidateQueries({ queryKey: ME_KEY });
+    // exact: ["me","next"] etc. also start with "me"; re-fetching them would 401 again and loop.
+    void queryClient.invalidateQueries({ queryKey: ME_KEY, exact: true });
 }
 
 const queryClient: QueryClient = new QueryClient({

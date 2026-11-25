@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { KeyRound, LogOut, Monitor, Moon, Search, Sun, UserRound } from "lucide-react";
 import { toast } from "sonner";
@@ -23,7 +22,6 @@ const ROLE_LABEL: Record<string, string> = { admin: "Administrator", manager: "M
 export function Topbar() {
   const { me } = useAuth();
   const qc = useQueryClient();
-  const navigate = useNavigate();
   const [theme, setThemeState] = useState<ThemeChoice>(getTheme);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
@@ -50,8 +48,9 @@ export function Topbar() {
     } catch (e) {
       toast.error(errorMessage(e));
     }
+    // Full page load: no cached user or page data can survive the sign-out and bounce back to "/".
     qc.clear();
-    navigate("/login", { replace: true });
+    window.location.replace("/login");
   };
 
   const ThemeIcon = THEMES.find((t) => t.key === theme)?.icon ?? Monitor;
