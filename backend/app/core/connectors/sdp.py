@@ -42,7 +42,10 @@ class SdpConfig(BaseModel):
         True, title="Kiểm tra chứng chỉ SSL", description="Tắt nếu máy chủ dùng chứng chỉ tự ký."
     )
     data_center: Literal["us", "eu", "in", "au", "jp", "ca", "uk", "cn", "sa"] = Field(
-        "us", title="Data center (Cloud)", description="Chỉ dùng cho bản Cloud."
+        "us",
+        title="Data center (Cloud)",
+        description="Chỉ dùng cho bản Cloud.",
+        json_schema_extra={"x-show-when": {"edition": "cloud"}},  # hidden in the form for on-prem
     )
 
 

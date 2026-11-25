@@ -29,6 +29,8 @@ async def test_connector_catalog(admin) -> None:  # type: ignore[no-untyped-def]
     types = {c["system_type"]: c for c in (await admin.get("/api/core/connectors")).json()}
     assert set(types) >= {"sdp", "biostar"}
     assert "edition" in types["sdp"]["config_schema"]["properties"]
+    # The Cloud data center is only shown for the Cloud edition (on-prem users never see it).
+    assert types["sdp"]["config_schema"]["properties"]["data_center"]["x-show-when"] == {"edition": "cloud"}
     assert [a["key"] for a in types["biostar"]["auth_types"]] == ["username_password"]
 
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, KeyRound, Pencil, PlugZap, ScrollText, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -23,7 +23,9 @@ function CredentialPanel({ profile, type, purpose }: { profile: ConnectionProfil
   const { can } = useAuth();
   const qc = useQueryClient();
   const cred = profile.credentials[purpose];
-  const [editOpen, setEditOpen] = useState(false);
+  const [params, setParams] = useSearchParams();
+  // Right after "Thêm kết nối" (?credential=read) the API key dialog opens by itself.
+  const [editOpen, setEditOpen] = useState(() => params.get("credential") === purpose && !cred && can("core.connections.manage"));
   const [removeOpen, setRemoveOpen] = useState(false);
   const [result, setResult] = useState<TestResult | null>(cred?.last_test_result ?? null);
   const authLabel = type.auth_types.find((a) => a.key === cred?.auth_type)?.label ?? cred?.auth_type;
@@ -123,7 +125,7 @@ function CredentialPanel({ profile, type, purpose }: { profile: ConnectionProfil
           )}
         </>
       )}
-      <CredentialDialog open={editOpen} onClose={() => setEditOpen(false)} profile={profile} type={type} purpose={purpose} />
+      <CredentialDialog open={editOpen} onClose={() => { setEditOpen(false); if (params.has("credential")) setParams({}, { replace: true }); }} profile={profile} type={type} purpose={purpose} />
       <ConfirmDangerDialog
         open={removeOpen}
         onClose={() => setRemoveOpen(false)}
@@ -216,7 +218,9 @@ export function ConnectionDetailPage() {
             </dd>
             <dt className="text-muted">Trạng thái</dt>
             <dd>{profile.enabled ? "Đang bật" : "Đang tắt"}</dd>
-            {Object.entries(type.config_schema.properties ?? {}).map(([k, prop]) => (
+            {Object.entries(type.config_schema.properties ?? {})
+              .filter(([, prop]) => Object.entries(prop["x-show-when"] ?? {}).every(([c, v]) => profile.config[c] === v))
+              .map(([k, prop]) => (
               <div key={k} className="contents">
                 <dt className="text-muted">{prop.title ?? k}</dt>
                 <dd>{typeof profile.config[k] === "boolean" ? (profile.config[k] ? "Có" : "Không") : String(profile.config[k] ?? "—")}</dd>
