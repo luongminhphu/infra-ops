@@ -6,13 +6,12 @@ and the list of detected discrepancies. No I/O, so every rule is unit-tested dir
 
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any, Literal
 
-from app.modules.lifecycle.parsing import fold
+from app.modules.lifecycle.parsing import fold, name_key
 from app.modules.lifecycle.settings import LifecycleSettings
 
 Severity = Literal["high", "medium", "low"]
@@ -87,11 +86,6 @@ class Row:
 class ReconcileResult:
     rows: list[Row]
     notes: list[dict[str, Any]]  # global findings not tied to one employee
-
-
-def name_key(name: str) -> tuple[str, ...]:
-    """Name compared without accents, punctuation or word order: "Thinh. Nguyen Canh" == "NGUYEN CANH THINH"."""
-    return tuple(sorted(re.findall(r"\w+", fold(name))))
 
 
 def _fmt(d: date | None) -> str:
@@ -185,10 +179,11 @@ def reconcile(
         latest = _latest(reqs)
         users = users_by_emp.get(emp, [])
         bs = bs_by_emp.get(emp)
+        # SDP is the reference for the person's name; RTR and BioStar only fill in when SDP has no user.
         ref_name = (
-            (latest or {}).get("full_name")
+            (users[0]["name"] if users else None)
+            or (latest or {}).get("full_name")
             or (reqs[0].get("full_name") if reqs else None)
-            or (users[0]["name"] if users else None)
             or (bs or {}).get("name")
             or ""
         )

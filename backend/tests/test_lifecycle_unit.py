@@ -276,3 +276,19 @@ def test_name_key_ignores_order_and_punctuation() -> None:
 
     assert name_key("Thinh. Nguyen Canh") == name_key("NGUYEN CANH THINH") == name_key("Nguyễn Cảnh Thịnh")
     assert name_key("Nguyen Canh Thinh") != name_key("Nguyen Van Thinh")
+
+
+def test_biostar_employee_id_follows_sdp() -> None:
+    from app.modules.lifecycle.normalize import resolve_employee_id
+
+    sdp = {"000008": "Thinh. Nguyen Canh", "002352": "Lê Văn An", "100100": "Trần Bình"}
+    none = ("", "", 0)
+    # No rule configured: matched to SDP by last digits when the name agrees.
+    assert resolve_employee_id("100008", "NGUYEN CANH THINH", none, sdp) == "000008"
+    assert resolve_employee_id("1002352", "LE VAN AN", none, sdp) == "002352"
+    # Same digits, different person: not matched.
+    assert resolve_employee_id("100008", "Pham Van Khac", none, sdp) == "100008"
+    # An ID SDP knows is kept as is.
+    assert resolve_employee_id("100100", "Trần Bình", none, sdp) == "100100"
+    # A configured rule still wins when SDP knows its result.
+    assert resolve_employee_id("100008", "x", ("1", "0", 0), sdp) == "000008"
