@@ -77,11 +77,12 @@ def _count(raw: dict[str, Any], *keys: str) -> int:
     return 0
 
 
-def map_employee_id(user_id: str, prefix: str, prefix_to: str) -> str:
-    """Employee ID for a BioStar user ID whose system uses another prefix ("100002", "1" → "0" gives "000002")."""
+def map_employee_id(user_id: str, prefix: str, prefix_to: str, keep_last: int = 0) -> str:
+    """Employee ID for a BioStar user ID whose system uses another prefix ("100002", "1" → "0" gives "000002"),
+    then optionally only its last ``keep_last`` characters ("1002352" with 6 gives "002352")."""
     if prefix and user_id.startswith(prefix):
-        return prefix_to + user_id[len(prefix) :]
-    return user_id
+        user_id = prefix_to + user_id[len(prefix) :]
+    return user_id[-keep_last:] if keep_last and len(user_id) > keep_last else user_id
 
 
 def biostar_user(raw: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:

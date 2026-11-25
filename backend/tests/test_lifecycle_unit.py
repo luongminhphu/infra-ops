@@ -241,6 +241,9 @@ def test_biostar_employee_id_prefix_and_merge() -> None:
     assert map_employee_id("100002", "1", "0") == "000002"
     assert map_employee_id("000002", "1", "0") == "000002"  # already correct: untouched
     assert map_employee_id("100002", "", "") == "100002"
+    assert map_employee_id("1002352", "1", "0", 6) == "002352"  # 7-digit office ID: last 6 digits
+    assert map_employee_id("100002", "1", "0", 6) == "000002"
+    assert map_employee_id("2352", "", "", 6) == "2352"  # shorter IDs untouched
     old = {"user_id": "100002", "employee_id": "000002", "active": True, "source": "Office"}
     new = {"user_id": "000002", "employee_id": "000002", "active": False, "source": "Server"}
     assert merge_biostar_users([new, old]) == [old]  # an active user anywhere wins (offboard checks)
@@ -257,6 +260,12 @@ def test_retired_biostar_group_is_not_reconciled() -> None:
     result = reconcile(requests, users, assets, moved, S, date(2026, 11, 16))
     rules, row = _issues(result, "002100")
     assert "offboard_biostar_active" not in rules
-    assert row.cells["biostar"]["label"] == "Nhóm nghỉ việc"
-    # A user only on BioStar in that group is not a row ("not in SDP" check skipped).
+    assert row.cells["biostar"]["label"] == "Nghỉ việc"  # kept: an RTR request concerns 002100
+    # Without an RTR request a person in that group is hidden, even with an SDP user.
     assert "009999" not in {r.employee_id for r in result.rows}
+    # 001500: SDP user + BioStar user, no RTR request.
+    assert "001500" in {r.employee_id for r in result.rows}
+    left = [{**b, "retired": True, "active": False} if b["user_id"] == "001500" else b for b in bs]
+    assert "001500" not in {
+        r.employee_id for r in reconcile(requests, users, assets, left, S, date(2026, 11, 16)).rows
+    }
