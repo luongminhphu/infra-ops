@@ -275,3 +275,65 @@ async def test_settings_validation_and_permissions(admin, client) -> None:  # ty
     assert bad.status_code == 400 and bad.json()["error"]["code"] == "invalid_settings"
     await client.login("viewer-lc@test.local")
     assert (await client.get("/api/lifecycle/reconciliation")).status_code == 403
+
+
+@respx.mock(assert_all_called=False)
+async def test_completed_onboard_leaves_allocation(admin, configured, respx_mock) -> None:  # type: ignore[no-untyped-def]
+    from app.core.workflow.models import Job
+
+    mock_systems(respx_mock)
+    await _sync()
+    req = next(
+        r
+        for r in (await admin.get("/api/lifecycle/allocation")).json()["requests"]
+        if r["employee_id"] == "003551"
+    )
+    async with get_sessionmaker()() as s:
+        job = await s.get(Job, req["job"]["id"])
+        prev = job.status
+        job.status = "completed"
+        await s.commit()
+        try:
+            data = (await admin.get("/api/lifecycle/allocation")).json()
+            assert "003551" not in {r["employee_id"] for r in data["requests"]}
+        finally:
+            job.status = prev
+            await s.commit()
+
+
+@respx.mock(assert_all_called=False)
+async def test_snapshots_kept_for_latest_runs_only(admin, configured, respx_mock) -> None:  # type: ignore[no-untyped-def]
+    from sqlalchemy import func, select
+
+    from app.modules.lifecycle.models import ReconRow, Snapshot, SyncRun
+
+    mock_systems(respx_mock)
+    runs = [(await _sync())["run_id"] for _ in range(3)]
+    async with get_sessionmaker()() as s:
+        snap_runs = set((await s.scalars(select(Snapshot.run_id).distinct())).all())
+        assert {str(r) for r in snap_runs} == set(runs[1:])
+        # Reconciliation history keeps the configured retention.
+        assert await s.scalar(select(func.count()).select_from(ReconRow).where(ReconRow.run_id == runs[0]))
+        assert (await s.get(SyncRun, runs[0])).status == "success"
+    detail = (await admin.get("/api/lifecycle/reconciliation/002100")).json()
+    assert detail["assets"][0]["asset_tag"] == "LT0123" and detail["biostar"]
+
+
+@respx.mock(assert_all_called=False)
+async def test_sync_crash_marks_run_failed(admin, configured, respx_mock, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from sqlalchemy import select
+
+    from app.modules.lifecycle import sync
+    from app.modules.lifecycle.models import SyncRun
+
+    def boom(*_: object, **__: object) -> None:
+        raise RuntimeError("reconcile exploded")
+
+    mock_systems(respx_mock)
+    monkeypatch.setattr(sync, "reconcile", boom)
+    with pytest.raises(RuntimeError):
+        await _sync()
+    async with get_sessionmaker()() as s:
+        run = await s.scalar(select(SyncRun).order_by(SyncRun.started_at.desc()).limit(1))
+    assert run.status == "failure" and run.finished_at is not None
+    assert "reconcile exploded" in run.errors["crash"]

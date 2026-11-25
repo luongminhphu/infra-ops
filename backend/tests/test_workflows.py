@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from urllib.parse import parse_qs
 
 import httpx
@@ -49,6 +49,14 @@ class FakeSystems:
                 "user": {"id": "u2", "name": "Phạm Thị Bình"},
                 "product": {"name": "Dell", "product_type": {"name": "Laptop"}},
             },
+            "5003": {
+                "id": "5003",
+                "name": "HSC-MN-5003",
+                "asset_tag": "MN5003",
+                "state": {"name": "In Store"},
+                "user": None,
+                "product": {"name": "Dell", "product_type": {"name": "Monitor"}},
+            },
         }
         self.bs_users: dict[str, dict] = {
             "002100": {
@@ -62,6 +70,16 @@ class FakeSystems:
         self.calls: list[str] = []
         self.request_tech: dict[str, str] = {}
         self.technicians = [{"id": "71", "name": "Tech 71", "email_id": "op-assign2@test.local"}]
+        self.notes: dict[str, list[str]] = {}
+        self.attachments: dict[str, list[str]] = {}
+        self.lose_response: set[str] = set()  # writes that land on SDP but whose response is lost once
+        self.fail_put: set[str] = set()  # asset ids whose next update is refused
+
+    def _maybe_lost(self, kind: str) -> httpx.Response:
+        if kind in self.lose_response:
+            self.lose_response.discard(kind)
+            raise httpx.ReadTimeout("response lost")
+        return httpx.Response(200, json=OK)
 
     def install(self, r: respx.MockRouter) -> None:
         def req_detail(request: httpx.Request, rid: str) -> httpx.Response:
@@ -88,11 +106,37 @@ class FakeSystems:
             )
 
         r.route(url__regex=rf"{re.escape(SDP)}/api/v3/requests/(?P<rid>\d+)$").mock(side_effect=req_detail)
-        r.post(url__regex=rf"{re.escape(SDP)}/api/v3/requests/\d+/notes$").mock(
-            side_effect=lambda req: (self.calls.append("note"), httpx.Response(200, json=OK))[1]
+
+        def note(request: httpx.Request, rid: str) -> httpx.Response:
+            if request.method == "GET":
+                rows = [{"description": d} for d in self.notes.get(rid, [])]
+                return httpx.Response(200, json={**OK, "list_info": {"has_more_rows": False}, "notes": rows})
+            body = json.loads(parse_qs(request.content.decode())["input_data"][0])["note"]
+            self.notes.setdefault(rid, []).append(body["description"])
+            self.calls.append("note")
+            return self._maybe_lost("note")
+
+        def upload(request: httpx.Request, rid: str) -> httpx.Response:
+            name = re.search(rb'filename="([^"]+)"', request.content).group(1).decode()  # type: ignore[union-attr]
+            self.attachments.setdefault(rid, []).append(name)
+            self.calls.append("upload")
+            return self._maybe_lost("upload")
+
+        r.route(url__regex=rf"{re.escape(SDP)}/api/v3/requests/(?P<rid>\d+)/notes(\?|$)").mock(
+            side_effect=note
         )
-        r.post(url__regex=rf"{re.escape(SDP)}/api/v3/requests/\d+/_uploads$").mock(
-            side_effect=lambda req: (self.calls.append("upload"), httpx.Response(200, json=OK))[1]
+        r.post(url__regex=rf"{re.escape(SDP)}/api/v3/requests/(?P<rid>\d+)/_uploads$").mock(
+            side_effect=upload
+        )
+        r.get(url__regex=rf"{re.escape(SDP)}/api/v3/requests/(?P<rid>\d+)/attachments(\?|$)").mock(
+            side_effect=lambda req, rid: httpx.Response(
+                200,
+                json={
+                    **OK,
+                    "list_info": {"has_more_rows": False},
+                    "attachments": [{"name": n} for n in self.attachments.get(rid, [])],
+                },
+            )
         )
 
         def users(request: httpx.Request) -> httpx.Response:
@@ -113,6 +157,9 @@ class FakeSystems:
 
         def asset(request: httpx.Request, aid: str) -> httpx.Response:
             if request.method == "PUT":
+                if aid in self.fail_put:
+                    self.fail_put.discard(aid)
+                    return httpx.Response(500, json={"response_status": {"status_code": 4000}})
                 body = json.loads(parse_qs(request.content.decode())["input_data"][0])["asset"]
                 self.assets[aid]["state"] = body["state"]
                 self.assets[aid]["user"] = body["user"]
@@ -283,7 +330,10 @@ async def test_onboard_end_to_end(admin, systems) -> None:  # type: ignore[no-un
             f"/api/lifecycle/jobs/{j['id']}/params",
             json={
                 "version": j["version"],
-                "assets": [{"id": "5001", "name": "HSC-LT-5001", "tag": "LT5001", "product_type": "Laptop"}],
+                "assets": [
+                    {"id": "5001", "name": "HSC-LT-5001", "tag": "LT5001", "product_type": "Laptop"},
+                    {"id": "5003", "name": "HSC-MN-5003", "tag": "MN5003", "product_type": "Monitor"},
+                ],
             },
         )
     ).json()
@@ -315,6 +365,12 @@ async def test_onboard_end_to_end(admin, systems) -> None:  # type: ignore[no-un
     await admin.post(f"/api/core/jobs/{j['id']}/steps/find_sdp_user/retry")
     await run_worker()
     j = await verify(admin, await job(admin, j["id"]), "find_sdp_user")
+    # Partial failure (5001 assigned, 5003 refused): the retry keeps the prior state of both assets.
+    systems.fail_put = {"5003"}
+    await run_worker()
+    failed = step(await job(admin, j["id"]), "assign_assets")
+    assert failed["status"] == "failed" and set(failed["before_state"]["assets"]) == {"5001", "5003"}
+    await admin.post(f"/api/core/jobs/{j['id']}/steps/assign_assets/retry")
     # assign_assets requires evidence: refused without, accepted with a screenshot.
     await run_worker()
     j = await job(admin, j["id"])
@@ -354,7 +410,9 @@ async def test_onboard_end_to_end(admin, systems) -> None:  # type: ignore[no-un
         "id": "u1"
     }
     assert systems.bs_users["003551"]["access_groups"] == [{"id": "7"}]
-    assert step(j, "assign_assets")["before_state"]["assets"]["5001"]["state"] == "In Store"
+    before = step(j, "assign_assets")["before_state"]["assets"]
+    assert before["5001"]["state"] == "In Store" and before["5003"]["state"] == "In Store"
+    assert systems.assets["5003"]["state"]["name"] == "In Use"
     assert j["status"] == "waiting" and j["current_step"] == "biostar_enroll"
 
     # Manual step verifies BioStar: no credential yet → refused, then enrolled → accepted
@@ -386,9 +444,19 @@ async def test_onboard_end_to_end(admin, systems) -> None:  # type: ignore[no-un
         st = await s.scalar(select(JobStep).where(JobStep.key == "handover_doc", JobStep.job_id == j["id"]))
         st.next_run_at = None
         await s.commit()
+    # The upload, then the note, land on SDP but their responses are lost: retries read first, never repost.
+    systems.lose_response = {"upload", "note"}
     j = await settle(admin, j["id"])
-    assert j["status"] == "completed", [(s["key"], s["status"], s["message"]) for s in j["steps"]]
+    for _ in range(2):
+        assert step(j, "close_request")["status"] == "failed", step(j, "close_request")
+        await admin.post(f"/api/core/jobs/{j['id']}/steps/close_request/retry")
+        j = await settle(admin, j["id"])
+    assert j["status"] == "completed", [
+        (s["key"], s["status"], s["message"]) for s in j["steps"] if s["status"] != "done"
+    ]
     assert systems.calls[-3:] == ["upload", "note", "status:9101:Resolved"]
+    assert systems.calls.count("upload") == 1 and systems.calls.count("note") == 1
+    assert step(j, "close_request")["output"]["attached"]
 
     async with get_sessionmaker()() as s:
         actions = (await s.scalars(select(AuditLog.action).where(AuditLog.target_id == j["id"]))).all()
@@ -544,6 +612,22 @@ async def test_auto_create_jobs_and_list(admin) -> None:  # type: ignore[no-unty
                 description_text="",
             )
         )
+        # Already closed in SDP: no draft job.
+        s.add(
+            LifecycleRequest(
+                id="9198",
+                display_id="7998",
+                subject="x",
+                employee_id="004445",
+                full_name="Lê D",
+                kind="onboard",
+                status="resolved",
+                effective_date=date(2026, 11, 20),
+                fields={},
+                parse_errors=[],
+                description_text="",
+            )
+        )
         await s.commit()
         created = await auto_create_jobs(s)
         await s.commit()
@@ -552,6 +636,7 @@ async def test_auto_create_jobs_and_list(admin) -> None:  # type: ignore[no-unty
     listed = (await admin.get("/api/core/jobs", params={"q": "004444"})).json()
     assert listed["total"] == 1 and listed["items"][0]["status"] == "draft"
     assert listed["items"][0]["created_by"] == "system (đồng bộ)"
+    assert (await admin.get("/api/core/jobs", params={"q": "004445"})).json()["total"] == 0
 
 
 async def test_checklist_versions_and_snapshot(admin, client) -> None:  # type: ignore[no-untyped-def]
@@ -652,6 +737,16 @@ async def test_job_assignee_follows_sdp_and_reassign_writes_back(admin, client, 
     assert [x["id"] for x in mine["items"]] == [j["id"]]
     summary = {i["key"]: i["count"] for i in (await client.get("/api/core/me/summary")).json()["items"]}
     assert summary["jobs:open"] == 1 and summary["jobs:done"] == 0
+    # A job completed this week counts as done (closed_at).
+    async with get_sessionmaker()() as s:
+        jb = await s.get(Job, j["id"])
+        prev = jb.status
+        jb.status, jb.closed_at = "completed", datetime.now(UTC)
+        await s.commit()
+        summary = {i["key"]: i["count"] for i in (await client.get("/api/core/me/summary")).json()["items"]}
+        assert summary["jobs:open"] == 0 and summary["jobs:done"] == 1
+        jb.status, jb.closed_at = prev, None
+        await s.commit()
     assert (
         await client.post(f"/api/lifecycle/jobs/{j['id']}/assign", json={"user_id": j["id"]})
     ).status_code == 403
@@ -688,3 +783,39 @@ async def test_job_assignee_follows_sdp_and_reassign_writes_back(admin, client, 
         await admin.get("/api/core/jobs?workflows=lifecycle.onboard,lifecycle.offboard&limit=500")
     ).json()
     assert all(x["workflow_key"] != "lifecycle.assign" for x in listed["items"])
+
+
+async def test_pump_is_not_starved_by_jobs_waiting_on_people(admin) -> None:  # type: ignore[no-untyped-def]
+    from app.core.workflow.models import JobStep
+
+    def make(n: int, status: str, step_status: str, updated_at: datetime | None) -> Job:
+        return Job(
+            workflow_key="lifecycle.onboard",
+            module_id="lifecycle",
+            status=status,
+            subject_key=f"starve-{n}",
+            subject_label="x",
+            idempotency_key=f"test:starve:{n}",
+            params={},
+            created_by="test",
+            steps=[JobStep(seq=1, key="biostar_enroll", title="BioStar", kind="manual", status=step_status)],
+            evidence=[],
+            assignments=[],
+            **({"updated_at": updated_at} if updated_at else {}),
+        )
+
+    old = datetime(2020, 1, 1, tzinfo=UTC)
+    async with get_sessionmaker()() as s:
+        jobs = [make(n, "waiting", "waiting", old) for n in range(21)]
+        fresh = make(99, "running", "pending", None)
+        s.add_all([*jobs, fresh])
+        await s.commit()
+        ids = [j.id for j in [*jobs, fresh]]
+    try:
+        await run_worker()
+        j = await job(admin, str(ids[-1]))
+        assert j["status"] == "waiting" and step(j, "biostar_enroll")["status"] == "waiting"
+    finally:
+        async with get_sessionmaker()() as s:
+            await s.execute(Job.__table__.delete().where(Job.id.in_(ids)))
+            await s.commit()

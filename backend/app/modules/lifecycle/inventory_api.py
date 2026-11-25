@@ -99,7 +99,7 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
         ).all():
             if j.status != "cancelled":
                 jobs[j.external_ref] = j  # type: ignore[index]
-    reqs = [r for r in reqs if not (r.id in jobs and jobs[r.id].status == "done")]
+    reqs = [r for r in reqs if not (r.id in jobs and jobs[r.id].status == "completed")]
 
     needs = []
     for r in reqs:

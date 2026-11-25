@@ -88,7 +88,7 @@ async def summary(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
     def eff(j: Job) -> str:
         return str(j.params.get("effective_date") or "")
 
-    done = sum(1 for j in jobs if j.status == "completed" and j.finished_at and j.finished_at >= week_ago)
+    done = sum(1 for j in jobs if j.status == "completed" and j.closed_at and j.closed_at >= week_ago)
     late = sum(1 for j in active if eff(j) and eff(j) < str(today))
     near = sum(1 for j in active if eff(j) and str(today) <= eff(j) <= soon)
     href = "/lifecycle/jobs"
