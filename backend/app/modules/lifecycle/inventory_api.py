@@ -19,8 +19,8 @@ from app.core.db import get_session
 from app.core.errors import NotFound
 from app.core.settings.service import load_settings
 from app.core.workflow.models import Job
-from app.modules.lifecycle.allocation import Line, Need, allocate, matches
-from app.modules.lifecycle.models import LifecycleRequest, Snapshot
+from app.modules.lifecycle.allocation import Line, Need, allocate, matches, returned_first
+from app.modules.lifecycle.models import AssetReturn, LifecycleRequest, Snapshot
 from app.modules.lifecycle.parsing import fold
 from app.modules.lifecycle.queries import latest_run
 from app.modules.lifecycle.settings import FIELD_TITLES, MODULE_ID, SETTINGS_KEY, LifecycleSettings
@@ -39,7 +39,7 @@ def band_of(req: LifecycleRequest) -> tuple[str | None, str | None]:
 
 
 def _asset(a: dict[str, Any]) -> dict[str, Any]:
-    return {k: a.get(k) for k in ("id", "name", "asset_tag", "product", "product_type")}
+    return {k: a.get(k) for k in ("id", "name", "asset_tag", "product", "product_type", "returned")}
 
 
 def _line(line: Line) -> dict[str, Any]:
@@ -79,6 +79,8 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
     stock = [
         a for a in assets.values() if a.get("state") == settings.asset_state_in_store and not a.get("user_id")
     ]
+    # Returned (thu hồi) devices are suggested before new stock.
+    stock = returned_first(stock, set((await session.scalars(select(AssetReturn.asset_id))).all()))
 
     since = datetime.now(TZ).date() - timedelta(days=settings.allocation_past_days)
     closed = {s.lower() for s in settings.sdp_closed_statuses}

@@ -445,7 +445,7 @@ export function ProposalsTab() {
               columns={columns}
               caption="Đề xuất mua thiết bị"
               getRowId={(p) => p.id}
-              empty={<EmptyState icon={ShoppingCart} title="Chưa có đề xuất">Operator lập đề xuất từ gợi ý ở trang Việc của tôi hoặc Kho & cấp phát, hoặc bấm “Đề xuất mới”.</EmptyState>}
+              empty={<EmptyState icon={ShoppingCart} title="Chưa có đề xuất">Operator lập đề xuất từ gợi ý ở trang Việc của tôi hoặc Kho thiết bị, hoặc bấm “Đề xuất mới”.</EmptyState>}
             />
           </div>
           {/* Phone: one card per proposal, actions visible without horizontal scrolling. */}

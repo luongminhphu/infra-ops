@@ -1094,3 +1094,14 @@ Quyết định:
   trước (từng gán → nay In Store), hoặc đánh dấu tay; xoá khi tài sản được gán lại hoặc đã thanh lý.
 - Đổi state chạy trong worker (Job `lifecycle.asset_state` / `lifecycle.asset_dispose`, đọc trước khi ghi, chỉ đổi state –
   không đụng người dùng), bằng API key cá nhân của người yêu cầu (§33); thanh lý chỉ nhận tài sản đang Chờ thanh lý.
+
+## 35. Gộp "Kho & cấp phát" và "Tồn kho" thành "Kho thiết bị" (25/11/2026)
+
+- Vấn đề (critique): hai trang cùng đọc tồn kho In Store, hai cách đếm, hai danh sách tài sản; người dùng phải đoán
+  trang nào để chuẩn bị máy cho nhân viên mới và trang nào để thanh lý.
+- Quyết định (chủ sản phẩm): một mục menu **Kho thiết bị** (`/lifecycle/stock`) với ô tổng theo loại và hai tab
+  *Nhân viên mới* / *Tài sản trong kho*; `/lifecycle/inventory` chuyển hướng sang tab *Nhân viên mới*. Không đổi API.
+- Cấp phát gợi ý **hàng thu hồi trước hàng mới** (`allocation.returned_first`, có unit test) để dùng lại thiết bị cũ
+  trước khi khui hàng mới.
+- Sửa kèm: nhóm nhân viên theo ngày bắt đầu (quá hạn nổi lên đầu), chip "Lấy từ kho" dẫn thẳng tới tài sản, tiến độ Job
+  đổi state hiện ngay trên dòng tài sản, xác nhận trước khi chuyển Chờ thanh lý, danh sách dạng thẻ trên điện thoại.

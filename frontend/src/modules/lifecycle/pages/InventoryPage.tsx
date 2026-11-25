@@ -1,17 +1,16 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Boxes, CheckCircle2, PackageSearch, Pencil, Recycle, ShoppingCart, Wand2 } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Boxes, CheckCircle2, PackageOpen, PackageSearch, Pencil, ShoppingCart, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { cn } from "@/core/lib/cn";
-import { formatDate, formatDateTime } from "@/core/lib/format";
+import { formatDate } from "@/core/lib/format";
 import { Button } from "@/core/ui/button";
 import { Dialog } from "@/core/ui/dialog";
-import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader, Panel } from "@/core/ui/feedback";
+import { EmptyState, Mono, Panel } from "@/core/ui/feedback";
 import { Field, Input } from "@/core/ui/field";
-import { HelpTip } from "@/core/ui/help-tip";
 import { buyLink as buyLinkFor, proposedFor } from "../buy";
 import { StatusBadge, type Status } from "@/core/ui/status";
 
@@ -21,6 +20,7 @@ interface Asset {
   asset_tag: string | null;
   product: string | null;
   product_type: string | null;
+  returned?: boolean;
 }
 interface Line {
   label: string;
@@ -30,7 +30,7 @@ interface Line {
   reuse: Asset[];
   buy: number;
 }
-interface PlanRequest {
+export interface PlanRequest {
   id: string;
   display_id: string | null;
   full_name: string | null;
@@ -44,13 +44,13 @@ interface PlanRequest {
   status: "no_band" | "buy" | "covered";
   lines: Line[];
 }
-interface Allocation {
+export interface Allocation {
   as_of: string | null;
   stock: StockLine[];
   requests: PlanRequest[];
   bands: string[];
 }
-interface PurchaseLite {
+export interface PurchaseLite {
   source_ref: string | null;
   item: string;
   status: string;
@@ -66,7 +66,7 @@ interface StockItem extends Asset {
   serial: string | null;
   reserved_for: { name: string | null; display_id: string } | null;
 }
-interface StockLine {
+export interface StockLine {
   label: string;
   bands: string[];
   product_types: string[];
@@ -75,85 +75,6 @@ interface StockLine {
   to_buy: number;
   items: StockItem[];
   standard: boolean; // false: In Store device type outside the allocation standard (PC, UPS, …)
-}
-
-/** Every In Store asset counted on a stock card: what it is and whether an upcoming onboard has it. */
-function StockDialog({ line, onClose }: { line: StockLine; onClose: () => void }) {
-  const [q, setQ] = useState("");
-  const needle = q.trim().toLowerCase();
-  const items = line.items.filter((a) => !needle || [a.name, a.asset_tag, a.serial, a.product, a.reserved_for?.name].some((v) => v?.toLowerCase().includes(needle)));
-  const byProduct = Object.entries(
-    line.items.reduce<Record<string, number>>((acc, a) => ({ ...acc, [a.product ?? a.product_type ?? "—"]: (acc[a.product ?? a.product_type ?? "—"] ?? 0) + 1 }), {}),
-  ).sort((x, y) => y[1] - x[1]);
-  const free = line.items.filter((a) => !a.reserved_for).length;
-  return (
-    <Dialog
-      open
-      size="lg"
-      onClose={onClose}
-      title={`Tồn kho: ${line.label}`}
-      description={`${line.items.length} tài sản In Store chưa gán user · ${free} còn trống · ${line.items.length - free} đã giữ cho nhân viên sắp onboard.`}
-      footer={<Button onClick={onClose}>Đóng</Button>}
-    >
-      {byProduct.length > 0 && (
-        <ul aria-label="Theo sản phẩm" className="mb-3 flex flex-wrap gap-2 text-sm">
-          {byProduct.map(([name, n]) => (
-            <li key={name} className="rounded-sm bg-surface-2 px-2 py-0.5">{name} <span className="font-semibold tabular">× {n}</span></li>
-          ))}
-        </ul>
-      )}
-      <Field label="Tìm tài sản" className="mb-3">
-        <Input type="search" data-autofocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tên, asset tag, serial, sản phẩm hoặc người nhận" />
-      </Field>
-      {items.length === 0 ? (
-        <p className="py-6 text-center text-sm text-muted">{line.items.length ? "Không có tài sản khớp từ khoá." : "Kho không còn tài sản nào thuộc nhóm này."}</p>
-      ) : (
-        <div tabIndex={0} role="region" aria-label={`Danh sách tài sản ${line.label}`} className="max-h-[55vh] overflow-auto rounded-sm border border-line">
-          <ul className="divide-y divide-line text-sm sm:hidden">
-            {items.map((a) => (
-              <li key={a.id} className="px-3 py-2">
-                <p className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-medium">{a.name ?? a.id}</span>
-                  {a.reserved_for ? <StatusBadge status="waiting" label={`Giữ cho ${a.reserved_for.name ?? `#${a.reserved_for.display_id}`}`} /> : <StatusBadge status="match" label="Còn trống" />}
-                </p>
-                <p className="mt-0.5 text-muted">
-                  <Mono>{a.asset_tag ?? "—"}</Mono> · <Mono>{a.serial ?? "—"}</Mono> · {a.product ?? a.product_type ?? "—"}
-                </p>
-              </li>
-            ))}
-          </ul>
-          <table className="hidden w-full text-sm sm:table">
-            <thead className="sticky top-0 bg-surface-2 text-left text-muted">
-              <tr>
-                <th scope="col" className="px-3 py-2 font-medium">Tài sản</th>
-                <th scope="col" className="px-3 py-2 font-medium">Asset tag</th>
-                <th scope="col" className="px-3 py-2 font-medium">Serial</th>
-                <th scope="col" className="px-3 py-2 font-medium">Sản phẩm</th>
-                <th scope="col" className="px-3 py-2 font-medium">Tình trạng</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {items.map((a) => (
-                <tr key={a.id}>
-                  <td className="px-3 py-2">{a.name ?? a.id}</td>
-                  <td className="px-3 py-2"><Mono>{a.asset_tag ?? "—"}</Mono></td>
-                  <td className="px-3 py-2"><Mono>{a.serial ?? "—"}</Mono></td>
-                  <td className="px-3 py-2">{a.product ?? a.product_type ?? "—"}</td>
-                  <td className="px-3 py-2">
-                    {a.reserved_for ? (
-                      <StatusBadge status="waiting" label={`Giữ cho ${a.reserved_for.name ?? `#${a.reserved_for.display_id}`}`} />
-                    ) : (
-                      <StatusBadge status="match" label="Còn trống" />
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Dialog>
-  );
 }
 
 const assetText = (a: Asset) => `${a.name ?? a.id}${a.asset_tag ? ` (${a.asset_tag})` : ""}`;
@@ -191,7 +112,7 @@ function BandDialog({ req, bands, onClose }: { req: PlanRequest; bands: string[]
   );
 }
 
-function RequestCard({ r, purchases, bands }: { r: PlanRequest; purchases: PurchaseLite[] | null; bands: string[] }) {
+export function RequestCard({ r, purchases, bands }: { r: PlanRequest; purchases: PurchaseLite[] | null; bands: string[] }) {
   const { can } = useAuth();
   const qc = useQueryClient();
   const [editBand, setEditBand] = useState(false);
@@ -207,7 +128,7 @@ function RequestCard({ r, purchases, bands }: { r: PlanRequest; purchases: Purch
         },
       }),
     onSuccess: () => {
-      toast.success(`Đã chọn ${reuse.length} tài sản tận dụng vào Job của ${r.full_name}.`);
+      toast.success(`Đã chọn ${reuse.length} tài sản từ kho vào Job của ${r.full_name}.`);
       void qc.invalidateQueries({ queryKey: ["lifecycle"] });
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -217,13 +138,14 @@ function RequestCard({ r, purchases, bands }: { r: PlanRequest; purchases: Purch
 
   return (
     <li className="rounded-md border border-line bg-surface p-4 shadow-card">
-      <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
-        <div className="min-w-0 flex-1">
+      <div className="flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-start sm:gap-x-3">
+        <div className="min-w-0 sm:flex-1">
           <p className="font-semibold">{r.full_name} <span className="font-normal text-muted">({r.employee_id})</span></p>
           <p className="text-sm text-muted">
             Hiệu lực {formatDate(r.effective_date)} · {r.department ?? "—"}{r.job_title ? ` · ${r.job_title}` : ""} · request <Mono>#{ref}</Mono>
           </p>
         </div>
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="inline-flex items-center gap-1 text-sm">
           Band <b className={cn(!r.band && "text-waiting")}>{r.band ?? "chưa có"}</b>
           {r.band_source === "override" && <span className="text-xs text-muted">(nhập tay)</span>}
@@ -234,6 +156,7 @@ function RequestCard({ r, purchases, bands }: { r: PlanRequest; purchases: Purch
           )}
         </span>
         <StatusBadge {...REQ_STATUS[r.status]} />
+        </span>
       </div>
 
       {r.status === "no_band" ? (
@@ -250,7 +173,13 @@ function RequestCard({ r, purchases, bands }: { r: PlanRequest; purchases: Purch
                     <span key={a.id} className="inline-flex items-center gap-1 rounded-sm bg-done-soft px-1.5 py-0.5 text-done"><CheckCircle2 className="size-3.5" aria-hidden="true" />Đã chọn: {assetText(a)}</span>
                   ))}
                   {l.reuse.map((a) => (
-                    <span key={a.id} className="inline-flex items-center gap-1 rounded-sm bg-primary-soft px-1.5 py-0.5 text-primary"><Recycle className="size-3.5" aria-hidden="true" />Tận dụng: {assetText(a)}</span>
+                    <Link
+                      key={a.id}
+                      to={`/lifecycle/stock?tab=assets&q=${encodeURIComponent(a.asset_tag ?? a.name ?? a.id)}`}
+                      className="inline-flex items-center gap-1 rounded-sm bg-primary-soft px-1.5 py-0.5 text-primary hover:underline"
+                    >
+                      <PackageOpen className="size-3.5" aria-hidden="true" />Lấy từ kho: {assetText(a)}{a.returned ? " (thu hồi)" : ""}
+                    </Link>
                   ))}
                   {l.buy > 0 && (
                     <span className="inline-flex items-center gap-1 rounded-sm bg-waiting-soft px-1.5 py-0.5 text-waiting"><ShoppingCart className="size-3.5" aria-hidden="true" />Cần mua {l.buy}</span>
@@ -275,7 +204,7 @@ function RequestCard({ r, purchases, bands }: { r: PlanRequest; purchases: Purch
       <div className="mt-2 flex flex-wrap gap-2">
         {r.job?.status === "draft" && reuse.length > 0 && can("lifecycle.job.execute") && (
           <Button size="sm" variant="primary" loading={apply.isPending} onClick={() => apply.mutate()}>
-            <Wand2 className="size-4" aria-hidden="true" />Chọn {reuse.length} tài sản tận dụng vào Job
+            <Wand2 className="size-4" aria-hidden="true" />Chọn {reuse.length} tài sản từ kho vào Job
           </Button>
         )}
         {r.job && (
@@ -287,65 +216,39 @@ function RequestCard({ r, purchases, bands }: { r: PlanRequest; purchases: Purch
   );
 }
 
-export function InventoryPage() {
-  const { can } = useAuth();
-  const q = useQuery({ queryKey: ["lifecycle", "allocation"], queryFn: () => api<Allocation>("/api/lifecycle/allocation") });
-  const purchases = useQuery({
-    queryKey: ["workload", "purchases", "onboard"],
-    queryFn: () => api<{ items: PurchaseLite[] }>("/api/workload/purchases"),
-    enabled: can("workload.tickets.view"),
-  });
-  const d = q.data;
-  const [detail, setDetail] = useState<StockLine | null>(null);
+const isoToday = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Ho_Chi_Minh" });
+const isoIn = (days: number) => new Date(Date.now() + days * 86_400_000).toLocaleDateString("sv-SE", { timeZone: "Asia/Ho_Chi_Minh" });
+
+/** People who need devices: most urgent first (start date passed, within 7 days, later). */
+export function OnboardTab({ d, purchases }: { d: Allocation; purchases: PurchaseLite[] | null }) {
+  if (d.requests.length === 0)
+    return (
+      <Panel>
+        <EmptyState icon={d.as_of ? Boxes : PackageSearch} title="Không có nhân viên mới nào cần chuẩn bị thiết bị">
+          Request Nhân viên mới chưa đóng sẽ hiện ở đây sau khi đồng bộ.
+        </EmptyState>
+      </Panel>
+    );
+  const today = isoToday();
+  const week = isoIn(7);
+  const byDate = [...d.requests].sort((x, y) => (x.effective_date ?? "9999").localeCompare(y.effective_date ?? "9999"));
+  const groups = [
+    { key: "late", title: "Đã qua ngày bắt đầu", items: byDate.filter((r) => r.effective_date && r.effective_date < today) },
+    { key: "soon", title: "Bắt đầu trong 7 ngày", items: byDate.filter((r) => r.effective_date && r.effective_date >= today && r.effective_date <= week) },
+    { key: "later", title: "Sau đó", items: byDate.filter((r) => !r.effective_date || r.effective_date > week) },
+  ].filter((g) => g.items.length);
   return (
-    <>
-      <PageHeader
-        title="Kho & cấp phát"
-        description="Đối chiếu band của nhân viên sắp onboard với tiêu chuẩn cấp phát và tài sản In Store trên ServiceDesk Plus: tận dụng thiết bị trong kho trước, thiếu mới đề xuất mua."
-      />
-      {q.isError && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
-      {q.isLoading || !d ? (
-        !q.isError && <LoadingRows rows={6} />
-      ) : (
-        // Phone: employees to act on come first, the stock summary after them.
-        <div className="flex flex-col">
-          <p className="mb-3 flex flex-wrap items-center gap-1 text-sm text-muted">
-            {d.as_of ? `Theo dữ liệu kho đồng bộ lúc ${formatDateTime(d.as_of)}.` : "Chưa đồng bộ dữ liệu kho – vào Đồng bộ dữ liệu để chạy lần đầu."}
-            <HelpTip title="Cách hệ thống gợi ý">
-              <span className="block">1. Lấy <b>band</b> trong request RTR (hoặc band nhập tay) và tra <b>tiêu chuẩn cấp phát</b> (Cấu hình module).</span>
-              <span className="block">2. Mỗi dòng tiêu chuẩn tìm tài sản <b>In Store, chưa gán user</b> đúng loại; ai có ngày hiệu lực sớm hơn được ưu tiên. Tài sản đã chọn trên Job nháp được giữ cho Job đó.</span>
-              <span className="block">3. Không còn tài sản phù hợp → <b>Cần mua</b> → bấm <b>Lập đề xuất mua</b>, đính kèm bằng chứng Function Head duyệt.</span>
-              <span className="block">Dữ liệu kho theo lần đồng bộ gần nhất (menu Đồng bộ dữ liệu).</span>
-            </HelpTip>
-          </p>
-          <section aria-label="Tồn kho" className="order-last mt-5 grid gap-3 sm:order-none sm:mt-0 sm:mb-5 sm:grid-cols-2 lg:grid-cols-4">
-            {d.stock.map((s) => (
-              <Panel
-                key={s.label}
-                title={s.label}
-                description={!s.standard ? "Ngoài tiêu chuẩn cấp phát" : s.bands.length ? `Band ${s.bands.join(", ")}` : undefined}
-                actions={<Button size="sm" variant="ghost" onClick={() => setDetail(s)} aria-label={`Xem chi tiết tồn kho ${s.label}`}>Xem chi tiết</Button>}
-                bodyClassName="grid grid-cols-3 gap-2 p-3 text-center"
-              >
-                <div><p className="text-xl font-semibold tabular">{s.in_store}</p><p className="text-xs text-muted">Trong kho</p></div>
-                <div><p className="text-xl font-semibold tabular">{s.standard ? s.planned : "—"}</p><p className="text-xs text-muted">Sẽ dùng</p></div>
-                <div><p className={cn("text-xl font-semibold tabular", s.to_buy > 0 && "text-waiting")}>{s.standard ? s.to_buy : "—"}</p><p className="text-xs text-muted">Cần mua</p></div>
-              </Panel>
-            ))}
-          </section>
-          {detail && <StockDialog line={detail} onClose={() => setDetail(null)} />}
-          <h2 className="mb-2 flex items-center gap-1 text-lg font-semibold">
-            Nhân viên sắp onboard ({d.requests.length})
+    <div className="space-y-5">
+      {groups.map((g) => (
+        <section key={g.key} aria-labelledby={`onboard-${g.key}`}>
+          <h2 id={`onboard-${g.key}`} className={cn("mb-2 text-sm font-semibold", g.key === "late" ? "text-failed" : "text-muted")}>
+            {g.title} ({g.items.length})
           </h2>
-          {d.requests.length === 0 ? (
-            <Panel><EmptyState icon={d.as_of ? Boxes : PackageSearch} title="Không có onboard nào cần chuẩn bị thiết bị">Request Nhân viên mới chưa đóng sẽ hiện ở đây sau khi đồng bộ.</EmptyState></Panel>
-          ) : (
-            <ul className="space-y-3">
-              {d.requests.map((r) => <RequestCard key={r.id} r={r} purchases={purchases.data?.items ?? null} bands={d.bands} />)}
-            </ul>
-          )}
-        </div>
-      )}
-    </>
+          <ul className="space-y-3">
+            {g.items.map((r) => <RequestCard key={r.id} r={r} purchases={purchases} bands={d.bands} />)}
+          </ul>
+        </section>
+      ))}
+    </div>
   );
 }

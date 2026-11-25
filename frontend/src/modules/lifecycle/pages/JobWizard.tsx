@@ -195,7 +195,7 @@ function PrepareWizard({ job, act, canRun }: { job: Job; act: ReturnType<typeof 
           <dt className="text-muted">Họ tên</dt><dd className="font-medium">{p.request.full_name}</dd>
           <dt className="text-muted">Mã NV</dt><dd><Mono>{p.request.employee_id}</Mono></dd>
           <dt className="text-muted">Ngày hiệu lực</dt><dd>{formatDate(p.request.effective_date)}</dd>
-          {onboard && (<><dt className="text-muted">Band</dt><dd>{p.request.band ?? <span className="text-waiting">Chưa có – nhập ở Kho & cấp phát</span>}{p.request.band_source === "override" && <From>nhập tay</From>}</dd></>)}
+          {onboard && (<><dt className="text-muted">Band</dt><dd>{p.request.band ?? <span className="text-waiting">Chưa có – nhập ở Kho thiết bị</span>}{p.request.band_source === "override" && <From>nhập tay</From>}</dd></>)}
           {p.request.details.map((d) => (<div key={d.key} className="contents"><dt className="text-muted">{d.label}</dt><dd>{d.value}</dd></div>))}
         </dl>
         <p className="mt-4 text-sm text-muted">Thông tin sai? Sửa trên request ServiceDesk Plus rồi chạy Đồng bộ dữ liệu – Job dùng dữ liệu mới.</p>

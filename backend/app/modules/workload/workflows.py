@@ -150,7 +150,7 @@ async def _receive(ctx: StepContext) -> StepOutcome:
         before={"status": before},
         after={"status": "received", "assets": [a["id"] for a in assets]},
     )
-    try:  # refresh Kho & cấp phát so the new stock is suggested for pending onboards
+    try:  # refresh Kho thiết bị so the new stock is suggested for pending onboards
         await request_run(ctx.session, "lifecycle.sync", ctx.actor.upn)
     except NotFound:
         pass  # lifecycle module not installed

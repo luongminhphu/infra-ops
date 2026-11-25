@@ -294,3 +294,27 @@ def test_latest_request_is_the_one_a_job_is_for() -> None:
     row = next(r for r in result.rows if r.employee_id == "002100")
     assert set(row.request_ids) == {"1002", "0900"} and row.latest_request_id == "1002"
     assert row.to_dict()["latest_request_id"] == "1002"
+
+
+def test_returned_stock_is_suggested_first() -> None:
+    from app.modules.lifecycle.allocation import Need, allocate, returned_first
+    from app.modules.lifecycle.settings import StandardItem
+
+    stock = [
+        {"id": "new1", "product_type": "Laptop", "name": "LT-NEW"},
+        {"id": "old1", "product_type": "Laptop", "name": "LT-OLD"},
+    ]
+    ordered = returned_first(stock, {"old1"})
+    assert (
+        [a["id"] for a in ordered] == ["old1", "new1"]
+        and ordered[0]["returned"]
+        and not ordered[1]["returned"]
+    )
+    plan = allocate(
+        [Need("r1", date(2026, 12, 1), "B3", [])],
+        [StandardItem(label="Laptop", product_types=["Laptop"])],
+        ordered,
+    )
+    assert [a["id"] for a in plan["r1"][0].reuse] == [
+        "old1"
+    ]  # the returned laptop goes out, the new one stays
