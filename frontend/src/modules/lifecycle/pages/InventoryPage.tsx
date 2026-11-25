@@ -49,6 +49,7 @@ export interface Allocation {
   stock: StockLine[];
   requests: PlanRequest[];
   bands: string[];
+  no_band: number; // hires without a band: their need is not in to_buy
 }
 export interface PurchaseLite {
   source_ref: string | null;
@@ -57,21 +58,22 @@ export interface PurchaseLite {
 }
 
 const REQ_STATUS: Record<PlanRequest["status"], { status: Status; label: string }> = {
-  covered: { status: "done", label: "Đủ từ kho" },
-  buy: { status: "warning", label: "Cần mua thêm" },
-  no_band: { status: "waiting", label: "Thiếu band" },
+  covered: { status: "done", label: "Đủ thiết bị" },
+  buy: { status: "warning", label: "Thiếu thiết bị" },
+  no_band: { status: "waiting", label: "Chưa có band" },
 };
 
 interface StockItem extends Asset {
   serial: string | null;
-  reserved_for: { name: string | null; display_id: string } | null;
+  reserved_for: { name: string | null; display_id: string; chosen: boolean } | null;
 }
 export interface StockLine {
   label: string;
   bands: string[];
   product_types: string[];
   in_store: number;
-  planned: number;
+  planned: number; // in stock and allocated to an upcoming hire (chosen on a job + suggested)
+  chosen: number;
   to_buy: number;
   items: StockItem[];
   standard: boolean; // false: In Store device type outside the allocation standard (PC, UPS, …)
@@ -160,7 +162,7 @@ export function RequestCard({ r, purchases, bands }: { r: PlanRequest; purchases
       </div>
 
       {r.status === "no_band" ? (
-        <p className="mt-3 text-sm text-waiting">Request RTR không ghi band – bấm biểu tượng bút để nhập band, hệ thống mới đối chiếu được tiêu chuẩn cấp phát.</p>
+        <p className="mt-3 text-sm text-waiting">Request RTR không ghi band – bấm biểu tượng bút để nhập, hệ thống mới tính được thiết bị cần cấp.</p>
       ) : (
         <ul className="mt-3 divide-y divide-line text-sm">
           {r.lines.map((l) => {
@@ -178,11 +180,11 @@ export function RequestCard({ r, purchases, bands }: { r: PlanRequest; purchases
                       to={`/lifecycle/stock?tab=assets&q=${encodeURIComponent(a.asset_tag ?? a.name ?? a.id)}`}
                       className="inline-flex items-center gap-1 rounded-sm bg-primary-soft px-1.5 py-0.5 text-primary hover:underline"
                     >
-                      <PackageOpen className="size-3.5" aria-hidden="true" />Lấy từ kho: {assetText(a)}{a.returned ? " (thu hồi)" : ""}
+                      <PackageOpen className="size-3.5" aria-hidden="true" />Dự kiến: {assetText(a)}{a.returned ? " · Thu hồi" : ""}
                     </Link>
                   ))}
                   {l.buy > 0 && (
-                    <span className="inline-flex items-center gap-1 rounded-sm bg-waiting-soft px-1.5 py-0.5 text-waiting"><ShoppingCart className="size-3.5" aria-hidden="true" />Cần mua {l.buy}</span>
+                    <span className="inline-flex items-center gap-1 rounded-sm bg-waiting-soft px-1.5 py-0.5 text-waiting"><ShoppingCart className="size-3.5" aria-hidden="true" />Thiếu {l.buy}</span>
                   )}
                 </span>
                 {l.buy > 0 &&
@@ -191,7 +193,7 @@ export function RequestCard({ r, purchases, bands }: { r: PlanRequest; purchases
                   ) : (
                     can("workload.purchase.create") && (
                       <Link to={buyLink(l)} className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-line-strong bg-surface px-3 font-medium hover:bg-surface-2">
-                        <ShoppingCart className="size-4" aria-hidden="true" />Lập đề xuất mua
+                        <ShoppingCart className="size-4" aria-hidden="true" />Lập đề xuất mua {l.buy}
                       </Link>
                     )
                   ))}
@@ -204,7 +206,7 @@ export function RequestCard({ r, purchases, bands }: { r: PlanRequest; purchases
       <div className="mt-2 flex flex-wrap gap-2">
         {r.job?.status === "draft" && reuse.length > 0 && can("lifecycle.job.execute") && (
           <Button size="sm" variant="primary" loading={apply.isPending} onClick={() => apply.mutate()}>
-            <Wand2 className="size-4" aria-hidden="true" />Chọn {reuse.length} tài sản từ kho vào Job
+            <Wand2 className="size-4" aria-hidden="true" />Chọn {reuse.length} tài sản dự kiến vào Job
           </Button>
         )}
         {r.job && (

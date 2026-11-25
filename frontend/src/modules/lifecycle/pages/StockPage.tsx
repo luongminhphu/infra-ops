@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Archive, ArchiveRestore, PackageCheck, PackageX, Undo2 } from "lucide-react";
+import { Archive, ArchiveRestore, CircleAlert, PackageCheck, PackageX, Undo2, UserCheck, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
@@ -31,7 +31,7 @@ interface StockItem {
   status: Origin;
   returned_at: string | null;
   returned_from: string | null;
-  reserved_for: { name: string | null; display_id: string } | null;
+  reserved_for: { name: string | null; display_id: string; chosen: boolean } | null;
   missing: ("asset_tag" | "serial")[];
 }
 interface Stock {
@@ -41,16 +41,29 @@ interface Stock {
   can: { manage: boolean; dispose: boolean };
 }
 
-/** One vocabulary: availability (Còn trống / Giữ cho X / Chờ thanh lý) first, origin (Mới / Thu hồi) as a tag. */
-type View = "free" | "reserved" | "returned" | "pending" | "all" | "missing";
+/**
+ * Two axes, never mixed: allocation (Sẵn sàng cấp / Đã phân bổ / Chờ thanh lý – they add up to Tất cả)
+ * and origin (Mới / Thu hồi). "Thiếu" only ever means a quantity short; missing data is "Chưa có …".
+ */
+type View = "free" | "reserved" | "pending" | "all";
 const VIEWS: { v: View; label: string; test: (i: StockItem) => boolean }[] = [
-  { v: "free", label: "Còn trống", test: (i) => i.status !== "pending" && !i.reserved_for },
-  { v: "reserved", label: "Đang giữ", test: (i) => i.status !== "pending" && !!i.reserved_for },
-  { v: "returned", label: "Hàng thu hồi", test: (i) => i.status === "returned" },
+  { v: "free", label: "Sẵn sàng cấp", test: (i) => i.status !== "pending" && !i.reserved_for },
+  { v: "reserved", label: "Đã phân bổ", test: (i) => i.status !== "pending" && !!i.reserved_for },
   { v: "pending", label: "Chờ thanh lý", test: (i) => i.status === "pending" },
   { v: "all", label: "Tất cả", test: () => true },
 ];
+type OriginView = "" | "new" | "returned";
+const ORIGINS: { v: OriginView; label: string }[] = [
+  { v: "", label: "Mọi nguồn" },
+  { v: "new", label: "Mới" },
+  { v: "returned", label: "Thu hồi" },
+];
 const MISSING = (i: StockItem) => i.missing.length > 0;
+const chip = (on: boolean) =>
+  cn(
+    "h-8 cursor-pointer rounded-full border px-3 text-sm transition-colors duration-150",
+    on ? "border-primary bg-primary-soft font-medium text-primary" : "border-line-strong bg-surface hover:bg-surface-2",
+  );
 const STOCK_KEY = ["lifecycle", "stock"] as const;
 const ALLOC_KEY = ["lifecycle", "allocation"] as const;
 
@@ -58,15 +71,30 @@ function Availability({ i, updating }: { i: StockItem; updating?: "running" | "s
   if (updating === "running") return <StatusBadge status="in_progress" label="Đang cập nhật trên SDP…" />;
   if (updating === "sync") return <StatusBadge status="pending" label="Đã ghi SDP – chờ đồng bộ" />;
   if (i.status === "pending") return <StatusBadge status="warning" label="Chờ thanh lý" />;
-  if (i.reserved_for) return <StatusBadge status="waiting" label={`Giữ cho ${i.reserved_for.name ?? `#${i.reserved_for.display_id}`}`} />;
-  return <StatusBadge status="match" label="Còn trống" />;
+  if (i.reserved_for) {
+    const who = i.reserved_for.name ?? `#${i.reserved_for.display_id}`;
+    const Icon = i.reserved_for.chosen ? UserCheck : UserRound;
+    return (
+      <span
+        className={cn(
+          "inline-flex h-6 items-center gap-1 rounded-full px-2 text-sm font-medium whitespace-nowrap text-primary",
+          i.reserved_for.chosen ? "bg-primary-soft" : "border border-dashed border-primary",
+        )}
+      >
+        <Icon className="size-3.5" aria-hidden="true" />
+        {i.reserved_for.chosen ? `Đã chọn cho ${who}` : `Dự kiến cho ${who}`}
+      </span>
+    );
+  }
+  // Same word as the filter; green only when the record is complete enough to hand over.
+  return <StatusBadge status={i.missing.length ? "warning" : "match"} label="Sẵn sàng cấp" />;
 }
 
 const origin = (i: StockItem) =>
   i.status === "returned"
     ? `Thu hồi${i.returned_from ? ` từ ${i.returned_from}` : ""}${i.returned_at ? ` · ${formatDate(i.returned_at)}` : ""}`
     : i.status === "new"
-      ? "Hàng mới"
+      ? "Mới"
       : "";
 
 /** Assets in stock: filters in the URL, multi-select bulk bar, SDP state changes as worker jobs. */
@@ -74,7 +102,11 @@ function AssetsTab({ d }: { d: Stock }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const view = ((params.get("status") as View) || "free") as View | "missing";
+  // status=returned / status=missing are older links: origin and missing data are their own filters now.
+  const rawView = params.get("status") ?? "";
+  const view: View = VIEWS.some((x) => x.v === rawView) ? (rawView as View) : rawView ? "all" : "free";
+  const originView = (params.get("origin") ?? (rawView === "returned" ? "returned" : "")) as OriginView;
+  const onlyMissing = params.get("missing") === "1" || rawView === "missing";
   const type = params.get("type") ?? "";
   const [search, setSearch] = useState(params.get("q") ?? "");
   const [picked, setPicked] = useState<string[]>([]);
@@ -111,11 +143,14 @@ function AssetsTab({ d }: { d: Stock }) {
   };
 
   const types = useMemo(() => [...new Set(d.items.map((i) => i.product_type ?? "Khác"))].sort(), [d.items]);
-  const test = view === "missing" ? MISSING : (VIEWS.find((x) => x.v === view) ?? VIEWS[0]!).test;
+  const test = (VIEWS.find((x) => x.v === view) ?? VIEWS[0]!).test;
+  const ofOrigin = (o: OriginView) => (i: StockItem) => !o || i.status === o;
   const needle = (params.get("q") ?? "").trim().toLowerCase();
   const shown = d.items.filter(
     (i) =>
       test(i) &&
+      ofOrigin(originView)(i) &&
+      (!onlyMissing || MISSING(i)) &&
       (!type || (i.product_type ?? "Khác") === type) &&
       (!needle || [i.asset_tag, i.serial, i.name, i.product, i.reserved_for?.name].some((x) => x?.toLowerCase().includes(needle))),
   );
@@ -131,7 +166,7 @@ function AssetsTab({ d }: { d: Stock }) {
   const mark = useMutation({
     mutationFn: (returned: boolean) => api("/api/lifecycle/stock/returned", { method: "POST", json: { asset_ids: picked, returned } }),
     onSuccess: async (_r, returned) => {
-      toast.success(returned ? `Đã đánh dấu ${picked.length} tài sản là hàng thu hồi.` : `Đã chuyển ${picked.length} tài sản về hàng mới.`);
+      toast.success(returned ? `Đã đánh dấu ${picked.length} tài sản là Thu hồi.` : `Đã đánh dấu ${picked.length} tài sản là Mới.`);
       setPicked([]);
       await qc.invalidateQueries({ queryKey: STOCK_KEY });
       await qc.invalidateQueries({ queryKey: ALLOC_KEY });
@@ -145,7 +180,7 @@ function AssetsTab({ d }: { d: Stock }) {
         json: { to, assets: selected.map((i) => ({ id: i.id, tag: i.asset_tag ?? "", name: i.name ?? "" })) },
       }),
     onSuccess: (r, to) => {
-      const what = to === "disposed" ? "Thanh lý" : to === "pending" ? "Chuyển sang Chờ thanh lý" : "Trả về kho";
+      const what = to === "disposed" ? "Thanh lý" : to === "pending" ? "Chuyển sang Chờ thanh lý" : "Bỏ chờ thanh lý";
       setJobs((j) => ({ ...j, ...Object.fromEntries(picked.map((id) => [id, r.job_id])) }));
       toast.success(`${what}: đang ghi ${selected.length} tài sản lên SDP.`, {
         action: { label: "Xem Job", onClick: () => navigate(`/lifecycle/jobs/${r.job_id}`) },
@@ -166,7 +201,7 @@ function AssetsTab({ d }: { d: Stock }) {
       onChange={() => toggle(i.id)}
     />
   );
-  const missing = (label: string) => <StatusBadge status="failed" label={`Thiếu ${label}`} />;
+  const missing = (label: string) => <StatusBadge status="failed" label={`Chưa có ${label}`} />;
   const columns = useMemo<ColumnDef<StockItem, unknown>[]>(
     () => [
       ...(canPick
@@ -203,7 +238,7 @@ function AssetsTab({ d }: { d: Stock }) {
       },
       {
         id: "availability",
-        header: "Tình trạng",
+        header: "Phân bổ",
         enableSorting: false,
         cell: (c) => (
           <span className="block">
@@ -223,37 +258,39 @@ function AssetsTab({ d }: { d: Stock }) {
 
   return (
     <>
-      <div className="mb-3 flex flex-wrap items-center gap-2" role="group" aria-label="Lọc theo tình trạng">
-        {VIEWS.map((t) => (
-          <button
-            key={t.v}
-            type="button"
-            aria-pressed={view === t.v}
-            onClick={() => setParam("status", t.v === "free" ? "" : t.v)}
-            className={cn(
-              "h-8 cursor-pointer rounded-full border px-3 text-sm transition-colors duration-150",
-              view === t.v ? "border-primary bg-primary-soft font-medium text-primary" : "border-line-strong bg-surface hover:bg-surface-2",
-            )}
-          >
-            {t.label} <span className="tabular">({count(t.test)})</span>
-          </button>
-        ))}
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Lọc theo phân bổ">
+          {VIEWS.map((t) => (
+            <button key={t.v} type="button" aria-pressed={view === t.v} onClick={() => setParam("status", t.v === "free" ? "" : t.v)} className={chip(view === t.v)}>
+              {t.label} <span className="tabular">({count((i) => t.test(i) && ofOrigin(originView)(i))})</span>
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Lọc theo nguồn">
+          <span className="text-sm text-muted">Nguồn:</span>
+          {ORIGINS.map((o) => (
+            <button key={o.v || "any"} type="button" aria-pressed={originView === o.v} onClick={() => setParam("origin", o.v)} className={chip(originView === o.v)}>
+              {o.label}
+              {o.v && <> <span className="tabular">({count((i) => test(i) && ofOrigin(o.v)(i))})</span></>}
+            </button>
+          ))}
+        </div>
         {count(MISSING) > 0 && (
           <button
             type="button"
-            aria-pressed={view === "missing"}
-            onClick={() => setParam("status", "missing")}
+            aria-pressed={onlyMissing}
+            onClick={() => setParam("missing", onlyMissing ? "" : "1")}
             className={cn(
               "h-8 cursor-pointer rounded-full border px-3 text-sm",
-              view === "missing" ? "border-failed bg-failed-soft font-medium text-failed" : "border-failed text-failed hover:bg-failed-soft",
+              onlyMissing ? "border-failed bg-failed-soft font-medium text-failed" : "border-failed text-failed hover:bg-failed-soft",
             )}
           >
-            Thiếu mã TS / serial <span className="tabular">({count(MISSING)})</span>
+            Chưa có mã TS / serial <span className="tabular">({count(MISSING)})</span>
           </button>
         )}
       </div>
       <form role="search" aria-label="Lọc tài sản" className="mb-3 grid gap-3 sm:grid-cols-[2fr_1fr]" onSubmit={(e) => e.preventDefault()}>
-        <Field label="Tìm mã tài sản, serial, tên hoặc người được giữ">
+        <Field label="Tìm mã tài sản, serial, tên hoặc nhân viên được phân bổ">
           <Input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Ví dụ: HCM-2026-LT-1234 hoặc 5CD43…" />
         </Field>
         <Field label="Loại tài sản">
@@ -268,22 +305,22 @@ function AssetsTab({ d }: { d: Stock }) {
           <span className="mr-1">Đã chọn <strong className="tabular">{picked.length}</strong> tài sản</span>
           {d.can.manage && selected.some((i) => i.status === "new") && (
             <Button size="sm" onClick={() => mark.mutate(true)} loading={mark.isPending}>
-              <ArchiveRestore className="size-4" aria-hidden="true" />Đánh dấu thu hồi
+              <ArchiveRestore className="size-4" aria-hidden="true" />Đánh dấu Thu hồi
             </Button>
           )}
           {d.can.manage && selected.some((i) => i.status === "returned") && (
             <Button size="sm" onClick={() => mark.mutate(false)} loading={mark.isPending}>
-              <Undo2 className="size-4" aria-hidden="true" />Chuyển về hàng mới
+              <Undo2 className="size-4" aria-hidden="true" />Đánh dấu Mới
             </Button>
           )}
           {d.can.manage && selected.every((i) => i.status !== "pending") && (
             <Button size="sm" onClick={() => setConfirm("pending")}>
-              <PackageX className="size-4" aria-hidden="true" />Chuyển Chờ thanh lý…
+              <PackageX className="size-4" aria-hidden="true" />Chuyển sang Chờ thanh lý…
             </Button>
           )}
           {d.can.manage && selected.every((i) => i.status === "pending") && (
             <Button size="sm" onClick={() => change.mutate("in_store")} loading={change.isPending}>
-              <PackageCheck className="size-4" aria-hidden="true" />Trả về kho
+              <PackageCheck className="size-4" aria-hidden="true" />Bỏ chờ thanh lý
             </Button>
           )}
           {d.can.dispose && selected.every((i) => i.status === "pending") && (
@@ -293,7 +330,7 @@ function AssetsTab({ d }: { d: Stock }) {
           )}
           <Button size="sm" variant="ghost" onClick={() => setPicked([])}>Bỏ chọn</Button>
           {selected.some((i) => i.status === "pending") && selected.some((i) => i.status !== "pending") && (
-            <span className="basis-full text-muted">Chọn riêng hàng Chờ thanh lý để thanh lý hoặc trả về kho.</span>
+            <span className="basis-full text-muted">Chọn riêng hàng Chờ thanh lý để thanh lý hoặc bỏ chờ thanh lý.</span>
           )}
         </div>
       )}
@@ -324,7 +361,7 @@ function AssetsTab({ d }: { d: Stock }) {
           getRowId={(r) => r.id}
           empty={
             <EmptyState icon={Archive} title={d.items.length ? "Không có tài sản phù hợp" : "Kho trống"}>
-              {d.items.length ? "Đổi bộ lọc tình trạng hoặc loại để xem tài sản khác." : "Không có tài sản nào chưa gán người dùng."}
+              {d.items.length ? "Đổi bộ lọc phân bổ, nguồn hoặc loại để xem tài sản khác." : "Không có tài sản nào chưa gán người dùng."}
             </EmptyState>
           }
         />
@@ -333,18 +370,18 @@ function AssetsTab({ d }: { d: Stock }) {
         open={confirm === "pending"}
         onClose={() => setConfirm(null)}
         title={`Chuyển ${selected.length} tài sản sang Chờ thanh lý`}
-        description={`Đổi trạng thái trên ServiceDesk Plus thành “${d.states.pending}” bằng API key của bạn. Có thể trả về kho sau.`}
+        description={`Đổi trạng thái trên ServiceDesk Plus thành “${d.states.pending}” bằng API key của bạn. Có thể bỏ chờ thanh lý sau.`}
         footer={
           <>
             <Button onClick={() => setConfirm(null)}>Huỷ</Button>
-            <Button variant="primary" loading={change.isPending} onClick={() => change.mutate("pending")}>Chuyển Chờ thanh lý</Button>
+            <Button variant="primary" loading={change.isPending} onClick={() => change.mutate("pending")}>Chuyển sang Chờ thanh lý</Button>
           </>
         }
       >
         <p className="font-mono text-sm">{tags(selected)}</p>
         {reservedPicked.length > 0 && (
           <p role="alert" className="mt-3 rounded-sm bg-waiting-soft px-3 py-2 text-sm text-waiting">
-            {reservedPicked.length} tài sản đang giữ cho nhân viên sắp onboard ({tags(reservedPicked)}). Chuyển đi thì hệ thống sẽ gợi ý tài sản khác hoặc đề xuất mua.
+            {reservedPicked.length} tài sản đã phân bổ cho nhân viên sắp onboard ({tags(reservedPicked)}). Chuyển đi thì hệ thống sẽ dự kiến tài sản khác hoặc báo thiếu.
           </p>
         )}
       </Dialog>
@@ -390,7 +427,7 @@ export function StockPage() {
     setParams(p, { replace: true });
   };
   const pendingOf = (types: string[]) => (s?.items ?? []).filter((i) => i.status === "pending" && types.includes(i.product_type ?? "")).length;
-  const tiles = (a?.stock ?? []).map((l) => ({ ...l, pending: pendingOf(l.product_types), free: Math.max(0, l.in_store - l.planned) }));
+  const tiles = (a?.stock ?? []).map((l) => ({ ...l, pending: pendingOf(l.product_types), free: l.in_store - l.planned }));
   const live = tiles.filter((t) => t.standard && (t.in_store || t.to_buy || t.pending));
   const empty = tiles.filter((t) => t.standard && !t.in_store && !t.to_buy && !t.pending);
   const other = tiles.filter((t) => !t.standard);
@@ -404,8 +441,10 @@ export function StockPage() {
           <>
             Chuẩn bị thiết bị cho nhân viên mới từ kho trên ServiceDesk Plus, thiếu thì đề xuất mua; quản lý hàng mới, hàng thu hồi và hàng chờ thanh lý.{" "}
             <HelpTip title="Kho thiết bị">
-              <span className="block"><b>Gợi ý cho nhân viên mới:</b> lấy band trong request RTR (hoặc nhập tay), tra tiêu chuẩn cấp phát, rồi lấy tài sản còn trống đúng loại – <b>hàng thu hồi trước, hàng mới sau</b>; ai bắt đầu sớm hơn được ưu tiên; tài sản đã chọn trên Job nháp giữ cho Job đó. Không đủ → Cần mua → Lập đề xuất mua.</span>
-              <span className="block"><b>Tình trạng tài sản:</b> Còn trống, Giữ cho (một nhân viên sắp onboard), Chờ thanh lý (“{s?.states.pending ?? "Chờ thanh lý"}” trên SDP). Hàng thu hồi do đồng bộ tự nhận ra hoặc đánh dấu tay. Thanh lý đổi sang “{s?.states.disposed ?? "Disposed"}” – chỉ Manager và Administrator.</span>
+              <span className="block"><b>Trong kho = Sẵn sàng cấp + Đã phân bổ.</b> Sẵn sàng cấp: chưa dành cho ai. Đã phân bổ: dành cho một nhân viên sắp onboard – <i>Đã chọn</i> (đã ghi vào Job) hoặc <i>Dự kiến</i> (hệ thống gợi ý, còn đổi được).</span>
+              <span className="block"><b>Thiếu</b>: số thiết bị theo tiêu chuẩn cấp phát mà kho không đủ → Lập đề xuất mua. Nhân viên chưa có band chưa được tính.</span>
+              <span className="block"><b>Dự kiến</b> lấy tài sản đúng loại theo band – <b>hàng Thu hồi trước, hàng Mới sau</b>; ai bắt đầu sớm hơn được ưu tiên.</span>
+              <span className="block"><b>Nguồn:</b> Mới hoặc Thu hồi (đồng bộ tự nhận ra hoặc đánh dấu tay). <b>Chờ thanh lý</b> (“{s?.states.pending ?? "Chờ thanh lý"}” trên SDP) không tính vào Trong kho; thanh lý đổi sang “{s?.states.disposed ?? "Disposed"}” – chỉ Manager và Administrator.</span>
               <span className="block">Thay đổi trên SDP chạy bằng API key của chính bạn (Khoá API của tôi). Mã tài sản và serial là bắt buộc – tài sản thiếu được đánh dấu đỏ.</span>
             </HelpTip>
           </>
@@ -423,28 +462,48 @@ export function StockPage() {
       ) : (
         <>
           <p className="mb-3 text-sm text-muted">Theo dữ liệu đồng bộ lúc {formatDateTime(s.as_of)}.</p>
-          <ul aria-label="Kho theo loại thiết bị" className="mb-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {a.no_band > 0 && (
+            <p className="mb-3 flex items-start gap-1.5 text-sm text-waiting">
+              <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              Chưa tính thiết bị cho {a.no_band} nhân viên chưa có band – số Thiếu có thể tăng khi nhập band.
+            </p>
+          )}
+          <ul aria-label="Kho theo loại thiết bị" className="mb-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {live.map((t) => (
               <li key={t.label}>
                 <button
                   type="button"
                   onClick={() => go({ tab: "assets", type: t.product_types[0] ?? "", status: "all" })}
-                  className="block w-full cursor-pointer rounded-md border border-line bg-surface p-3 text-left shadow-card hover:bg-surface-2"
+                  className={cn(
+                    "block w-full cursor-pointer rounded-md border bg-surface p-3 text-left shadow-card hover:bg-surface-2",
+                    t.to_buy > 0 ? "border-waiting" : "border-line",
+                  )}
                 >
-                  <span className="block font-semibold">{t.label}</span>
+                  <span className="flex items-baseline justify-between gap-2">
+                    <span className="font-semibold">{t.label}</span>
+                    <span className="text-xs text-muted"><span className="tabular">{t.in_store}</span> trong kho</span>
+                  </span>
                   <dl className="mt-1 grid grid-cols-3 gap-1 text-sm">
-                    <div><dt className="text-xs text-muted">Còn trống</dt><dd className="text-lg font-semibold tabular">{t.free}</dd></div>
-                    <div><dt className="text-xs text-muted">Đang giữ</dt><dd className="text-lg font-semibold tabular">{t.planned}</dd></div>
-                    <div><dt className="text-xs text-muted">Cần mua</dt><dd className={cn("text-lg font-semibold tabular", t.to_buy > 0 && "text-waiting")}>{t.to_buy}</dd></div>
+                    <div><dt className="text-xs text-muted">Sẵn sàng cấp</dt><dd className="text-lg font-semibold tabular">{t.free}</dd></div>
+                    <div>
+                      <dt className="text-xs text-muted">Đã phân bổ</dt>
+                      <dd className="text-lg font-semibold tabular">{t.planned}</dd>
+                      {t.planned > 0 && (
+                        <dd className="text-xs text-muted tabular">
+                          {[t.chosen && `${t.chosen} đã chọn`, t.planned - t.chosen && `${t.planned - t.chosen} dự kiến`].filter(Boolean).join(" · ")}
+                        </dd>
+                      )}
+                    </div>
+                    <div><dt className="text-xs text-muted">Thiếu</dt><dd className={cn("text-lg font-semibold tabular", t.to_buy > 0 && "text-waiting")}>{t.to_buy}</dd></div>
                   </dl>
-                  {t.pending > 0 && <span className="mt-1 block text-xs text-muted">+ {t.pending} chờ thanh lý</span>}
+                  {t.pending > 0 && <span className="mt-1 block text-xs text-muted">Ngoài ra {t.pending} chờ thanh lý</span>}
                 </button>
               </li>
             ))}
           </ul>
           {(empty.length > 0 || other.length > 0) && (
             <p className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
-              {empty.length > 0 && <span>Không có tồn và không cần: {empty.map((t) => t.label).join(", ")}.</span>}
+              {empty.length > 0 && <span>Không có trong kho{a.no_band ? "" : ", không thiếu"}: {empty.map((t) => t.label).join(", ")}.</span>}
               {other.length > 0 && (
                 <span className="flex flex-wrap items-center gap-1.5">
                   Ngoài tiêu chuẩn:
@@ -468,7 +527,7 @@ export function StockPage() {
             onChange={(k) => go({ tab: k })}
             tabs={[
               { key: "onboard", label: <>Nhân viên mới {needAction > 0 ? <span className="text-waiting">({needAction} cần xử lý)</span> : `(${a.requests.length})`}</> },
-              { key: "assets", label: `Tài sản trong kho (${s.items.length})` },
+              { key: "assets", label: `Tài sản (${s.items.length})` },
             ]}
           >
             <div className="pt-4">{tab === "assets" ? <AssetsTab d={s} /> : <OnboardTab d={a} purchases={purchases.data?.items ?? null} />}</div>

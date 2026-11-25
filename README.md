@@ -510,20 +510,22 @@ Mã NV…) hoặc *Không cần làm gì* khi hệ thống đang tự chạy.
 
 ### Kho thiết bị (Vòng đời nhân sự)
 Một trang cho cả cấp phát và tồn kho (đường dẫn cũ `/lifecycle/inventory` tự chuyển về đây). Đầu trang là ô theo loại
-thiết bị: *Còn trống*, *Đang giữ*, *Cần mua* (+ số chờ thanh lý); bấm ô để xem danh sách tài sản của loại đó.
+thiết bị: *N trong kho* = *Sẵn sàng cấp* (chưa dành cho ai) + *Đã phân bổ* (đã chọn vào Job hoặc dự kiến cho nhân viên sắp
+onboard), và *Thiếu* (kho không đủ theo tiêu chuẩn → lập đề xuất mua); nhân viên chưa có band chưa được tính và trang ghi
+rõ số người đó. Bấm ô để xem danh sách tài sản của loại đó.
 1. **Cấu hình module → Tiêu chuẩn cấp phát thiết bị theo band**: mỗi dòng là một thiết bị (band áp dụng, loại tài
    sản SDP, model chứa – tuỳ chọn, số lượng, tên trong bảng giá). Band lấy từ dòng `Band:` trong request RTR (đổi
    nhãn ở mục Request RTR); thiếu band thì Operator nhập tay ở tab **Nhân viên mới**.
 2. Tab **Nhân viên mới** chia nhóm *Đã qua ngày bắt đầu* / *Bắt đầu trong 7 ngày* / *Sau đó*. Tài sản In Store, chưa
    gán user, của lần đồng bộ gần nhất được gợi ý theo ngày hiệu lực; **hàng thu hồi được gợi ý trước hàng mới**; tài
-   sản đã chọn trên Job nháp giữ cho Job đó. Mỗi dòng hiện *Lấy từ kho* (bấm để xem tài sản) hoặc *Cần mua* → **Lập đề
-   xuất mua**. **Chọn N tài sản từ kho vào Job** ghi gợi ý vào Job nháp.
-3. Tab **Tài sản trong kho**: lọc *Còn trống*, *Đang giữ*, *Hàng thu hồi*, *Chờ thanh lý*, *Tất cả*, theo loại, tìm theo
-   mã tài sản / serial / tên. Mã tài sản và serial là bắt buộc: tài sản thiếu được đánh dấu đỏ (lọc **Thiếu mã TS /
+   sản đã chọn trên Job nháp giữ cho Job đó. Mỗi dòng hiện *Đã chọn*, *Dự kiến* (bấm để xem tài sản) hoặc *Thiếu* → **Lập đề
+   xuất mua**. **Chọn N tài sản dự kiến vào Job** ghi gợi ý vào Job nháp.
+3. Tab **Tài sản**: lọc theo phân bổ (*Sẵn sàng cấp*, *Đã phân bổ*, *Chờ thanh lý*, *Tất cả*), theo nguồn (*Mới*, *Thu hồi*), theo loại, tìm theo
+   mã tài sản / serial / tên. Mã tài sản và serial là bắt buộc: tài sản thiếu được đánh dấu đỏ (lọc **Chưa có mã TS /
    serial**) để bổ sung trên SDP.
    - **Thu hồi**: đồng bộ tự nhận ra tài sản lần trước đang gán cho ai đó nay về In Store (ghi người trả, ngày); Manager /
      Supervisor có thể đánh dấu tay hoặc chuyển về hàng mới.
-   - Chọn nhiều rồi **Chuyển Chờ thanh lý** / **Trả về kho** (Manager, Supervisor) hoặc **Thanh lý trên SDP** (chỉ
+   - Chọn nhiều rồi **Chuyển sang Chờ thanh lý** / **Bỏ chờ thanh lý** (Manager, Supervisor) hoặc **Thanh lý trên SDP** (chỉ
      **Manager** và **Administrator**, nhập `THANH LY` để xác nhận; chỉ áp dụng cho hàng đang Chờ thanh lý). Thay đổi
      chạy bằng Job nền với API key cá nhân của người bấm; dòng tài sản hiện tiến độ cho tới lần đồng bộ sau.
    - Trên SDP cần có trạng thái tài sản cho "Chờ thanh lý" (mặc định tên `Chờ thanh lý`) và "Disposed"; đổi tên ở
