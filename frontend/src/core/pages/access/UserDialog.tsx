@@ -14,6 +14,7 @@ export function UserDialog({ open, onClose, user, roles }: { open: boolean; onCl
   const { me } = useAuth();
   const isNew = !user;
   const localMode = me?.auth_mode === "local";
+  const localLogin = !!me?.local_login; // SSO + local accounts: the password is optional
   const [upn, setUpn] = useState("");
   const [name, setName] = useState("");
   const [roleIds, setRoleIds] = useState<string[]>([]);
@@ -109,11 +110,17 @@ export function UserDialog({ open, onClose, user, roles }: { open: boolean; onCl
             ))}
           </div>
         </fieldset>
-        {(needsPassword || (!isNew && user?.is_local)) && (
+        {(needsPassword || (isNew && localLogin) || (!isNew && (user?.is_local || localLogin))) && (
           <Field
-            label={isNew ? "Mật khẩu ban đầu" : "Đặt lại mật khẩu"}
+            label={isNew ? "Mật khẩu ban đầu" : user?.is_local ? "Đặt lại mật khẩu" : "Mật khẩu tài khoản nội bộ"}
             required={needsPassword}
-            hint={isNew ? "Tối thiểu 12 ký tự, gồm ít nhất 3 loại ký tự. Gửi cho người dùng qua kênh an toàn." : "Để trống nếu không đổi. Người dùng sẽ bị đăng xuất khỏi mọi phiên."}
+            hint={
+              !localMode
+                ? "Tuỳ chọn. Để trống: chỉ đăng nhập bằng Microsoft SSO. Đặt mật khẩu: người này đăng nhập được thêm bằng tài khoản nội bộ (tối thiểu 12 ký tự, 3 loại ký tự)."
+                : isNew
+                  ? "Tối thiểu 12 ký tự, gồm ít nhất 3 loại ký tự. Gửi cho người dùng qua kênh an toàn."
+                  : "Để trống nếu không đổi. Người dùng sẽ bị đăng xuất khỏi mọi phiên."
+            }
             error={errors.password}
             showError={submitted}
           >

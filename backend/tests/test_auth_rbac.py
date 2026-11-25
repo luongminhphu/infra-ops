@@ -14,7 +14,7 @@ async def test_me_requires_login(client) -> None:  # type: ignore[no-untyped-def
 async def test_auth_config_reports_secure_cookie(client) -> None:  # type: ignore[no-untyped-def]
     # The login page warns on plain http:// when the session cookie is Secure (browsers would drop it).
     r = await client.get("/api/core/auth/config")
-    assert r.json() == {"mode": "dev", "cookie_secure": False}
+    assert r.json() == {"mode": "dev", "cookie_secure": False, "local_login": False}
 
 
 async def test_bootstrap_admin_gets_all_permissions(admin) -> None:  # type: ignore[no-untyped-def]
@@ -102,6 +102,33 @@ async def test_unknown_permission_rejected(admin) -> None:  # type: ignore[no-un
         "/api/core/roles", json={"code": "custom", "name": "C", "permissions": ["nope.x.y"]}
     )
     assert resp.json()["error"]["code"] == "unknown_permission"
+
+
+async def test_sso_with_local_accounts(client, settings, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # SSO by default; local accounts only when INFRAOPS_ALLOW_LOCAL_LOGIN is on, and only those with a password.
+    monkeypatch.setattr(settings, "auth_mode", "oidc")
+    async with get_sessionmaker()() as s:
+        s.add(
+            User(
+                upn="break-glass@test.local",
+                display_name="BG",
+                password_hash=hash_password("Good-Password-1"),
+            )
+        )
+        s.add(User(upn="sso-only@test.local", display_name="SSO"))
+        await s.commit()
+    creds = {"username": "break-glass@test.local", "password": "Good-Password-1"}
+    off = await client.post("/api/core/auth/login", json=creds)
+    assert off.json()["error"]["code"] == "use_sso"
+    monkeypatch.setattr(settings, "allow_local_login", True)
+    cfg = (await client.get("/api/core/auth/config")).json()
+    assert cfg["mode"] == "oidc" and cfg["local_login"] is True
+    sso_only = await client.post(
+        "/api/core/auth/login", json={"username": "sso-only@test.local", "password": "x"}
+    )
+    assert sso_only.status_code == 401
+    assert (await client.post("/api/core/auth/login", json=creds)).status_code == 204
+    assert (await client.get("/api/core/me")).json()["local_login"] is True
 
 
 async def test_local_login_and_lockout(client, settings, monkeypatch) -> None:  # type: ignore[no-untyped-def]

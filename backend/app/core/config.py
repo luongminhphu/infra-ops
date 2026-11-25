@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     # "local": username/password accounts managed in the app (interim, until Entra SSO is set up).
     # "oidc": Microsoft Entra ID SSO. "dev": passwordless login for local development only.
     auth_mode: Literal["local", "oidc", "dev"] = "local"
+    # With SSO: also accept accounts that have a password in infra-ops (login page shows it as a second option).
+    allow_local_login: bool = False
     oidc_tenant_id: str = ""
     oidc_client_id: str = ""
     oidc_client_secret: SecretStr = SecretStr("")
@@ -88,6 +90,11 @@ class Settings(BaseSettings):
             if len(self.signing_secret.get_secret_value()) < 32:
                 raise ValueError("INFRAOPS_SIGNING_SECRET must be at least 32 characters in production")
         return self
+
+    @property
+    def local_login(self) -> bool:
+        """Username/password sign-in is accepted (local mode, or SSO with local accounts allowed)."""
+        return self.auth_mode == "local" or (self.auth_mode == "oidc" and self.allow_local_login)
 
     @property
     def oidc_issuer(self) -> str:

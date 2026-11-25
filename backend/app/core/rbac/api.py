@@ -292,9 +292,10 @@ async def create_user(
         raise Conflict("Người dùng đã tồn tại.")
     await _check_roles(session, body.role_ids)
     new = User(upn=body.upn.strip().lower(), display_name=body.display_name)
-    if get_settings().auth_mode == "local":
-        if not body.password:
-            raise AppError("Cần đặt mật khẩu ban đầu cho tài khoản.", code="password_required")
+    settings = get_settings()
+    if settings.auth_mode == "local" and not body.password:
+        raise AppError("Cần đặt mật khẩu ban đầu cho tài khoản.", code="password_required")
+    if body.password and settings.local_login:  # SSO + local accounts: the password is optional
         new.password_hash = _check_password(body.password)
     session.add(new)
     await session.flush()
@@ -339,7 +340,7 @@ async def update_user(
         await _check_roles(session, body.role_ids)
         await set_user_roles(session, target.id, body.role_ids)
     if body.password:
-        if target.password_hash is None:
+        if target.password_hash is None and not get_settings().local_login:
             raise AppError("Tài khoản SSO không có mật khẩu trong infra-ops.", code="not_local")
         target.password_hash = _check_password(body.password)
         await destroy_user_sessions(session, target.id)

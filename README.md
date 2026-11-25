@@ -249,7 +249,7 @@ Test không bao giờ gọi hệ thống thật: SDP/BioStar được mock bằn
 | `INFRAOPS_AUTH_MODE` | Dùng khi |
 |---|---|
 | `local` (mặc định) | Tài khoản nội bộ do Admin tạo; mật khẩu băm scrypt, khoá 15 phút sau 5 lần sai |
-| `oidc` | SSO Microsoft Entra ID (khi đã có App Registration): đặt `INFRAOPS_OIDC_TENANT_ID`, `INFRAOPS_OIDC_CLIENT_ID`, `INFRAOPS_OIDC_CLIENT_SECRET`; redirect URI `https://<host>/api/core/auth/oidc/callback` |
+| `oidc` | SSO Microsoft Entra ID (khi đã có App Registration): đặt `INFRAOPS_OIDC_TENANT_ID`, `INFRAOPS_OIDC_CLIENT_ID`, `INFRAOPS_OIDC_CLIENT_SECRET`; redirect URI `https://<host>/api/core/auth/oidc/callback`. Thêm `INFRAOPS_ALLOW_LOCAL_LOGIN=true` để vẫn cho đăng nhập bằng tài khoản nội bộ (mục phụ dưới nút Microsoft) |
 | `dev` | Chỉ để phát triển |
 
 Vai trò được gán hoàn toàn trong app (Người dùng & quyền), xếp từ ít quyền đến nhiều quyền nhất:
@@ -313,6 +313,7 @@ INFRAOPS_OIDC_TENANT_ID=<Directory (tenant) ID>
 INFRAOPS_OIDC_CLIENT_ID=<Application (client) ID>
 INFRAOPS_OIDC_CLIENT_SECRET=<Value của client secret>
 INFRAOPS_BOOTSTRAP_ADMIN_UPNS=admin.it@congty.vn   # UPN nhận vai trò Administrator khi đăng nhập SSO (nhiều người: cách nhau dấu phẩy)
+INFRAOPS_ALLOW_LOCAL_LOGIN=true   # tuỳ chọn: dưới nút Microsoft có thêm "Đăng nhập bằng tài khoản nội bộ"
 ```
 
 ```bash
@@ -324,8 +325,12 @@ khoản trong `INFRAOPS_BOOTSTRAP_ADMIN_UPNS` → menu tài khoản ở góc ph�
 thành viên khác ở *Người dùng & quyền*.
 
 Lưu ý:
-- Ở chế độ `oidc`, mọi tài khoản nội bộ (kể cả `admin` tạo bằng `create-admin`) **không đăng nhập được**. Muốn quay lại
-  tạm thời: đặt `INFRAOPS_AUTH_MODE=local` rồi `sudo docker compose up -d`.
+- Ở chế độ `oidc`, trang đăng nhập mặc định chỉ có nút **Đăng nhập bằng tài khoản Microsoft**. Đặt
+  `INFRAOPS_ALLOW_LOCAL_LOGIN=true` để bên dưới có thêm mục **Đăng nhập bằng tài khoản nội bộ** (thu gọn sẵn): chỉ tài
+  khoản có mật khẩu trong infra-ops đăng nhập được (vd. `admin` tạo bằng `create-admin`, hoặc tài khoản Administrator đặt
+  mật khẩu trong *Người dùng & quyền* – ô mật khẩu là tuỳ chọn); người chỉ dùng SSO vẫn phải bấm nút Microsoft. Nên
+  giữ ít nhất một tài khoản nội bộ Administrator làm **tài khoản dự phòng** khi Entra/Internet gặp sự cố. Tắt hẳn đăng
+  nhập nội bộ: để `false`. Quay về chỉ dùng tài khoản nội bộ: `INFRAOPS_AUTH_MODE=local`, rồi `sudo docker compose up -d`.
 - Gia hạn client secret: tạo secret mới trên Entra → thay `INFRAOPS_OIDC_CLIENT_SECRET` → `sudo docker compose up -d`
   → xoá secret cũ trên Entra.
 - Vô hiệu hoá một người trong app (*Người dùng & quyền*) chặn đăng nhập ngay cả khi tài khoản Entra còn hoạt động;

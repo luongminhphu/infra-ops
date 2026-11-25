@@ -52,7 +52,7 @@ function UsersTab({ users, roles }: { users: AppUser[]; roles: Role[] }) {
                 <tr key={u.id} className="border-t border-line" style={{ height: "var(--row-h-comfortable)" }}>
                   <td className="px-3 py-1.5">
                     <p className="font-medium">{u.display_name}{u.id === me?.id && <span className="ml-1.5 text-xs text-muted">(bạn)</span>}</p>
-                    <p className="text-sm text-muted">{u.upn} · {u.is_local ? "Tài khoản nội bộ" : me?.auth_mode === "dev" ? "Đăng nhập chế độ phát triển" : "Microsoft SSO"}</p>
+                    <p className="text-sm text-muted">{u.upn} · {u.is_local ? (me?.auth_mode === "oidc" ? "Microsoft SSO + tài khoản nội bộ" : "Tài khoản nội bộ") : me?.auth_mode === "dev" ? "Đăng nhập chế độ phát triển" : "Microsoft SSO"}</p>
                   </td>
                   <td className="px-3 py-1.5 text-base">{u.role_ids.map((id) => roleName[id]).filter(Boolean).join(", ") || <span className="text-muted">Chưa gán</span>}</td>
                   <td className="px-3 py-1.5 text-base text-muted">{formatRelative(u.last_login_at)}</td>
