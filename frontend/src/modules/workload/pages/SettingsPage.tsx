@@ -24,6 +24,8 @@ interface Values {
   quote_categories: string[];
   quote_threshold_vnd: number;
   quotes_required: number;
+  asset_tag_prefix: string;
+  asset_tag_codes: Record<string, string>;
   po_email_to: string[];
   po_email_cc: string[];
   po_email_subject: string;
@@ -51,9 +53,11 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
     po_email_to: data.values.po_email_to.join(", "),
     quote_categories: data.values.quote_categories.join(", "),
     po_email_cc: data.values.po_email_cc.join(", "),
+    asset_tag_codes: Object.entries(data.values.asset_tag_codes).map(([k, c]) => `${k}=${c}`).join(", "),
   });
   const lookbackBad = !(v.lookback_days >= 30 && v.lookback_days <= 1100);
   const limitBad = !(v.po_limit_vnd >= 1_000_000);
+  const prefixBad = !v.asset_tag_prefix.trim();
   const emails = (t: string) => t.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
   const save = useMutation({
     mutationFn: () =>
@@ -70,6 +74,11 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
           po_email_to: emails(text.po_email_to),
           quote_categories: text.quote_categories.split(",").map((x) => x.trim()).filter(Boolean),
           po_email_cc: emails(text.po_email_cc),
+          asset_tag_prefix: v.asset_tag_prefix.trim(),
+          // "Laptop=LT, Màn hình=MN" → { Laptop: "LT", "Màn hình": "MN" }
+          asset_tag_codes: Object.fromEntries(
+            text.asset_tag_codes.split(",").map((x) => x.split("=").map((y) => y.trim())).filter(([k, c]) => k && c),
+          ),
         },
       }),
     onSuccess: () => {
@@ -84,7 +93,7 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
         className="grid max-w-3xl gap-4 sm:grid-cols-2"
         onSubmit={(e) => {
           e.preventDefault();
-          if (!lookbackBad && !limitBad) save.mutate();
+          if (!lookbackBad && !limitBad && !prefixBad) save.mutate();
         }}
       >
         <Field label="Kết nối SDP" hint="Để trống: dùng kết nối SDP Production đầu tiên đang bật.">
@@ -163,6 +172,12 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
               <Input type="number" min={1} max={10} value={v.quotes_required} onChange={(e) => setV({ ...v, quotes_required: Number(e.target.value) })} />
             </Field>
           </div>
+          <Field label="Tiền tố mã tài sản" hint={`Mã gợi ý khi nhận hàng: ${v.asset_tag_prefix || "…"}-<năm>-<loại>-<4 ký tự cuối serial>.`} error="Nhập tiền tố, vd. HCM." showError={prefixBad}>
+            <Input value={v.asset_tag_prefix} maxLength={20} onChange={(e) => setV({ ...v, asset_tag_prefix: e.target.value })} />
+          </Field>
+          <Field label="Mã loại thiết bị" hint="Nhóm trong Bảng giá = mã, cách nhau dấu phẩy (vd. Laptop=LT, Màn hình=MN). Nhóm không có ở đây lấy chữ cái đầu.">
+            <Input value={text.asset_tag_codes} onChange={(e) => setText({ ...text, asset_tag_codes: e.target.value })} />
+          </Field>
           <Field label="Gửi tới" hint="Người phê duyệt PO: Head of IT, Phòng Finance (mua hàng). Các e-mail cách nhau bằng dấu phẩy.">
             <Input value={text.po_email_to} onChange={(e) => setText({ ...text, po_email_to: e.target.value })} placeholder="muahang@congty.vn" />
           </Field>

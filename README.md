@@ -1,43 +1,151 @@
 # infra-ops
 
-Nền tảng web nội bộ cho các tác vụ vận hành của team IT Infrastructure.
-Kiến trúc **Platform Core + Modules**: core dùng chung (đăng nhập, phân quyền, kết nối hệ thống,
-nhật ký kiểm tra, dashboard) và các module cắm vào (Module 1: Vòng đời nhân sự – Onboard/Offboard).
+Nền tảng web nội bộ cho các tác vụ vận hành của team IT Infrastructure, giao diện tiếng Việt.
+Kiến trúc **Platform Core + Modules**: core dùng chung (đăng nhập, phân quyền, kết nối hệ thống, nhật ký kiểm tra,
+dashboard, hàng chờ việc, workflow) và các module cắm vào: **Vòng đời nhân sự** (Onboard/Offboard) và
+**Công việc Helpdesk** (task SDP, đề xuất mua, PO, nhận hàng).
 
 | Thành phần | Công nghệ |
 |---|---|
-| Backend | Python 3.13, FastAPI, SQLAlchemy 2 (async), Alembic, PostgreSQL 16 |
+| Backend | Python 3.13, FastAPI, SQLAlchemy 2 (async), Alembic, PostgreSQL 16, LibreOffice (PDF) |
 | Frontend | React 18, Vite, TypeScript, Tailwind CSS 4, TanStack Query/Table |
-| Triển khai | Docker, docker-compose, Helm (Kubernetes / Rancher) |
+| Triển khai | Docker / docker compose (1 máy chủ), Helm (Kubernetes / Rancher) |
 
-Tài liệu: [kiến trúc](docs/architecture.md) · [thêm module](docs/adding-a-module.md) ·
-[design system](docs/design-system.md) · [đề xuất & quyết định Phase 0](docs/phase-0-proposal.md)
+Tài liệu: [cài đặt Ubuntu + Docker](docs/install-ubuntu-docker.md) · [kiến trúc](docs/architecture.md) ·
+[thêm module](docs/adding-a-module.md) · [design system](docs/design-system.md) ·
+[đề xuất & quyết định từng phase](docs/phase-0-proposal.md)
 
-## Trạng thái
+## Tính năng
 
-| Phase | Nội dung | Trạng thái |
-|---|---|---|
-| 0 | Hiện trạng, kiến trúc, câu hỏi mở | Xong |
-| 1 | Platform Core: module, đăng nhập, RBAC, kết nối hệ thống (SDP, BioStar), audit, design system | Xong |
-| 2 | SDP + BioStar: đọc request RTR, user, tài sản, user BioStar; đối soát theo Mã NV; export; bộ lập lịch nền | Xong |
-| 3 | Biên bản Bàn giao / Thu hồi theo mẫu thật: mẫu có phiên bản, số tự sinh, PDF, tải bản ký, đính kèm SDP | Xong |
-| 4 | Workflow Onboard / Offboard từ request SDP (gán/thu hồi tài sản, BioStar, biên bản, đóng request) | Xong |
-| 5 | Vai trò Manager / Supervisor / Operator / Viewer; module **Công việc Helpdesk**: task SDP theo Operator, chuyển việc (ghi sang SDP), thống kê theo kỳ | Xong |
-| 6 | Lưu đồ Onboard/Offboard, checklist từng bước, Operator xác nhận kèm bằng chứng | Xong |
-| 7 | Giao diện “Phòng điều khiển”: rail phân hệ + menu con, màu cobalt, font Inter, cho toàn app | Xong |
-| 8 | **Việc của tôi** cho Operator (task SDP theo trạng thái, Job onboard/offboard, việc cần chuẩn bị), tự tạo tài khoản Operator, Job theo technician request RTR + chuyển Job (ghi sang SDP), lưu đồ swimlane theo người, đề xuất mua thiết bị | Xong |
-| 9 | **PO tổng** theo hạn mức (mặc định 200 triệu, tự mở PO tiếp theo), bảng giá do Supervisor cập nhật, bằng chứng Function Head, **Chốt PO** → email nháp .eml; **Kho & cấp phát**: band trong RTR × tiêu chuẩn cấp phát × tài sản In Store → tận dụng hoặc đề xuất mua; tooltip hướng dẫn | Xong |
-| 10 | **Nhận hàng → nhập kho SDP**: nhập serial/asset tag, worker tạo tài sản In Store trên SDP (không tạo trùng serial), Kho & cấp phát đồng bộ lại để gợi ý cho onboard | Xong |
-| 11 | Operator chỉ đề xuất thiết bị (không thấy giá); PC/Laptop định giá theo **báo giá từng đề xuất** (trên 20 triệu cần 3 báo giá, lấy giá thấp nhất); thiết bị khác **cập nhật giá từ file báo giá PDF** | Xong |
-| 12 | **Nhận diện báo giá theo nhà cung cấp** (từ khoá + cột đơn giá của từng mẫu), xác nhận **không có hàng** kèm ảnh chụp website, **email trình phê duyệt PO** cho Head of IT và Finance (bảng so sánh báo giá) | Xong |
-| 13 | **Làm từng bước (wizard)**: khung Wizard dùng chung; Job Onboard/Offboard cho Operator mở thẳng dạng từng bước, dữ liệu biết trước được điền sẵn để chỉ cần xác nhận | Xong |
-| 14 | **Đề xuất mua từng bước**: Thiết bị → Người dùng & lý do → Bằng chứng Function Head → Xem lại & gửi, điền sẵn từ request/onboard | Xong |
-| 15 | **Việc tiếp theo**: Việc của tôi thành một hàng chờ theo ưu tiên từ mọi module, nút *Làm việc tiếp theo* | **Xong** |
-| 16 | **Nhận hàng từng bước**: chọn PO → quét serial từng máy → xác nhận ghi SDP → kết quả + Job onboard còn thiếu máy | **Xong** |
-| 17 | **Tổng quan** đầu Việc của tôi (trễ hạn / đến hạn 3 ngày / đang mở / đã xong 7 ngày); Operator nhận hàng, **đọc serial từ file biên bản** (PDF/Excel), **gợi ý mã tài sản** HCM-năm-loại-4 số cuối serial; sửa theo critique luồng Operator | **Xong** |
-| sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
+### Nền tảng chung
+- **Đăng nhập** bằng tài khoản trong app hoặc SSO Microsoft Entra ID; 5 vai trò (Quản trị, Manager, Supervisor,
+  Operator, Chỉ xem) và ma trận phân quyền chỉnh được. Operator chỉ thấy việc của mình và **không thấy giá**.
+- **Kết nối hệ thống** ServiceDesk Plus và Suprema BioStar 2: credential Read / Write tách riêng, mã hoá khi lưu,
+  *Kiểm tra kết nối* từng bước (DNS → SSL → đăng nhập → quyền), cảnh báo credential sắp hết hạn.
+- **Nhật ký kiểm tra**: mọi thay đổi của người dùng và mọi lần ghi ra SDP/BioStar (trước/sau).
+- **Việc của tôi**: *Tổng quan* (trễ hạn, đến hạn trong 3 ngày, đang mở, đã xong 7 ngày) và hàng chờ
+  **Việc tiếp theo** gom từ mọi module, việc gấp nhất ở trên cùng.
+- **Làm từng bước (wizard)** cho Operator: dữ liệu hệ thống đã biết được điền sẵn kèm nguồn, chỉ cần xác nhận;
+  Supervisor/Manager giữ màn hình đầy đủ. Nút **?** giải thích cách vận hành ngay cạnh tiêu đề/trường.
+- **Worker chạy nền**: đồng bộ định kỳ SDP/BioStar, chạy các bước workflow (đọc trạng thái trước khi ghi, chạy lại an
+  toàn, lưu trạng thái trước thay đổi để khôi phục thủ công).
+- Giao diện sáng/tối, dùng được trên điện thoại, đạt kiểm tra trợ năng (axe).
 
-## Chạy local
+### Module Vòng đời nhân sự
+- Đồng bộ request **RTR** (nhân viên mới / nghỉ việc), user và tài sản SDP, user BioStar; **đối soát theo Mã NV**
+  giữa các hệ thống; xuất Excel.
+- **Biên bản Bàn giao / Thu hồi** theo mẫu Word của công ty: mẫu có phiên bản, số tự sinh, xuất PDF, tải bản đã ký,
+  đính kèm vào request SDP.
+- **Job Onboard / Offboard** tự tạo từ request: gán/thu hồi tài sản SDP, tạo/vô hiệu hoá user BioStar, biên bản,
+  ghi chú và đóng request. Chạy ngay hoặc theo ngày hiệu lực; Operator xác nhận từng bước theo checklist kèm bằng
+  chứng; người phụ trách theo technician của request, chuyển Job (ghi sang SDP); lưu đồ swimlane theo người.
+- **Kho & cấp phát**: band trong RTR × tiêu chuẩn cấp phát × tài sản In Store → tận dụng thiết bị trong kho hoặc
+  **lập đề xuất mua** (điền sẵn) cho phần còn thiếu.
+
+### Module Công việc Helpdesk
+- Task SDP theo từng Operator (chưa bắt đầu / đang thực hiện / tạm dừng / quá hạn / đã xong), **chuyển việc**
+  (đổi technician trên SDP), **thống kê** theo tuần → năm hoặc khoảng ngày tuỳ chọn; tự tạo tài khoản Operator.
+- **Đề xuất mua thiết bị** từng bước (gợi ý từ request và từ onboard thiếu máy), bằng chứng Function Head đã duyệt.
+- **Định giá**: PC/Laptop theo báo giá từng đề xuất (trên 20 triệu cần 3 báo giá, lấy giá thấp nhất, xác nhận
+  *không có hàng* kèm ảnh chụp website); thiết bị khác theo **Bảng giá** cập nhật từ PDF báo giá, **tự nhận diện
+  nhà cung cấp** theo mẫu báo giá.
+- **PO tổng** theo hạn mức (mặc định 200 triệu, tự mở PO tiếp theo); **Chốt PO** → email nháp `.eml` trình Head of IT
+  và Finance (bảng so sánh báo giá, đính kèm Excel, PDF báo giá, bằng chứng).
+- **Nhận hàng → nhập kho SDP** từng bước: chọn PO → serial từng máy (quét mã vạch hoặc **đọc từ file biên bản bàn
+  giao** PDF/Excel của nhà cung cấp) → **mã tài sản gợi ý** `HCM-<năm>-<loại>-<4 ký tự cuối serial>` → worker tạo
+  tài sản *In Store* trên SDP (không tạo trùng serial) → Kho & cấp phát gợi ý ngay cho nhân viên sắp onboard.
+
+Kết nối Microsoft (Entra ID provisioning, AD, Exchange hybrid) đang **tạm hoãn** theo quyết định của chủ sản phẩm.
+
+## Triển khai bằng Docker (khuyến nghị)
+
+Một máy chủ Ubuntu 22.04/24.04, 2 vCPU, 4 GB RAM, 20 GB đĩa, mở được tới SDP/BioStar. `docker compose` chạy 5 dịch vụ:
+
+| Dịch vụ | Vai trò |
+|---|---|
+| `db` | PostgreSQL 16 (volume `db-data`) |
+| `migrate` | Cập nhật cấu trúc database rồi thoát (mỗi lần khởi động) |
+| `api` | Backend FastAPI; file mẫu, PDF, bản ký lưu ở volume `files` |
+| `worker` | Đồng bộ SDP/BioStar, chạy Job và các lần ghi ra hệ thống ngoài – **bắt buộc chạy** |
+| `web` | nginx phục vụ giao diện và chuyển `/api` tới `api` (cổng 8080) |
+
+**1. Cài Docker** (Docker Engine + plugin compose, xem [hướng dẫn chi tiết](docs/install-ubuntu-docker.md#3-cài-docker-engine)).
+
+**2. Lấy mã nguồn và tạo `.env`**
+
+```bash
+sudo git clone https://github.com/luongminhphu/infra-ops.git /opt/infra-ops
+cd /opt/infra-ops
+sudo cp .env.example .env && sudo chmod 600 .env
+```
+
+Sinh các giá trị bí mật rồi dán vào `.env` (`sudo nano .env`):
+
+```bash
+echo "INFRAOPS_MASTER_KEYS=v1:$(openssl rand -base64 32)"
+echo "INFRAOPS_SIGNING_SECRET=$(openssl rand -hex 32)"
+echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
+```
+
+| Biến | Giá trị |
+|---|---|
+| `INFRAOPS_PUBLIC_BASE_URL` | Địa chỉ người dùng mở, có `https`, vd. `https://infraops.congty.local` |
+| `INFRAOPS_MASTER_KEYS` / `INFRAOPS_SIGNING_SECRET` / `POSTGRES_PASSWORD` | Các dòng vừa sinh |
+| `INFRAOPS_AUTH_MODE` | `local` (tài khoản trong app); `oidc` khi bật SSO Entra |
+| `INFRAOPS_ENABLED_MODULES` | `lifecycle,workload` |
+| `INFRAOPS_HTTP_BIND` | `127.0.0.1:8080` khi đứng sau nginx HTTPS trên cùng máy chủ |
+
+> Cất `INFRAOPS_MASTER_KEYS` ở nơi an toàn ngoài máy chủ: mất key là mất mọi credential SDP/BioStar đã nhập.
+> Không đưa `.env` vào git.
+
+**3. Build và khởi động**
+
+```bash
+sudo docker compose up -d --build
+sudo docker compose ps        # db healthy, migrate exited (0), api healthy, worker + web running
+```
+
+**4. Tạo quản trị viên đầu tiên** (mật khẩu ≥ 12 ký tự; chạy lại để đặt lại mật khẩu):
+
+```bash
+sudo docker compose exec api python -m app.cli create-admin --username admin --name "Quản trị"
+```
+
+**5. HTTPS.** Cookie phiên có cờ `Secure` nên phải truy cập qua HTTPS: đặt nginx (hoặc reverse proxy sẵn có) trên
+máy chủ trỏ tới `127.0.0.1:8080` – cấu hình mẫu ở [mục 8 của hướng dẫn](docs/install-ubuntu-docker.md#8-https-bằng-nginx-trên-máy-chủ).
+
+**6. Cấu hình trong ứng dụng** (đăng nhập `admin`): *Hệ thống → Kết nối hệ thống* thêm SDP, BioStar và bấm
+*Kiểm tra kết nối* → *Người dùng & quyền* tạo tài khoản, gán vai trò → *Cấu hình module* của Vòng đời nhân sự và
+Công việc Helpdesk → *Đồng bộ ngay*. Chi tiết từng bước ở các mục dưới.
+
+**Vận hành**
+
+```bash
+sudo docker compose logs -f --tail 100 api worker                     # xem log
+cd /opt/infra-ops && sudo git pull && sudo docker compose up -d --build   # nâng cấp (migrate tự chạy)
+sudo docker compose exec -T db pg_dump -U infraops -Fc infraops > db-$(date +%F).dump   # sao lưu database
+```
+
+Sao lưu cả volume `files` (mẫu, PDF, bản ký), khôi phục, CA nội bộ cho SDP/BioStar, font Aptos cho PDF, máy chủ không
+ra Internet và xử lý sự cố: xem **[docs/install-ubuntu-docker.md](docs/install-ubuntu-docker.md)**.
+
+## Triển khai trên Kubernetes (Rancher)
+
+1. Build và đẩy image `backend/` → `…/infra-ops/api`, `frontend/` → `…/infra-ops/web`.
+2. Tạo Secret `infra-ops-secrets` gồm `INFRAOPS_DATABASE_URL`, `INFRAOPS_MASTER_KEYS`,
+   `INFRAOPS_SIGNING_SECRET` (và `INFRAOPS_OIDC_CLIENT_SECRET` khi bật SSO).
+3. `helm upgrade --install infra-ops deploy/helm/infra-ops -f my-values.yaml`
+   (migration chạy tự động bằng Job trước mỗi lần cài/nâng cấp; chart tạo 3 Deployment: api, worker, web).
+4. Tạo quản trị viên đầu tiên:
+   `kubectl exec -it deploy/infra-ops-api -- python -m app.cli create-admin --username admin`.
+5. File (mẫu, PDF, bản ký) lưu trên PVC `infra-ops-files` (giữ lại khi gỡ chart). Nếu chạy nhiều replica
+   api, đặt `storage.accessMode: ReadWriteMany`.
+6. Font: mẫu biên bản dùng font **Aptos**. Image có font thay thế (Inter/DejaVu); để PDF giống hệt bản Word,
+   tạo Secret chứa file font Aptos (từ bản quyền Office của công ty) và đặt `fontsSecret`.
+7. Nếu SDP/BioStar dùng chứng chỉ CA nội bộ: tạo ConfigMap có key `ca.crt` (bundle CA đầy đủ)
+   và đặt `internalCaConfigMap` trong values.
+
+## Phát triển (chạy không dùng Docker)
 
 Yêu cầu: Python 3.13 + [uv](https://docs.astral.sh/uv/), Node 22, PostgreSQL 16, LibreOffice (xuất PDF biên bản).
 
@@ -84,38 +192,29 @@ npx tsc -b && TZ=UTC npx vitest run
 
 Test không bao giờ gọi hệ thống thật: SDP/BioStar được mock bằng `respx`.
 
-## Triển khai
+## Lộ trình theo phase
 
-### docker-compose (1 máy chủ Ubuntu)
-
-Hướng dẫn đầy đủ (cài Docker, `.env`, HTTPS bằng nginx, SSO, CA nội bộ, sao lưu/khôi phục, nâng cấp, sự cố):
-**[docs/install-ubuntu-docker.md](docs/install-ubuntu-docker.md)**. Tóm tắt:
-
-```bash
-cp .env.example .env     # điền INFRAOPS_MASTER_KEYS, INFRAOPS_SIGNING_SECRET, POSTGRES_PASSWORD, INFRAOPS_PUBLIC_BASE_URL
-docker compose up -d --build
-docker compose exec api python -m app.cli create-admin --username admin --name "Quản trị"
-```
-
-Compose chạy `db`, `migrate` (một lần), `api`, `worker` (đồng bộ SDP/BioStar, chạy Job) và `web` (cổng 8080,
-đặt `INFRAOPS_HTTP_BIND=127.0.0.1:8080` khi đứng sau nginx HTTPS trên máy chủ). Đăng nhập cần HTTPS vì cookie
-phiên có cờ `Secure`.
-
-### Kubernetes (Rancher)
-
-1. Build và đẩy image `backend/` → `…/infra-ops/api`, `frontend/` → `…/infra-ops/web`.
-2. Tạo Secret `infra-ops-secrets` gồm `INFRAOPS_DATABASE_URL`, `INFRAOPS_MASTER_KEYS`,
-   `INFRAOPS_SIGNING_SECRET` (và `INFRAOPS_OIDC_CLIENT_SECRET` khi bật SSO).
-3. `helm upgrade --install infra-ops deploy/helm/infra-ops -f my-values.yaml`
-   (migration chạy tự động bằng Job trước mỗi lần cài/nâng cấp; chart tạo 3 Deployment: api, worker, web).
-4. Tạo quản trị viên đầu tiên:
-   `kubectl exec -it deploy/infra-ops-api -- python -m app.cli create-admin --username admin`.
-5. File (mẫu, PDF, bản ký) lưu trên PVC `infra-ops-files` (giữ lại khi gỡ chart). Nếu chạy nhiều replica
-   api, đặt `storage.accessMode: ReadWriteMany`.
-6. Font: mẫu biên bản dùng font **Aptos**. Image có font thay thế (Inter/DejaVu); để PDF giống hệt bản Word,
-   tạo Secret chứa file font Aptos (từ bản quyền Office của công ty) và đặt `fontsSecret`.
-7. Nếu SDP/BioStar dùng chứng chỉ CA nội bộ: tạo ConfigMap có key `ca.crt` (bundle CA đầy đủ)
-   và đặt `internalCaConfigMap` trong values.
+| Phase | Nội dung | Trạng thái |
+|---|---|---|
+| 0 | Hiện trạng, kiến trúc, câu hỏi mở | Xong |
+| 1 | Platform Core: module, đăng nhập, RBAC, kết nối hệ thống (SDP, BioStar), audit, design system | Xong |
+| 2 | SDP + BioStar: đọc request RTR, user, tài sản, user BioStar; đối soát theo Mã NV; export; bộ lập lịch nền | Xong |
+| 3 | Biên bản Bàn giao / Thu hồi theo mẫu thật: mẫu có phiên bản, số tự sinh, PDF, tải bản ký, đính kèm SDP | Xong |
+| 4 | Workflow Onboard / Offboard từ request SDP (gán/thu hồi tài sản, BioStar, biên bản, đóng request) | Xong |
+| 5 | Vai trò Manager / Supervisor / Operator / Viewer; module **Công việc Helpdesk**: task SDP theo Operator, chuyển việc (ghi sang SDP), thống kê theo kỳ | Xong |
+| 6 | Lưu đồ Onboard/Offboard, checklist từng bước, Operator xác nhận kèm bằng chứng | Xong |
+| 7 | Giao diện “Phòng điều khiển”: rail phân hệ + menu con, màu cobalt, font Inter, cho toàn app | Xong |
+| 8 | **Việc của tôi** cho Operator (task SDP theo trạng thái, Job onboard/offboard, việc cần chuẩn bị), tự tạo tài khoản Operator, Job theo technician request RTR + chuyển Job (ghi sang SDP), lưu đồ swimlane theo người, đề xuất mua thiết bị | Xong |
+| 9 | **PO tổng** theo hạn mức (mặc định 200 triệu, tự mở PO tiếp theo), bảng giá do Supervisor cập nhật, bằng chứng Function Head, **Chốt PO** → email nháp .eml; **Kho & cấp phát**: band trong RTR × tiêu chuẩn cấp phát × tài sản In Store → tận dụng hoặc đề xuất mua; tooltip hướng dẫn | Xong |
+| 10 | **Nhận hàng → nhập kho SDP**: nhập serial/asset tag, worker tạo tài sản In Store trên SDP (không tạo trùng serial), Kho & cấp phát đồng bộ lại để gợi ý cho onboard | Xong |
+| 11 | Operator chỉ đề xuất thiết bị (không thấy giá); PC/Laptop định giá theo **báo giá từng đề xuất** (trên 20 triệu cần 3 báo giá, lấy giá thấp nhất); thiết bị khác **cập nhật giá từ file báo giá PDF** | Xong |
+| 12 | **Nhận diện báo giá theo nhà cung cấp** (từ khoá + cột đơn giá của từng mẫu), xác nhận **không có hàng** kèm ảnh chụp website, **email trình phê duyệt PO** cho Head of IT và Finance (bảng so sánh báo giá) | Xong |
+| 13 | **Làm từng bước (wizard)**: khung Wizard dùng chung; Job Onboard/Offboard cho Operator mở thẳng dạng từng bước, dữ liệu biết trước được điền sẵn để chỉ cần xác nhận | Xong |
+| 14 | **Đề xuất mua từng bước**: Thiết bị → Người dùng & lý do → Bằng chứng Function Head → Xem lại & gửi, điền sẵn từ request/onboard | Xong |
+| 15 | **Việc tiếp theo**: Việc của tôi thành một hàng chờ theo ưu tiên từ mọi module, nút *Làm việc tiếp theo* | Xong |
+| 16 | **Nhận hàng từng bước**: chọn PO → quét serial từng máy → xác nhận ghi SDP → kết quả + Job onboard còn thiếu máy | Xong |
+| 17 | **Tổng quan** đầu Việc của tôi (trễ hạn / đến hạn 3 ngày / đang mở / đã xong 7 ngày); Operator nhận hàng, **đọc serial từ file biên bản** (PDF/Excel), **gợi ý mã tài sản** HCM-năm-loại-4 số cuối serial; sửa theo critique luồng Operator | Xong |
+| sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
 
 ## Đăng nhập
 
@@ -132,7 +231,7 @@ Vai trò được gán hoàn toàn trong app (Người dùng & quyền). Ngườ
 | Quản trị | Toàn quyền, cấu hình kết nối hệ thống và phân quyền |
 | Manager | Quyền của Supervisor + cấu hình module (Vòng đời, Công việc, mẫu biên bản), buộc đóng Job, xem nhật ký |
 | Supervisor | Quyền của Operator + xem task của mọi Operator và điều phối/chuyển task (ghi sang SDP). Không cấu hình hệ thống/module, không quản lý người dùng |
-| Operator | Thực hiện các task trên app (Job onboard/offboard, biên bản, đồng bộ); **chỉ thấy task và thống kê của mình** |
+| Operator | Thực hiện các task trên app (Job onboard/offboard, biên bản, đồng bộ, đề xuất mua, nhận hàng); **chỉ thấy task và thống kê của mình, không thấy giá** |
 | Chỉ xem | Chỉ đọc (thấy task của mọi Operator) |
 
 Kết nối hệ thống và người dùng/phân quyền chỉ Quản trị thay đổi. Quản trị có thể chỉnh quyền từng vai trò trong ma trận phân quyền.
@@ -231,15 +330,22 @@ Kết nối hệ thống và người dùng/phân quyền chỉ Quản trị tha
      công việc): bảng từng hạng mục với các báo giá so sánh, giá được chọn, nhà cung cấp không có hàng; đính kèm Excel
      chi tiết, PDF báo giá, ảnh chụp không có hàng và bằng chứng Function Head. Kiểm tra rồi gửi. Hệ thống đã lưu mẫu
      email cũ thì bấm Hoàn tác/sửa nội dung để dùng biến mới `{{ items_table }}` (mẫu cũ vẫn có bảng trong bản HTML).
-   - Khi hàng về: Supervisor bấm **Nhận hàng**. Thiết bị có **Sản phẩm trên SDP** trong bảng giá: nhập serial (bắt
-     buộc) và asset tag từng chiếc → worker tạo tài sản *In Store* trên SDP bằng credential Write (serial đã có trên
-     SDP thì giữ nguyên, lỗi giữa chừng bấm **Thử lại** an toàn), xong đề xuất thành *Đã nhận hàng* và **Kho & cấp
-     phát** được đồng bộ lại để gợi ý tận dụng cho nhân viên sắp onboard. Linh kiện/sửa chữa (không có sản phẩm SDP)
-     chỉ đánh dấu đã nhận.
+   - **Nhận hàng** (Operator, Supervisor, Manager – từ *Việc của tôi* hoặc nút *Nhận hàng* ở PO tổng), từng bước:
+     chọn PO đã chốt → nhập serial từng máy (quét mã vạch, Enter sang ô kế tiếp) hoặc **Đọc serial từ file biên bản**
+     của nhà cung cấp: Excel có cột tiêu đề *Serial* / *S/N* / *Số serial* (cột *Asset tag* / *Mã tài sản* nếu có) hoặc
+     PDF có chữ (nhãn `S/N:` hoặc bảng có cột Serial; PDF scan không đọc được) – serial điền vào ô trống, khớp theo tên
+     thiết bị, file không được lưu. **Mã tài sản** được gợi ý `HCM-<năm>-<loại>-<4 ký tự cuối serial>` (tiền tố và mã
+     loại theo nhóm bảng giá chỉnh ở Cấu hình công việc; mặc định LT = Laptop, PC = PC/Desktop, MN = Màn hình, nhóm khác
+     lấy chữ cái đầu), sửa tay được; serial/mã trùng bị chặn, dữ liệu đang nhập giữ lại khi tải lại trang. Xác nhận →
+     worker tạo tài sản *In Store* trên SDP bằng credential Write (serial đã có trên SDP thì giữ nguyên, lỗi giữa chừng
+     **Thử lại** an toàn), đề xuất thành *Đã nhận hàng*, **Kho & cấp phát** đồng bộ lại để gợi ý cho nhân viên sắp
+     onboard. Linh kiện/sửa chữa (không có *Sản phẩm trên SDP* trong bảng giá) chỉ đánh dấu đã nhận.
    - **Xuất Excel** toàn bộ đề xuất (đơn giá, thành tiền, PO).
 
 ### Việc của tôi (Operator)
-Trang **Việc của tôi** (rail trái / thanh tab trên điện thoại) gom mọi việc của người đang đăng nhập:
+Trang **Việc của tôi** (rail trái / thanh tab trên điện thoại) gom mọi việc của người đang đăng nhập. Đầu trang là
+**Tổng quan** – số task SDP và Job *trễ hạn*, *đến hạn trong 3 ngày*, *đang mở*, *đã xong 7 ngày qua* (bấm để mở danh
+sách) – để sắp xếp kế hoạch trong ngày. Bên dưới là hàng chờ *Việc tiếp theo* (mục sau); “Xem theo nhóm” vẫn có:
 - **Onboard / Offboard:** Job có request RTR giao cho bạn trên SDP, chia *Cần bạn xử lý ngay* (bước chờ xác nhận,
   lỗi), *Đang chạy*, *Sắp tới – cần chuẩn bị* (kèm danh sách việc chuẩn bị: chọn tài sản, kiểm tra user SDP…) và
   *Đã xong gần đây*.
@@ -253,8 +359,10 @@ trong infra-ops).
 ### Việc tiếp theo
 **Việc của tôi** là một hàng chờ duy nhất, việc gấp nhất ở trên cùng – bấm **Làm việc tiếp theo**, làm xong quay lại
 để sang việc kế. Thứ tự: *Cần bạn làm ngay* (bước Job chờ bạn xác nhận/thực hiện, bước lỗi) → *Quá hạn / gấp*
-(task SDP quá hạn, onboard/offboard hiệu lực trong 3 ngày cần chuẩn bị, đề xuất chờ duyệt với Supervisor) →
-*Sắp đến hạn* (task đến hạn trong ngày, Job cần chuẩn bị, đề xuất thiếu bằng chứng) → *Cần biết* (Job đứng yên) →
+(task SDP quá hạn gộp thành một mục, onboard/offboard hiệu lực trong 3 ngày cần chuẩn bị, đề xuất chờ duyệt với
+Supervisor) →
+*Sắp đến hạn* (task đến hạn trong ngày, Job cần chuẩn bị, đề xuất thiếu bằng chứng) → *Cần biết* (Job đứng yên,
+hàng đã đặt chờ nhận) →
 *Gợi ý* (request có thể cần mua thiết bị). Các nhóm cũ vẫn xem được ở “Xem theo nhóm”.
 
 ### Làm từng bước (Operator)
@@ -262,11 +370,12 @@ Operator mở một Job Onboard/Offboard là vào **chế độ từng bước**
 đầy đủ; ai cũng chuyển được bằng *Làm từng bước* / *Xem chi tiết đầy đủ*):
 1. **Thông tin nhân viên** – lấy từ request RTR, chỉ cần kiểm tra (sai thì sửa trên SDP rồi đồng bộ).
 2. **User SDP** – hệ thống tìm theo Mã NV, bấm *Đúng – dùng user này* (chưa có thì bước chạy sẽ tự chờ AD đồng bộ).
-3. **Thiết bị cấp phát** (onboard) – tài sản In Store tận dụng được theo band đã chọn sẵn, thiết bị thiếu được báo
-   để đề xuất mua.
+3. **Thiết bị cấp phát** (onboard) – tài sản In Store tận dụng được theo band đã chọn sẵn; mỗi thiết bị thiếu có nút
+   **Lập đề xuất mua** (điền sẵn, gửi xong quay lại Job; hiện *Đã đề xuất* khi đã lập).
 4. **Bắt đầu** – xem trước việc hệ thống sẽ làm; ngày hiệu lực trong tương lai thì nút chính là *Chạy vào ngày
    hiệu lực*.
-Khi Job chạy, màn hình chỉ hiện **bước hiện tại** và việc cần làm (xác nhận checklist, bằng chứng, nhập Mã NV…).
+Khi Job chạy, màn hình chỉ hiện **bước hiện tại** với một dòng *Bạn cần: …* (xác nhận checklist, bằng chứng, nhập
+Mã NV…) hoặc *Không cần làm gì* khi hệ thống đang tự chạy.
 
 **Đề xuất mua thiết bị** cũng làm từng bước (*Lập đề xuất* ở Việc của tôi, *Lập đề xuất mua* ở Kho & cấp phát, hoặc
 *Đề xuất mới*): **Thiết bị** (mô tả, loại, số lượng điền sẵn từ request/onboard) → **Người dùng & lý do** →
