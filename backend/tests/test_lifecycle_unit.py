@@ -278,3 +278,19 @@ def test_name_key_ignores_order_and_punctuation() -> None:
 
     assert name_key("Thinh. Nguyen Canh") == name_key("NGUYEN CANH THINH") == name_key("Nguyễn Cảnh Thịnh")
     assert name_key("Nguyen Canh Thinh") != name_key("Nguyen Van Thinh")
+
+
+def test_latest_request_is_the_one_a_job_is_for() -> None:
+    # 002100 was onboarded months ago (closed request 0900) and is now leaving (1002): a Job is only for 1002.
+    requests, users, assets, bs = _data()
+    old = {
+        **requests[1],
+        "id": "0900",
+        "kind": "onboard",
+        "effective_date": "2026-05-04",
+        "created_at": "2026-05-01",
+    }
+    result = reconcile([*requests, old], users, assets, bs, S, date(2026, 11, 16))
+    row = next(r for r in result.rows if r.employee_id == "002100")
+    assert set(row.request_ids) == {"1002", "0900"} and row.latest_request_id == "1002"
+    assert row.to_dict()["latest_request_id"] == "1002"

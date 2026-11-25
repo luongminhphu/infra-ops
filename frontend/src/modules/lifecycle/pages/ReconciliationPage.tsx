@@ -123,6 +123,7 @@ export function ReconciliationPage() {
   const [params, setParams] = useSearchParams();
   const [selected, setSelectedState] = useState<string | null>(params.get("emp"));
   const [picked, setPicked] = useState<string[]>([]);
+  const [order, setOrder] = useState<string[]>([]); // row ids as the table shows them (after sorting)
   const [ackOpen, setAckOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const qc = useQueryClient();
@@ -286,7 +287,8 @@ export function ReconciliationPage() {
 
   const createJobs = async () => {
     const rows = (q.data?.items ?? []).filter((r) => picked.includes(r.employee_id));
-    const reqs = rows.flatMap((r) => (r.kind === "onboard" || r.kind === "offboard" ? r.request_ids : []));
+    // Only each employee's latest request: an older one (e.g. the onboard of someone now leaving) is not open work.
+    const reqs = rows.flatMap((r) => ((r.kind === "onboard" || r.kind === "offboard") && r.latest_request_id ? [r.latest_request_id] : []));
     setCreating(true);
     let ok = 0;
     for (const id of reqs) {
@@ -299,21 +301,22 @@ export function ReconciliationPage() {
     }
     setCreating(false);
     await qc.invalidateQueries({ queryKey: ["jobs"] });
-    const skipped = rows.length - new Set(rows.filter((r) => r.kind === "onboard" || r.kind === "offboard").map((r) => r.employee_id)).size;
+    const skipped = rows.length - reqs.length;
     toast.success(
-      `Đã tạo hoặc mở ${ok} Job nháp${skipped ? `; bỏ qua ${skipped} nhân viên không có request Nhân viên mới / Nghỉ việc` : ""}${reqs.length - ok ? `; ${reqs.length - ok} request chưa tạo được (thiếu thông tin)` : ""}. Xem ở trang Job.`,
+      `Đã tạo hoặc mở ${ok} Job nháp${skipped ? `; bỏ qua ${skipped} nhân viên có request mới nhất không phải Nhân viên mới / Nghỉ việc` : ""}${reqs.length - ok ? `; ${reqs.length - ok} request chưa tạo được (thiếu thông tin)` : ""}. Xem ở trang Job.`,
     );
     setPicked([]);
   };
 
   const data = q.data;
-  const at = data ? data.items.findIndex((r) => r.employee_id === selected) : -1;
+  // Previous / next follow the table as shown, so a sort by name walks names in order.
+  const at = selected ? order.indexOf(selected) : -1;
   const step =
-    at < 0 || !data
+    at < 0
       ? undefined
       : {
-          prev: at > 0 ? () => setSelectedState(data.items[at - 1]!.employee_id) : undefined,
-          next: at < data.items.length - 1 ? () => setSelectedState(data.items[at + 1]!.employee_id) : undefined,
+          prev: at > 0 ? () => setSelectedState(order[at - 1]!) : undefined,
+          next: at < order.length - 1 ? () => setSelectedState(order[at + 1]!) : undefined,
         };
   const sev = data?.facets.severity ?? {};
   const syncing = syncNow.isPending || syncStatus.data?.task?.running;
@@ -483,6 +486,7 @@ export function ReconciliationPage() {
             <DataTable
               data={data.items}
               columns={shownColumns}
+              onOrderChange={setOrder}
               caption="Đối soát theo Mã nhân viên"
               getRowId={(r) => r.employee_id}
               onRowClick={(r) => setSelected(r.employee_id)}

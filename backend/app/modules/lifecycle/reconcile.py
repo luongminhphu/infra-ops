@@ -53,6 +53,7 @@ class Row:
     kind: str | None = None
     effective_date: date | None = None
     request_ids: list[str] = field(default_factory=list)
+    latest_request_id: str | None = None  # the request that decides kind/date: the one a Job is for
     sdp_user_ids: list[str] = field(default_factory=list)
     asset_ids: list[str] = field(default_factory=list)
     biostar_user_id: str | None = None
@@ -73,6 +74,7 @@ class Row:
             "kind": self.kind,
             "effective_date": self.effective_date.isoformat() if self.effective_date else None,
             "request_ids": self.request_ids,
+            "latest_request_id": self.latest_request_id,
             "sdp_user_ids": self.sdp_user_ids,
             "asset_ids": self.asset_ids,
             "biostar_user_id": self.biostar_user_id,
@@ -208,6 +210,7 @@ def reconcile(
             if latest and latest.get("effective_date")
             else None,
             request_ids=[r["id"] for r in reqs],
+            latest_request_id=latest["id"] if latest else None,
             sdp_user_ids=owner_ids,
             asset_ids=[a["id"] for a in emp_assets],
             biostar_user_id=(bs.get("ref") or bs["user_id"]) if bs else None,

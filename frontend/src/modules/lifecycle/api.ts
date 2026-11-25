@@ -27,6 +27,8 @@ export interface ReconRow {
   kind: Kind | null;
   effective_date: string | null;
   request_ids: string[];
+  /** The request that decides kind/date: the only one a Job is created for (older ones may be long closed). */
+  latest_request_id?: string | null;
   sdp_user_ids: string[];
   asset_ids: string[];
   biostar_user_id: string | null;

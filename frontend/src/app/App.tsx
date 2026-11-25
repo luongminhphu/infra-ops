@@ -8,7 +8,7 @@ import { LoginPage } from "@/core/auth/LoginPage";
 import { RequireAuth, RequirePermission } from "@/core/auth/guards";
 import { AppShell } from "@/core/layout/AppShell";
 import { LiveRegion } from "@/core/ui/live-region";
-import { HomePage } from "@/core/pages/DashboardPage";
+import { HomePage } from "@/core/pages/HomePage";
 import { ConnectionsPage } from "@/core/pages/connections/ConnectionsPage";
 import { ConnectionDetailPage } from "@/core/pages/connections/ConnectionDetailPage";
 import { AuditPage } from "@/core/pages/AuditPage";

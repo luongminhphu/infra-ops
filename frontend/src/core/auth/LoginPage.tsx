@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LogIn, ShieldAlert } from "lucide-react";
@@ -7,8 +7,11 @@ import { Button } from "@/core/ui/button";
 import { Field, Input } from "@/core/ui/field";
 import { announce } from "@/core/ui/live-region";
 import { ME_KEY, useAuth } from "./AuthProvider";
+import { resetLanding } from "./landing";
 
 export function LoginPage() {
+  // Signed out or session expired: the next sign-in lands on the role's home again (Operators: Việc của tôi).
+  useEffect(resetLanding, []);
   const { me } = useAuth();
   const qc = useQueryClient();
   const navigate = useNavigate();
