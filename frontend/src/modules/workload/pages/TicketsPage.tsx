@@ -169,8 +169,9 @@ export function TicketsPage() {
   const [params, setParams] = useSearchParams();
   const state = (params.get("state") as TicketState) || "open";
   const tech = params.get("tech") ?? "";
-  const [q, setQ] = useState("");
-  const [debounced, setDebounced] = useState("");
+  // ?q= lets other pages (dashboard overdue rows) open the list on one request.
+  const [q, setQ] = useState(params.get("q") ?? "");
+  const [debounced, setDebounced] = useState(q);
   const [selected, setSelected] = useState<string[]>([]);
   const [dialog, setDialog] = useState(false);
   useEffect(() => {

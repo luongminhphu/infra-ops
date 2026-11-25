@@ -235,7 +235,7 @@ def reconcile(
         else:
             row.cells["assets"] = {
                 "status": "match" if emp_assets else "pending",
-                "label": str(len(in_use)) if emp_assets else "0",
+                "label": f"{len(in_use) if emp_assets else 0} tài sản",
                 "detail": ", ".join(f"{a.get('name')} ({a.get('asset_tag') or '—'})" for a in emp_assets[:6])
                 + (" · nối theo họ tên" if matched_by_name else ""),
             }

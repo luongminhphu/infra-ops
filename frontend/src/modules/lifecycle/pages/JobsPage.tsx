@@ -15,6 +15,8 @@ import { JOB_STATUS, JOB_WORKFLOWS, WORKFLOW_LABEL, jobStatusLabel, type Job, ty
 
 const CHIPS: { value: string; label: string }[] = [
   { value: "open", label: "Đang mở" },
+  // Waiting for a person or stalled (worker not advancing it): the dashboard's "Cần xử lý tiếp".
+  { value: "needs", label: "Cần xử lý tiếp" },
   { value: "draft", label: "Nháp" },
   { value: "waiting", label: "Chờ xử lý" },
   { value: "failed", label: "Lỗi" },
@@ -42,13 +44,15 @@ export function JobsPage() {
   const list = useQuery({
     queryKey: ["jobs", status, workflow, debounced],
     queryFn: () => api<{ total: number; counts: Record<string, number>; items: Job[] }>(
-      `/api/core/jobs?${new URLSearchParams({ status, workflow, workflows: JOB_WORKFLOWS, q: debounced, limit: "500" })}`),
+      `/api/core/jobs?${new URLSearchParams({ status: status === "needs" ? "open" : status, workflow, workflows: JOB_WORKFLOWS, q: debounced, limit: "500" })}`),
     refetchInterval: 10000,
   });
+  const items = (list.data?.items ?? []).filter((j) => status !== "needs" || j.status === "waiting" || !!j.stalled_minutes);
   const counts = list.data?.counts ?? {};
   const countOf = (v: string) =>
     v === "open" ? Object.entries(counts).filter(([k]) => !["completed", "cancelled"].includes(k)).reduce((n, [, c]) => n + c, 0)
-      : v === "" ? Object.values(counts).reduce((n, c) => n + c, 0) : counts[v] ?? 0;
+      : v === "" ? Object.values(counts).reduce((n, c) => n + c, 0)
+      : v === "needs" ? (status === "needs" ? items.length : null) : counts[v] ?? 0;
 
   const columns = useMemo<ColumnDef<Job, unknown>[]>(
     () => [
@@ -123,7 +127,7 @@ export function JobsPage() {
               onClick={() => set("status", c.value)}
               className={cn(!on && n === 0 && "text-muted")}
             >
-              {c.label} <span className="tabular">{n}</span>
+              {c.label}{n !== null && <> <span className="tabular">{n}</span></>}
             </Button>
           );
         })}
@@ -145,7 +149,7 @@ export function JobsPage() {
         <div className="rounded-md border border-line bg-surface"><LoadingRows rows={6} /></div>
       ) : (
         <DataTable
-          data={list.data?.items ?? []}
+          data={items}
           columns={columns}
           caption="Job onboard / offboard"
           getRowId={(j) => j.id}

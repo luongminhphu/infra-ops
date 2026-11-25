@@ -21,7 +21,7 @@ export interface NextItem {
   action: string;
 }
 
-const LEVEL: Record<number, { label: string; status: Status }> = {
+export const LEVEL: Record<number, { label: string; status: Status }> = {
   0: { label: "Cần bạn làm ngay", status: "waiting" },
   1: { label: "Quá hạn / gấp", status: "failed" },
   2: { label: "Sắp đến hạn", status: "warning" },

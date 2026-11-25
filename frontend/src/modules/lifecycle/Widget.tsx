@@ -20,16 +20,23 @@ interface Data {
 export function JobsWidget({ data }: { data: unknown }) {
   const rows = (data as { counts: { workflow: string; status: string; count: number }[] }).counts;
   const sum = (statuses: string[]) => rows.filter((r) => statuses.includes(r.status)).reduce((n, r) => n + r.count, 0);
+  const q = useQuery({
+    queryKey: ["jobs", "dashboard-waiting"],
+    queryFn: () => api<{ items: Job[] }>(`/api/core/jobs?status=open&limit=50&workflows=${JOB_WORKFLOWS}`),
+    refetchInterval: 30_000,
+  });
+  // Waiting for a person, or running but stalled (worker not advancing it): the same list as "Cần xử lý tiếp".
+  const needs = (q.data?.items ?? []).filter((j) => j.status === "waiting" || j.stalled_minutes);
   const tiles = [
+    { label: "Cần xử lý tiếp", value: needs.length, to: "needs", tone: "text-waiting" },
+    { label: "Lỗi", value: sum(["failed"]), to: "failed", tone: "text-failed" },
     // Same definition as the Jobs page filter "Đang mở": everything not completed or cancelled.
     { label: "Đang mở", value: sum(["draft", "running", "waiting", "scheduled", "failed"]), to: "open", tone: "" },
-    { label: "Chờ người xử lý / chờ ký", value: sum(["waiting"]), to: "waiting", tone: "text-waiting" },
-    { label: "Lỗi", value: sum(["failed"]), to: "failed", tone: "text-failed" },
     { label: "Nháp chưa bắt đầu", value: sum(["draft"]), to: "draft", tone: "" },
   ];
   return (
     <div className="py-2">
-      <WaitingJobs />
+      <WaitingJobs jobs={needs.slice(0, 6)} />
     <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Job theo trạng thái">
       {tiles.map((t) => (
         <li key={t.to}>
@@ -45,14 +52,7 @@ export function JobsWidget({ data }: { data: unknown }) {
 }
 
 /** The next action on onboarding/offboarding: jobs stopped on a step that needs a person. */
-function WaitingJobs() {
-  const q = useQuery({
-    queryKey: ["jobs", "dashboard-waiting"],
-    queryFn: () => api<{ items: Job[] }>(`/api/core/jobs?status=open&limit=50&workflows=${JOB_WORKFLOWS}`),
-    refetchInterval: 30_000,
-  });
-  // Waiting for a person, or running but stalled (worker not advancing it).
-  const jobs = (q.data?.items ?? []).filter((j) => j.status === "waiting" || j.stalled_minutes).slice(0, 6);
+function WaitingJobs({ jobs }: { jobs: Job[] }) {
   if (!jobs.length) return null;
   return (
     <div className="mb-3">
@@ -88,8 +88,10 @@ export function ReconciliationWidget({ data }: { data: unknown }) {
     <div className="grid gap-4 py-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
       <div>
         <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
-          <StatusBadge status={RUN_STATUS[d.run.status].status} label={RUN_STATUS[d.run.status].label} />
-          Đồng bộ {formatRelative(d.run.finished_at)} ·{" "}
+          <Link to="/lifecycle/sync" className="inline-flex items-center gap-2 hover:underline">
+            <StatusBadge status={RUN_STATUS[d.run.status].status} label={RUN_STATUS[d.run.status].label} />
+            Đồng bộ {formatRelative(d.run.finished_at)}
+          </Link>{" "}·{" "}
           {d.employees ? (
             `${d.employees} nhân viên`
           ) : (
@@ -121,7 +123,10 @@ export function ReconciliationWidget({ data }: { data: unknown }) {
               <li key={r.rule}>
                 <Link to={`/lifecycle/reconciliation?rule=${r.rule}`} className="group grid grid-cols-[minmax(0,1fr)_3rem] items-center gap-3 text-sm">
                   <span className="min-w-0">
-                    <span className="block truncate group-hover:text-primary group-hover:underline">{r.title}</span>
+                    <span className="block truncate group-hover:text-primary group-hover:underline">
+                      {r.title}
+                      <span className="sr-only"> – {SEVERITY[r.severity].label}</span>
+                    </span>
                     <span className="mt-0.5 block h-1.5 rounded-full bg-surface-2" aria-hidden="true">
                       <span className={`block h-1.5 rounded-full ${r.severity === "high" ? "bg-failed" : r.severity === "medium" ? "bg-mismatch" : "bg-waiting"}`} style={{ width: `${(r.count / max) * 100}%` }} />
                     </span>

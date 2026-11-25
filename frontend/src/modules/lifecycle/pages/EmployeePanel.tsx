@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCheck, FilePlus2, RotateCcw, X } from "lucide-react";
+import { CheckCheck, FilePlus2, Play, RotateCcw, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
@@ -14,6 +14,7 @@ import { formatDate, formatDateTime } from "@/core/lib/format";
 import type { Issue, ReconRow, RtrRequest } from "../api";
 import { DOC_STATUS, KIND_SHORT_TITLE, SHORT_OF, type Doc } from "../docs";
 import { CELL_STATUS, KIND_LABEL, SEVERITY, SYSTEM_LABEL } from "../labels";
+import { JOB_WORKFLOWS, JOB_STATUS, WORKFLOW_LABEL, jobStatusLabel, type Job } from "../jobs";
 
 interface Detail {
   row: ReconRow;
@@ -57,7 +58,7 @@ function IssueItem({ employeeId, issue, ackNote }: { employeeId: string; issue: 
         <StatusBadge status={issue.acked ? "skipped" : SEVERITY[issue.severity].status} label={issue.acked ? "Đã biết" : SEVERITY[issue.severity].label} />
         <span className="text-sm text-muted">{SYSTEM_LABEL[issue.system]}</span>
       </div>
-      <p className="mt-1.5">{issue.message}</p>
+      <p className="mt-1.5 text-pretty">{issue.message}</p>
       {issue.acked && ackNote && (
         <p className="mt-1 text-sm text-muted">
           {ackNote.acked_by} · {formatDateTime(ackNote.acked_at)}
@@ -108,6 +109,57 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+/** Where a mismatch gets fixed: the onboard/offboard Job of this employee, or a button to create it from the
+ * RTR request when none exists yet. */
+function JobsSection({ employeeId, requests }: { employeeId: string; requests: RtrRequest[] }) {
+  const { can } = useAuth();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const jobs = useQuery({
+    queryKey: ["jobs", "employee", employeeId],
+    queryFn: () => api<{ items: Job[] }>(`/api/core/jobs?${new URLSearchParams({ subject_key: employeeId, workflows: JOB_WORKFLOWS, status: "" })}`),
+    enabled: can("lifecycle.job.view"),
+  });
+  const create = useMutation({
+    mutationFn: (requestId: string) => api<Job>("/api/lifecycle/jobs", { method: "POST", json: { request_id: requestId } }),
+    onSuccess: async (j) => {
+      await qc.invalidateQueries({ queryKey: ["jobs"] });
+      navigate(`/lifecycle/jobs/${j.id}`);
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  if (!can("lifecycle.job.view")) return null;
+  const items = (jobs.data?.items ?? []).filter((j) => j.status !== "cancelled");
+  const withJob = new Set(items.map((j) => j.external_ref));
+  const open = requests.filter((r) => (r.kind === "onboard" || r.kind === "offboard") && !withJob.has(r.id) && !r.parse_errors.length);
+  return (
+    <Section title="Xử lý">
+      {items.length > 0 && (
+        <ul className="mb-2 space-y-1.5 text-sm">
+          {items.map((j) => (
+            <li key={j.id} className="flex flex-wrap items-center gap-2">
+              <StatusBadge status={JOB_STATUS[j.status].status} label={jobStatusLabel(j)} />
+              <Link to={`/lifecycle/jobs/${j.id}`} className="font-medium text-primary hover:underline">
+                Mở Job {WORKFLOW_LABEL[j.workflow_key] ?? ""} ({j.progress.done}/{j.progress.total} bước)
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      {can("lifecycle.job.execute") &&
+        open.map((r) => (
+          <Button key={r.id} variant="primary" className="mb-2 mr-2" loading={create.isPending && create.variables === r.id} onClick={() => create.mutate(r.id)}>
+            <Play className="size-4" aria-hidden="true" />
+            Tạo Job {r.kind === "onboard" ? "onboard" : "offboard"} từ request #{r.display_id ?? r.id}
+          </Button>
+        ))}
+      {items.length === 0 && open.length === 0 && (
+        <p className="text-sm text-muted">Chưa có Job cho nhân viên này. Job được tạo từ request RTR Nhân viên mới hoặc Nghỉ việc.</p>
+      )}
+    </Section>
+  );
+}
+
 function DocumentsSection({ employeeId }: { employeeId: string }) {
   const { can } = useAuth();
   const docs = useQuery({
@@ -148,7 +200,10 @@ function DocumentsSection({ employeeId }: { employeeId: string }) {
   );
 }
 
-export function EmployeePanel({ employeeId, onClose }: { employeeId: string; onClose: () => void }) {
+export function EmployeePanel({ employeeId, onClose, className }: { employeeId: string; onClose: () => void; className?: string }) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  // Keyboard and screen-reader users land in the panel they just opened.
+  useEffect(() => heading.current?.focus(), [employeeId]);
   const q = useQuery({
     queryKey: ["lifecycle", "recon", "detail", employeeId],
     queryFn: () => api<Detail>(`/api/lifecycle/reconciliation/${encodeURIComponent(employeeId)}`),
@@ -158,11 +213,17 @@ export function EmployeePanel({ employeeId, onClose }: { employeeId: string; onC
   return (
     <aside
       aria-label={`Chi tiết nhân viên ${employeeId}`}
-      className="sticky top-[calc(var(--topbar-h)+1.25rem)] max-h-[calc(100dvh-110px)] overflow-y-auto rounded-md border border-line bg-surface"
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && !e.defaultPrevented) {
+          e.preventDefault();
+          onClose();
+        }
+      }}
+      className={className ?? "sticky top-[calc(var(--topbar-h)+1.25rem)] max-h-[calc(100dvh-110px)] overflow-y-auto rounded-md border border-line bg-surface"}
     >
       <header className="flex items-start justify-between gap-2 px-4 py-3">
         <div className="min-w-0">
-          <h2 className="truncate text-lg font-semibold">{d?.row.full_name || "Đang tải…"}</h2>
+          <h2 ref={heading} tabIndex={-1} className="truncate text-lg font-semibold focus:outline-none">{d?.row.full_name || "Đang tải…"}</h2>
           <p className="text-sm text-muted">
             Mã NV <Mono>{employeeId}</Mono>
             {d?.row.department && ` · ${d.row.department}`}
@@ -198,6 +259,7 @@ export function EmployeePanel({ employeeId, onClose }: { employeeId: string; onC
               </ul>
             )}
           </Section>
+          <JobsSection employeeId={employeeId} requests={d.requests} />
           <DocumentsSection employeeId={employeeId} />
           <Section title="Request RTR">
             {d.requests.length === 0 ? (
@@ -250,7 +312,7 @@ export function EmployeePanel({ employeeId, onClose }: { employeeId: string; onC
               <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
                 <dt className="text-muted">Trạng thái</dt>
                 <dd>
-                  <StatusBadge status={d.biostar.active ? "done" : "disabled"} label={d.biostar.retired ? "Nghỉ việc" : d.biostar.active ? "Hoạt động" : d.biostar.disabled ? "Vô hiệu hoá" : "Hết hạn"} />
+                  <StatusBadge status={d.biostar.retired ? "skipped" : flagged.has("biostar") ? "mismatch" : d.biostar.active ? "done" : "disabled"} label={d.biostar.retired ? "Nghỉ việc" : d.biostar.active ? "Hoạt động" : d.biostar.disabled ? "Vô hiệu hoá" : "Hết hạn"} />
                 </dd>
                 <dt className="text-muted">Tên</dt>
                 <dd>{d.biostar.name}</dd>

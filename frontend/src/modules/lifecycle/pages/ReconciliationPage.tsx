@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ChevronDown, Download, GitCompareArrows, RefreshCw, TriangleAlert } from "lucide-react";
+import { ChevronDown, Download, FilterX, GitCompareArrows, RefreshCw, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
@@ -10,6 +10,7 @@ import { Button, buttonVariants } from "@/core/ui/button";
 import { DataTable, type Density } from "@/core/ui/data-table";
 import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input, Select } from "@/core/ui/field";
+import { HelpTip } from "@/core/ui/help-tip";
 import { Menu, MenuItem } from "@/core/ui/menu";
 import { StatusBadge } from "@/core/ui/status";
 import { formatDate, formatRelative } from "@/core/lib/format";
@@ -20,6 +21,32 @@ import { KIND_LABEL, NOTE_TITLE, SEVERITY, SOURCE_LABEL } from "../labels";
 import { EmployeePanel } from "./EmployeePanel";
 
 const FILTER_KEYS = ["q", "severity", "rule", "kind", "department", "only_issues"] as const;
+const WIDE = "(min-width: 1280px)";
+
+/** The side panel sits next to the table only on wide screens; below that it opens as a full-screen sheet. */
+function useWide(): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      const m = window.matchMedia(WIDE);
+      m.addEventListener("change", cb);
+      return () => m.removeEventListener("change", cb);
+    },
+    () => window.matchMedia(WIDE).matches,
+  );
+}
+
+/** Full-screen sheet for the employee panel on phones and tablets (native <dialog>: focus trap, Esc, inert page). */
+function PanelSheet({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (ref.current && !ref.current.open) ref.current.showModal();
+  }, []);
+  return (
+    <dialog ref={ref} onClose={onClose} aria-label="Chi tiết nhân viên" className="m-0 h-dvh max-h-none w-full max-w-none bg-surface p-0 text-ink">
+      {children}
+    </dialog>
+  );
+}
 
 function SyncBanner({ data }: { data: ReconResponse }) {
   const run = data.run!;
@@ -51,13 +78,33 @@ export function ReconciliationPage() {
   });
   const noConnections = connections.data?.length === 0;
   const [params, setParams] = useSearchParams();
-  const [selected, setSelected] = useState<string | null>(params.get("emp"));
+  const [selected, setSelectedState] = useState<string | null>(params.get("emp"));
+  const wide = useWide();
+  // Remember which row opened the panel so closing it hands focus back there.
+  const opener = useRef<HTMLElement | null>(null);
+  const setSelected = (emp: string | null) => {
+    if (emp && !selected) opener.current = document.activeElement as HTMLElement | null;
+    setSelectedState(emp);
+    if (!emp) {
+      const back = opener.current;
+      window.setTimeout(() => (back?.isConnected ? back : document.querySelector<HTMLElement>(`[data-emp="${selected}"]`))?.focus(), 0);
+    }
+  };
   const [density, setDensity] = useState<Density>("compact");
   const [search, setSearch] = useState(params.get("q") ?? "");
   const rules = useRules();
   const syncStatus = useSyncStatus();
   const syncNow = useSyncNow();
   const filters = Object.fromEntries(FILTER_KEYS.map((k) => [k, params.get(k) ?? ""])) as Record<(typeof FILTER_KEYS)[number], string>;
+  // The work list is the default: rows with mismatches. "Tất cả" sets only_issues=false explicitly.
+  if (!filters.only_issues) filters.only_issues = "true";
+  const narrowed = ["q", "rule", "kind", "department"].some((k) => filters[k as keyof typeof filters]);
+  const clearFilters = () => {
+    setSearch("");
+    const next = new URLSearchParams(params);
+    for (const k of ["q", "rule", "kind", "department", "severity"]) next.delete(k);
+    setParams(next, { replace: true });
+  };
 
   const setFilter = (key: string, value: string) => {
     const next = new URLSearchParams(params);
@@ -93,7 +140,7 @@ export function ReconciliationPage() {
         accessorKey: "employee_id",
         header: "Mã NV",
         cell: (c) => (
-          <button type="button" className="cursor-pointer font-mono text-[0.8125rem] hover:text-primary hover:underline" onClick={() => setSelected(c.row.original.employee_id)}>
+          <button type="button" data-emp={c.row.original.employee_id} className="cursor-pointer font-mono text-[0.8125rem] hover:text-primary hover:underline" onClick={() => setSelected(c.row.original.employee_id)}>
             {c.row.original.employee_id}
           </button>
         ),
@@ -122,15 +169,22 @@ export function ReconciliationPage() {
         cell: (c) => {
           const r = c.row.original;
           if (!r.issue_count) return <StatusBadge status="match" label="Khớp" />;
+          const reasons = r.issues.filter((i) => !i.acked).map((i) => ruleTitle[i.rule] ?? i.rule);
           return (
-            <span title={r.issues.filter((i) => !i.acked).map((i) => ruleTitle[i.rule] ?? i.rule).join("\n")}>
+            <span title={reasons.join("\n")}>
               <StatusBadge status={SEVERITY[r.max_severity!].status} label={`${r.issue_count} · ${SEVERITY[r.max_severity!].short}`} />
+              <span className="sr-only">: {reasons.join("; ")}</span>
             </span>
           );
         },
       },
     ];
   }, [ruleTitle]);
+  // With the side panel open, keep the system columns in view: Phòng ban and Biến động are in the panel.
+  const shownColumns = useMemo(
+    () => (selected && wide ? columns.filter((c) => !["department", "effective_date"].includes((c as { accessorKey?: string }).accessorKey ?? "")) : columns),
+    [columns, selected, wide],
+  );
 
   const download = async (format: "xlsx" | "csv") => {
     try {
@@ -155,7 +209,7 @@ export function ReconciliationPage() {
     <>
       <PageHeader
         title="Đối soát theo Mã NV"
-        description="Mỗi dòng là một nhân viên, so sánh request RTR, tài sản trên ServiceDesk Plus và user BioStar. Ô có biểu tượng cảnh báo và viền hồng là hệ thống đang lệch."
+        description="Mỗi dòng là một nhân viên: request RTR, tài sản trên ServiceDesk Plus và user BioStar. Hệ thống đang lệch có biểu tượng cảnh báo và chữ “Lệch”."
         actions={
           <>
             {can("lifecycle.reconciliation.sync") && (
@@ -212,21 +266,38 @@ export function ReconciliationPage() {
       {data?.run && (
         <>
           <SyncBanner data={data} />
-          <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="Lọc theo mức độ">
-            {([["", `Tất cả (${data.facets.total_rows ?? 0})`], ["high", `${SEVERITY.high.label} (${sev.high ?? 0})`], ["medium", `${SEVERITY.medium.label} (${sev.medium ?? 0})`], ["low", `${SEVERITY.low.label} (${sev.low ?? 0})`]] as const).map(([value, label]) => (
+          <div className="mb-3 flex flex-wrap items-center gap-2" role="group" aria-label="Lọc theo mức độ">
+            {([
+              ["issues", `Có lệch (${(sev.high ?? 0) + (sev.medium ?? 0) + (sev.low ?? 0)})`, !filters.severity && filters.only_issues === "true"],
+              ["high", `${SEVERITY.high.label} (${sev.high ?? 0})`, filters.severity === "high"],
+              ["medium", `${SEVERITY.medium.label} (${sev.medium ?? 0})`, filters.severity === "medium"],
+              ["low", `${SEVERITY.low.label} (${sev.low ?? 0})`, filters.severity === "low"],
+              ["all", `Tất cả (${data.facets.total_rows ?? 0})`, !filters.severity && filters.only_issues === "false"],
+            ] as const).map(([value, label, pressed]) => (
               <button
-                key={value || "all"}
+                key={value}
                 type="button"
-                aria-pressed={filters.severity === value}
-                onClick={() => setFilter("severity", value)}
+                aria-pressed={pressed}
+                onClick={() => {
+                  const next = new URLSearchParams(params);
+                  next.delete("severity");
+                  next.delete("only_issues");
+                  if (value === "all") next.set("only_issues", "false");
+                  else if (value !== "issues") next.set("severity", value);
+                  setParams(next, { replace: true });
+                }}
                 className={cn(
                   "h-7 cursor-pointer rounded-full border px-3 text-sm transition-colors duration-150",
-                  filters.severity === value ? "border-primary bg-primary-soft font-medium text-primary" : "border-line-strong bg-surface hover:bg-surface-2",
+                  pressed ? "border-primary bg-primary-soft font-medium text-primary" : "border-line-strong bg-surface hover:bg-surface-2",
                 )}
               >
                 {label}
               </button>
             ))}
+            <HelpTip title="Mức độ và “Đánh dấu đã biết”">
+              <span className="block">Cao: rủi ro an ninh hoặc tài sản (vd. đã nghỉ việc nhưng BioStar còn hoạt động, còn tài sản đang gán). Trung bình: thiếu hoặc sai dữ liệu giữa các hệ thống. Thấp: cần xem lại (tên lệch, request chưa đủ thông tin).</span>
+              <span className="block">Mở một dòng để xem lệch và xử lý qua Job onboard/offboard. “Đánh dấu đã biết” bỏ lệch đó khỏi số đếm, giữ qua các lần đồng bộ cho tới khi bấm “Mở lại”.</span>
+            </HelpTip>
           </div>
           <form role="search" aria-label="Lọc đối soát" className="mb-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1.5fr_1.5fr_auto]" onSubmit={(e) => e.preventDefault()}>
             <Field label="Tìm Mã NV hoặc họ tên">
@@ -241,7 +312,9 @@ export function ReconciliationPage() {
             <Field label="Loại lệch">
               <Select value={filters.rule} onChange={(e) => setFilter("rule", e.target.value)}>
                 <option value="">Tất cả</option>
-                {(rules.data ?? []).map((r) => <option key={r.code} value={r.code}>{r.title} ({data.facets.rules?.[r.code] ?? 0})</option>)}
+                {(rules.data ?? [])
+                  .filter((r) => (data.facets.rules?.[r.code] ?? 0) > 0 || r.code === filters.rule)
+                  .map((r) => <option key={r.code} value={r.code}>{r.title} ({data.facets.rules?.[r.code] ?? 0})</option>)}
               </Select>
             </Field>
             <Field label="Phòng ban">
@@ -250,31 +323,46 @@ export function ReconciliationPage() {
                 {(data.facets.departments ?? []).map((d) => <option key={d} value={d}>{d}</option>)}
               </Select>
             </Field>
-            <div className="flex items-end gap-3 pb-1.5">
-              <label className="flex cursor-pointer items-center gap-2 text-sm whitespace-nowrap">
-                <input type="checkbox" className="size-4 accent-[var(--primary)]" checked={filters.only_issues === "true"} onChange={(e) => setFilter("only_issues", e.target.checked ? "true" : "")} />
-                Chỉ dòng lệch
-              </label>
-              <label className="flex cursor-pointer items-center gap-2 text-sm whitespace-nowrap">
-                <input type="checkbox" className="size-4 accent-[var(--primary)]" checked={density === "comfortable"} onChange={(e) => setDensity(e.target.checked ? "comfortable" : "compact")} />
-                Dòng thoáng
-              </label>
+            <div className="flex items-end">
+              <Button onClick={clearFilters} disabled={!narrowed && !filters.severity}>
+                <FilterX className="size-4" aria-hidden="true" />
+                Xoá bộ lọc
+              </Button>
             </div>
           </form>
-          <p className="mb-2 text-sm text-muted" role="status">{data.total} nhân viên phù hợp</p>
-          <div className={selected ? "grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]" : undefined}>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-muted" role="status">{data.total} nhân viên phù hợp</p>
+            <label className="flex cursor-pointer items-center gap-2 text-sm whitespace-nowrap">
+              <input type="checkbox" className="size-4 accent-[var(--primary)]" checked={density === "comfortable"} onChange={(e) => setDensity(e.target.checked ? "comfortable" : "compact")} />
+              Dòng thoáng
+            </label>
+          </div>
+          <div className={selected && wide ? "grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]" : undefined}>
             <DataTable
               data={data.items}
-              columns={columns}
+              columns={shownColumns}
               caption="Đối soát theo Mã nhân viên"
               getRowId={(r) => r.employee_id}
               onRowClick={(r) => setSelected(r.employee_id)}
               selectedId={selected}
               density={density}
               maxHeight="calc(100dvh - 330px)"
-              empty={<EmptyState icon={GitCompareArrows} title="Không có nhân viên phù hợp">Bỏ bớt bộ lọc để xem thêm.</EmptyState>}
+              empty={
+                <EmptyState
+                  icon={GitCompareArrows}
+                  title={narrowed || filters.severity ? "Không có nhân viên phù hợp" : "Không còn lệch nào"}
+                  action={(narrowed || filters.severity) && <Button onClick={clearFilters}><FilterX className="size-4" aria-hidden="true" />Xoá bộ lọc</Button>}
+                >
+                  {narrowed || filters.severity ? "Bộ lọc hiện tại không khớp nhân viên nào." : "Mọi nhân viên đã khớp giữa các hệ thống. Chọn “Tất cả” để xem toàn bộ."}
+                </EmptyState>
+              }
             />
-            {selected && <EmployeePanel employeeId={selected} onClose={() => setSelected(null)} />}
+            {selected && wide && <EmployeePanel employeeId={selected} onClose={() => setSelected(null)} />}
+            {selected && !wide && (
+              <PanelSheet onClose={() => setSelected(null)}>
+                <EmployeePanel employeeId={selected} onClose={() => setSelected(null)} className="min-h-full bg-surface" />
+              </PanelSheet>
+            )}
           </div>
           {data.notes.length > 0 && (
             <details className="mt-4 rounded-md border border-line bg-surface">

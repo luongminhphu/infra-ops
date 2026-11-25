@@ -1,13 +1,15 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarClock, ChevronRight, Plug } from "lucide-react";
+import { ArrowRight, CalendarClock, ChevronRight, PartyPopper, Plug } from "lucide-react";
 import { api } from "@/core/api/client";
 import type { DashboardWidget } from "@/core/api/types";
 import { useAuth } from "@/core/auth/AuthProvider";
-import { EmptyState, ErrorState, PageHeader, Panel, Skeleton } from "@/core/ui/feedback";
+import { EmptyState, ErrorState, LoadingRows, PageHeader, Panel, Skeleton } from "@/core/ui/feedback";
+import { HelpTip } from "@/core/ui/help-tip";
 import { StatusBadge, type Status } from "@/core/ui/status";
 import { formatDate, formatRelative, pluralDays } from "@/core/lib/format";
 import { modules } from "@/modules";
+import { LEVEL, useNextActions } from "./MyWorkPage";
 
 const moduleWidgets = Object.assign({}, ...modules.map((m) => m.widgets ?? {})) as Record<
   string,
@@ -33,17 +35,62 @@ const CONN_STATE: Record<ConnItem["state"], { status: Status; label: string }> =
 };
 
 function Tile({ label, value, tone }: { label: string; value: number; tone?: "failed" | "waiting" }) {
+  const hot = !!tone && value > 0;
   return (
     // Only a non-zero problem count is highlighted (tinted card + colour), so zeros stay calm.
-    <div
-      className="rounded-md border border-line bg-surface px-4 py-3 shadow-card"
-      style={tone && value > 0 ? { borderColor: `var(--${tone})`, background: `var(--${tone}-soft)` } : undefined}
+    <Link
+      to="/settings/connections"
+      className="block rounded-md border border-line bg-surface px-4 py-3 shadow-card hover:bg-surface-2"
+      style={hot ? { borderColor: `var(--${tone})`, background: `var(--${tone}-soft)` } : undefined}
     >
-      <p className="text-sm text-muted">{label}</p>
-      <p className={`tabular mt-1 text-2xl font-semibold ${value > 0 && tone === "failed" ? "text-failed" : value > 0 && tone === "waiting" ? "text-waiting" : ""}`}>
+      <span className={`block text-sm ${hot ? "text-ink" : "text-muted"}`}>{label}</span>
+      <span className={`tabular mt-1 block text-2xl font-semibold ${hot ? (tone === "failed" ? "text-failed" : "text-waiting") : ""}`}>
         {value}
-      </p>
-    </div>
+      </span>
+    </Link>
+  );
+}
+
+/** The cross-module "Việc tiếp theo" queue (same as Việc của tôi), first on the home page: what needs you now. */
+function NextActions() {
+  const q = useNextActions();
+  const items = q.data?.items ?? [];
+  return (
+    <Panel
+      title="Việc tiếp theo của bạn"
+      description="Job, task quá hạn, đề xuất mua cần duyệt… việc gấp nhất trên cùng."
+      actions={items.length > 3 ? <Link to="/me/work" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">Xem tất cả ({items.length})<ArrowRight className="size-4" aria-hidden="true" /></Link> : undefined}
+      className="mb-4"
+      bodyClassName="p-0"
+    >
+      {q.isError ? (
+        <div className="p-4"><ErrorState error={q.error} onRetry={() => q.refetch()} /></div>
+      ) : q.isLoading ? (
+        <LoadingRows rows={3} />
+      ) : items.length === 0 ? (
+        <EmptyState icon={PartyPopper} title="Không còn việc nào cần bạn làm">Việc mới sẽ hiện ở đây và ở trang Việc của tôi.</EmptyState>
+      ) : (
+        <ul className="divide-y divide-line">
+          {items.slice(0, 3).map((i) => (
+            <li key={i.key}>
+              <Link to={i.href} className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-2">
+                <StatusBadge {...LEVEL[i.priority]!} />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium">{i.title}</span>
+                  {(i.detail || i.due) && (
+                    <span className="block truncate text-sm text-muted">
+                      {i.detail}{i.detail && i.due ? " · " : ""}{i.due ? `hạn ${formatDate(i.due)}` : ""}
+                    </span>
+                  )}
+                </span>
+                <span className="hidden shrink-0 text-sm font-medium text-primary sm:inline">{i.action}</span>
+                <ChevronRight className="size-4 shrink-0 text-muted" aria-hidden="true" />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
   );
 }
 
@@ -73,7 +120,7 @@ function ConnectionsWidget({ data }: { data: { items: ConnItem[] } }) {
               {c.system_name} · Read {c.read ? "có" : "chưa có"} · Write {c.write ? "có" : "chưa có"}
             </p>
           </div>
-          <span className="hidden text-sm text-muted sm:block">{formatRelative(c.last_test_at)}</span>
+          {c.last_test_at && <span className="hidden text-sm text-muted sm:block">Kiểm tra {formatRelative(c.last_test_at)}</span>}
           <StatusBadge status={CONN_STATE[c.state].status} label={CONN_STATE[c.state].label} />
         </li>
       ))}
@@ -92,8 +139,8 @@ interface ExpItem {
 function ExpiringWidget({ data }: { data: { warn_days: number; items: ExpItem[] } }) {
   if (data.items.length === 0)
     return (
-      <EmptyState icon={CalendarClock} title="Không có secret sắp hết hạn">
-        Cảnh báo hiển thị khi secret hoặc chứng chỉ còn dưới {data.warn_days} ngày.
+      <EmptyState icon={CalendarClock} title="Không có mật khẩu / chứng chỉ sắp hết hạn">
+        Cảnh báo hiển thị khi mật khẩu, API key hoặc chứng chỉ của kết nối còn dưới {data.warn_days} ngày.
       </EmptyState>
     );
   return (
@@ -150,26 +197,27 @@ export function DashboardPage() {
   const exp = q.data?.find((w) => w.key === "core.expiring_secrets")?.data as { items: ExpItem[] } | undefined;
   // Nothing connected yet: show the setup steps instead of empty connection panels.
   const firstRun = !!conns && conns.items.length === 0 && can("core.connections.manage");
+  // System plumbing (connection health) is for the people who can fix it, after the work.
+  const admin = can("core.connections.manage");
 
   return (
     <>
-      <PageHeader title="Tổng quan" description="Việc cần làm tiếp theo và tình trạng các hệ thống kết nối." />
+      <PageHeader
+        title="Tổng quan"
+        description={
+          <>
+            Việc cần bạn làm tiếp theo, rồi tình hình Helpdesk, Job và đối soát của nhóm.{" "}
+            <HelpTip title="Tổng quan">
+              <span className="block">“Việc tiếp theo của bạn” là việc của riêng bạn (giống trang Việc của tôi). Các khối bên dưới là số liệu của cả nhóm theo quyền của bạn; bấm vào số hoặc dòng để mở danh sách đã lọc.</span>
+            </HelpTip>
+          </>
+        }
+      />
       {q.isError && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
       {firstRun && <GettingStarted />}
-      {(q.isLoading || (conns && conns.items.length > 0)) && <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {q.isLoading ? (
-          Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-[78px]" />)
-        ) : (
-          <>
-            <Tile label="Kết nối hệ thống" value={conns?.items.length ?? 0} />
-            <Tile label="Kết nối đang lỗi" value={conns?.items.filter((c) => c.state === "error").length ?? 0} tone="failed" />
-            <Tile label="Cần cấu hình hoặc kiểm tra" value={conns?.items.filter((c) => c.state === "untested" || c.state === "incomplete").length ?? 0} tone="waiting" />
-            <Tile label="Mật khẩu / chứng chỉ sắp hết hạn" value={exp?.items.length ?? 0} tone="waiting" />
-          </>
-        )}
-      </div>}
+      {!firstRun && <NextActions />}
       <div className="grid gap-4 xl:grid-cols-2 [&>*]:min-w-0">
-        {q.data?.filter((w) => !(firstRun && ["connections", "expiring_secrets"].includes(w.kind))).map((w) => (
+        {q.data?.filter((w) => !((firstRun || !admin) && ["connections", "expiring_secrets"].includes(w.kind))).map((w) => (
           <Panel key={w.key} title={w.title} bodyClassName="py-1" className={["lifecycle_reconciliation", "lifecycle_jobs", "workload_next"].includes(w.kind) ? "xl:col-span-2" : undefined}>
             {w.error ? (
               <ErrorState error={new Error(w.error)} />
@@ -194,6 +242,14 @@ export function DashboardPage() {
           </>
         )}
       </div>
+      {admin && conns && conns.items.length > 0 && (
+        <section aria-label="Tình trạng kết nối" className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Tile label="Kết nối hệ thống" value={conns.items.length} />
+          <Tile label="Kết nối đang lỗi" value={conns.items.filter((c) => c.state === "error").length} tone="failed" />
+          <Tile label="Cần cấu hình hoặc kiểm tra" value={conns.items.filter((c) => c.state === "untested" || c.state === "incomplete").length} tone="waiting" />
+          <Tile label="Mật khẩu / chứng chỉ sắp hết hạn" value={exp?.items.length ?? 0} tone="waiting" />
+        </section>
+      )}
     </>
   );
 }
