@@ -1,7 +1,8 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CircleCheck } from "lucide-react";
+import { ChevronRight, CircleCheck } from "lucide-react";
 import { api } from "@/core/api/client";
+import { useAuth } from "@/core/auth/AuthProvider";
 import { LoadingRows, Mono } from "@/core/ui/feedback";
 import { formatDateTime } from "@/core/lib/format";
 import { useTechnicians, type Ticket } from "./api";
@@ -11,6 +12,7 @@ import { useTechnicians, type Ticket } from "./api";
  * managers/supervisors see the team's overdue and unassigned tasks (the API scopes the data).
  */
 export function WorkloadNextWidget() {
+  const { can } = useAuth();
   const techs = useTechnicians();
   const t = techs.data;
   const scope = t?.view_all ? "" : "me";
@@ -22,7 +24,16 @@ export function WorkloadNextWidget() {
   if (techs.isLoading || overdue.isLoading) return <LoadingRows rows={3} />;
   if (!t) return null;
   if (!t.view_all && !t.me)
-    return <p className="py-3 text-sm">Tài khoản của bạn chưa liên kết với technician trên ServiceDesk Plus nên chưa có task. Liên hệ Manager để liên kết.</p>;
+    return (
+      <p className="py-3 text-sm">
+        Tài khoản của bạn chưa liên kết với technician trên ServiceDesk Plus nên chưa có task.{" "}
+        {can("workload.settings.manage") ? (
+          <Link className="text-primary underline" to="/workload/settings">Liên kết ở Cấu hình công việc</Link>
+        ) : (
+          "Nhờ Manager liên kết ở Cấu hình công việc (theo e-mail technician trên SDP)."
+        )}
+      </p>
+    );
 
   const mine = t.items.find((x) => x.id === t.me);
   const open = t.view_all ? t.items.reduce((n, x) => n + x.open, 0) + t.unassigned.open : (mine?.open ?? 0);
@@ -48,11 +59,21 @@ export function WorkloadNextWidget() {
           <h3 className="mt-3 mb-1 text-sm font-semibold">Quá hạn lâu nhất – xử lý trước</h3>
           <ul className="divide-y divide-line text-sm">
             {tickets.map((x) => (
-              <li key={x.id} className="flex flex-wrap items-baseline gap-x-2 py-1.5">
-                <Mono className="shrink-0">#{x.display_id ?? x.id}</Mono>
-                <span className="min-w-0 flex-1 truncate" title={x.subject}>{x.subject}</span>
-                {t.view_all && <span className="shrink-0 text-muted">{x.technician_name ?? "Chưa giao"}</span>}
-                <span className="shrink-0 text-failed tabular">hạn {formatDateTime(x.due_by)}</span>
+              <li key={x.id}>
+                <Link
+                  to={`${base}${join}${new URLSearchParams({ state: "overdue", q: x.display_id ?? x.id })}`}
+                  className="flex items-center gap-2 px-1 py-1.5 hover:bg-surface-2"
+                >
+                  <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
+                    <Mono className="shrink-0">#{x.display_id ?? x.id}</Mono>
+                    <span className="min-w-0 flex-1 truncate font-medium" title={x.subject}>{x.subject}</span>
+                    <span className="basis-full text-muted sm:basis-auto">
+                      {t.view_all && <>{x.technician_name ?? "Chưa giao"} · </>}
+                      <span className="text-failed tabular">hạn {formatDateTime(x.due_by)}</span>
+                    </span>
+                  </span>
+                  <ChevronRight className="size-4 shrink-0 text-muted" aria-hidden="true" />
+                </Link>
               </li>
             ))}
           </ul>
