@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { iconFor } from "@/core/ui/icons";
 import { cn } from "@/core/lib/cn";
@@ -102,6 +103,12 @@ export function AppShell() {
           </nav>
         )}
         <main id="main" className="mx-auto w-full max-w-[1600px] flex-1 px-4 pt-5 pb-24 sm:px-5 sm:pb-5 [&_h1]:outline-none" tabIndex={-1}>
+          {/* Opened from the "Việc của tôi" queue: one click back to it, on every module page. */}
+          {(location.state as { from?: string } | null)?.from === "me" && location.pathname !== "/me/work" && (
+            <Link to="/me/work" className="mb-3 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
+              <ArrowLeft className="size-4" aria-hidden="true" />Việc của tôi – sang việc tiếp theo
+            </Link>
+          )}
           <Outlet />
         </main>
         {/* Phones: the module rail becomes a bottom tab bar so content gets the full width. */}

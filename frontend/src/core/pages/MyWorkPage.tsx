@@ -1,6 +1,7 @@
+import { useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, ChevronRight, PartyPopper } from "lucide-react";
+import { ArrowRight, ChevronRight, Hourglass, PartyPopper, TriangleAlert } from "lucide-react";
 import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { formatDate } from "@/core/lib/format";
@@ -19,14 +20,19 @@ export interface NextItem {
   due: string | null;
   href: string;
   action: string;
+  /** Needs nothing from this person (waiting on the system, an account notice): never the next thing to do. */
+  passive?: boolean;
 }
+
+/** Links from the queue carry this state so the target page can offer "← Việc của tôi". */
+export const FROM_QUEUE = { from: "me" } as const;
 
 export const LEVEL: Record<number, { label: string; status: Status }> = {
   0: { label: "Cần bạn làm ngay", status: "waiting" },
   1: { label: "Quá hạn / gấp", status: "failed" },
   2: { label: "Sắp đến hạn", status: "warning" },
   3: { label: "Cần biết", status: "pending" },
-  4: { label: "Gợi ý", status: "skipped" },
+  4: { label: "Gợi ý", status: "pending" },
 };
 
 interface SummaryItem {
@@ -58,12 +64,33 @@ function Summary() {
         Tổng quan
         <HelpTip title="Tổng quan">
           <span className="block">Đếm task SDP và Job onboard/offboard đang giao cho bạn.</span>
-          <span className="block">Trễ hạn: task quá hạn xử lý, Job đã qua ngày hiệu lực mà chưa xong. Đến hạn: trong 3 ngày tới.</span>
+          <span className="block">Trễ hạn: task quá hạn xử lý, Job đã qua ngày hiệu lực và đang chờ bạn (Job đang chờ hệ thống không tính). Đến hạn: trong 3 ngày tới.</span>
         </HelpTip>
       </h2>
-      <ul className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {/* Phones: one line of counts so the next thing to do stays near the top. */}
+      <ul className="flex flex-wrap gap-2 sm:hidden">
         {GROUPS.map((g) => {
-          const rows = q.data.items.filter((i) => i.group === g.key);
+          const rows = q.data.items.filter((i) => i.group === g.key && i.count > 0);
+          const total = rows.reduce((n, i) => n + i.count, 0);
+          const def = STATUS[g.status];
+          const Icon = def.icon;
+          return (
+            <li key={g.key}>
+              <Link
+                to={rows[0]?.href ?? "#"}
+                aria-disabled={!total}
+                className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm ${total ? `${def.fg} border-current` : "pointer-events-none border-line text-muted"}`}
+              >
+                <Icon className="size-3.5 shrink-0" aria-hidden="true" />
+                {g.label} <span className="font-semibold tabular">{total}</span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+      <ul className="hidden grid-cols-2 gap-3 sm:grid lg:grid-cols-4">
+        {GROUPS.map((g) => {
+          const rows = q.data.items.filter((i) => i.group === g.key && i.count > 0);
           const total = rows.reduce((n, i) => n + i.count, 0);
           const def = STATUS[g.status];
           const Icon = def.icon;
@@ -74,20 +101,24 @@ function Summary() {
                 <Icon className="size-4 shrink-0" aria-hidden="true" />
                 {g.label}
               </p>
-              <p className="mt-1 text-2xl font-semibold text-ink tabular">{total}</p>
-              <ul className="mt-1 space-y-0.5 text-sm">
+              {rows.length === 1 ? (
+                // One source: the number itself opens the filtered list (no "15 / 15 task SDP" repeat).
+                <Link to={rows[0]!.href} className="mt-1 block text-ink hover:underline">
+                  <span className="text-2xl font-semibold tabular">{total}</span> <span className="text-sm">{rows[0]!.label}</span>
+                </Link>
+              ) : (
+                <p className="mt-1 text-2xl font-semibold text-ink tabular">{total}</p>
+              )}
+              {/* Several sources: each non-zero part opens the list filtered to exactly these items. */}
+              {rows.length > 1 && <ul className="mt-1 space-y-0.5 text-sm">
                 {rows.map((i) => (
                   <li key={i.key}>
-                    {i.count > 0 ? (
-                      <Link to={i.href} className="text-ink underline decoration-line underline-offset-2 hover:decoration-current">
-                        <span className="tabular">{i.count}</span> {i.label}
-                      </Link>
-                    ) : (
-                      <span className="text-muted"><span className="tabular">0</span> {i.label}</span>
-                    )}
+                    <Link to={i.href} className="text-ink underline decoration-line underline-offset-2 hover:decoration-current">
+                      <span className="tabular">{i.count}</span> {i.label}
+                    </Link>
                   </li>
                 ))}
-              </ul>
+              </ul>}
             </li>
           );
         })}
@@ -115,21 +146,45 @@ export function MyWorkPage() {
     .flatMap((m) => m.portal ?? [])
     .filter((s) => can(s.permission))
     .sort((a, b) => a.order - b.order);
-  const items = q.data?.items ?? [];
+  const all = q.data?.items ?? [];
+  const notices = all.filter((i) => i.kind === "notice");
+  const waiting = all.filter((i) => i.passive && i.kind !== "notice");
+  const items = all.filter((i) => !i.passive && i.kind !== "notice");
   const [first, ...rest] = items;
   const groups = [0, 1, 2, 3, 4].map((p) => ({ p, items: rest.filter((i) => i.priority === p) })).filter((g) => g.items.length);
+  // "n" opens the next thing to do (not while typing).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "n" || e.altKey || e.ctrlKey || e.metaKey || !first) return;
+      if ((e.target as HTMLElement).closest("input, textarea, select, [contenteditable]")) return;
+      e.preventDefault();
+      navigate(first.href, { state: FROM_QUEUE });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [first, navigate]);
 
   return (
     <>
-      <PageHeader title="Việc của tôi" description="Việc tiếp theo nằm trên cùng; làm xong, quay lại đây để sang việc kế tiếp." />
+      <PageHeader title="Việc của tôi" description="Việc tiếp theo nằm trên cùng (phím N để mở); làm xong, quay lại đây để sang việc kế tiếp." />
+      {notices.map((n) => (
+        <div key={n.key} role="alert" className="mb-4 flex flex-wrap items-start gap-3 rounded-md border border-waiting bg-waiting-soft px-4 py-3">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-waiting" aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">{n.title}</p>
+            <p className="text-sm text-pretty">{n.detail}</p>
+          </div>
+          {!n.passive && <Link to={n.href} state={FROM_QUEUE} className="text-sm font-medium text-primary hover:underline">{n.action}</Link>}
+        </div>
+      ))}
       <Summary />
       {q.isError && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
       {q.isLoading ? (
         <LoadingRows rows={5} />
       ) : !first ? (
         <Panel className="mb-6">
-          <EmptyState icon={PartyPopper} title="Không còn việc nào cần làm">
-            Job, task quá hạn và đề xuất cần bổ sung sẽ hiện ở đây khi có.
+          <EmptyState icon={PartyPopper} title="Không còn việc nào cần bạn làm">
+            {waiting.length ? `${waiting.length} việc đang chờ hệ thống – xem bên dưới.` : "Job, task quá hạn và đề xuất cần bổ sung sẽ hiện ở đây khi có."}
           </EmptyState>
         </Panel>
       ) : (
@@ -137,13 +192,13 @@ export function MyWorkPage() {
           <section aria-labelledby="next-title" className="mb-6 rounded-md border border-primary/40 bg-surface p-5 shadow-card">
             <p className="mb-2 flex flex-wrap items-center gap-2 text-sm text-muted">
               <StatusBadge {...LEVEL[first.priority]!} />
-              Việc tiếp theo · còn {items.length} việc
+              Việc tiếp theo{rest.length ? ` · sau việc này còn ${rest.length} việc` : ""}
             </p>
-            <h2 id="next-title" className="text-lg font-semibold">{first.title}</h2>
-            {first.detail && <p className="mt-0.5 text-muted">{first.detail}</p>}
+            <h2 id="next-title" className="text-lg font-semibold text-pretty">{first.title}</h2>
+            {first.detail && <p className="mt-0.5 text-muted text-pretty">{first.detail}</p>}
             {first.due && <p className="mt-0.5 text-sm text-muted">Hạn {formatDate(first.due)}</p>}
-            <Button variant="primary" className="mt-4" onClick={() => navigate(first.href)}>
-              Làm việc tiếp theo: {first.action}<ArrowRight className="size-4" aria-hidden="true" />
+            <Button variant="primary" className="mt-4 h-11 w-full sm:h-9 sm:w-auto" onClick={() => navigate(first.href, { state: FROM_QUEUE })}>
+              <span className="truncate">Làm việc tiếp theo: {first.action}</span><ArrowRight className="size-4 shrink-0" aria-hidden="true" />
             </Button>
           </section>
           {groups.length > 0 && (
@@ -151,12 +206,12 @@ export function MyWorkPage() {
               {groups.map((g) => (
                 <section key={g.p} aria-label={LEVEL[g.p]!.label}>
                   <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold">
-                    <StatusBadge {...LEVEL[g.p]!} /> <span className="text-muted tabular">{g.items.length}</span>
+                    <StatusBadge {...LEVEL[g.p]!} /> <span className="text-muted tabular">{g.items.length} việc</span>
                   </h3>
                   <ul className="divide-y divide-line rounded-md border border-line bg-surface">
                     {g.items.map((i) => (
                       <li key={i.key}>
-                        <Link to={i.href} className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-2">
+                        <Link to={i.href} state={FROM_QUEUE} className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-2">
                           <span className="min-w-0 flex-1">
                             <span className="block font-medium">{i.title}</span>
                             {(i.detail || i.due) && (
@@ -177,10 +232,30 @@ export function MyWorkPage() {
           )}
         </>
       )}
+      {waiting.length > 0 && (
+        <section aria-label="Đang chờ hệ thống" className="mb-6">
+          <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold text-muted">
+            <Hourglass className="size-4" aria-hidden="true" />Đang chờ hệ thống – bạn không cần làm gì ({waiting.length})
+          </h3>
+          <ul className="divide-y divide-line rounded-md border border-line bg-surface">
+            {waiting.map((i) => (
+              <li key={i.key}>
+                <Link to={i.href} state={FROM_QUEUE} className="flex items-center gap-3 px-4 py-2 text-muted hover:bg-surface-2">
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-ink">{i.title}</span>
+                    <span className="block text-sm text-pretty">{i.detail}</span>
+                  </span>
+                  <ChevronRight className="size-4 shrink-0" aria-hidden="true" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {q.data?.failed.length ? <p role="status" className="mb-4 text-sm text-waiting">Chưa tải được việc của: {q.data.failed.join(", ")}.</p> : null}
       {sections.length > 0 && (
-        <details className="rounded-md border border-line bg-surface px-4 py-3">
-          <summary className="cursor-pointer font-medium">Xem theo nhóm: Job, task và gợi ý mua</summary>
+        <details>
+          <summary className="cursor-pointer py-2 font-medium">Xem theo nhóm: Job, task và gợi ý mua</summary>
           <div className="mt-4 space-y-6">
             {sections.map(({ key, component: Section }) => <Section key={key} />)}
           </div>

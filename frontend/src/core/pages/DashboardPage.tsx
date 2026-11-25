@@ -9,7 +9,7 @@ import { HelpTip } from "@/core/ui/help-tip";
 import { StatusBadge, type Status } from "@/core/ui/status";
 import { formatDate, formatRelative, pluralDays } from "@/core/lib/format";
 import { modules } from "@/modules";
-import { LEVEL, useNextActions } from "./MyWorkPage";
+import { FROM_QUEUE, LEVEL, useNextActions } from "./MyWorkPage";
 
 const moduleWidgets = Object.assign({}, ...modules.map((m) => m.widgets ?? {})) as Record<
   string,
@@ -54,7 +54,8 @@ function Tile({ label, value, tone }: { label: string; value: number; tone?: "fa
 /** The cross-module "Việc tiếp theo" queue (same as Việc của tôi), first on the home page: what needs you now. */
 function NextActions() {
   const q = useNextActions();
-  const items = q.data?.items ?? [];
+  // Same rule as Việc của tôi: notices and items waiting on the system are not "next things to do".
+  const items = (q.data?.items ?? []).filter((i) => !i.passive && i.kind !== "notice");
   return (
     <Panel
       title="Việc tiếp theo của bạn"
@@ -73,7 +74,7 @@ function NextActions() {
         <ul className="divide-y divide-line">
           {items.slice(0, 3).map((i) => (
             <li key={i.key}>
-              <Link to={i.href} className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-2">
+              <Link to={i.href} state={FROM_QUEUE} className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-2">
                 <StatusBadge {...LEVEL[i.priority]!} />
                 <span className="min-w-0 flex-1">
                   <span className="block font-medium">{i.title}</span>

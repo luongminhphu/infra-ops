@@ -21,6 +21,27 @@ async def load(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
     now = datetime.now(UTC)
     items: list[dict[str, Any]] = []
     me = await _my_technician(session, user)
+    if me is None and not user.has("workload.tickets.view_all"):
+        # Without the link the person's SDP tasks are silently missing: say so first.
+        manager = user.has("workload.settings.manage")
+        items.append(
+            {
+                "key": "tickets:unlinked",
+                "kind": "notice",
+                "priority": 0,
+                "passive": not manager,
+                "title": "Tài khoản chưa liên kết với technician trên ServiceDesk Plus",
+                "detail": "Task SDP của bạn chưa hiện ở đây. "
+                + (
+                    "Liên kết ở Cấu hình công việc."
+                    if manager
+                    else "Nhờ Manager liên kết ở Cấu hình công việc (theo e-mail technician trên SDP)."
+                ),
+                "due": None,
+                "href": "/workload/settings" if manager else "/workload/tickets",
+                "action": "Liên kết" if manager else "Xem task",
+            }
+        )
     if me is not None:
         # One item per group (overdue / due today): tasks are worked on in ServiceDesk Plus, so one
         # reminder is enough and the person's process work (jobs, with a due date) ranks above it.
@@ -61,7 +82,7 @@ async def load(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
                     "title": head,
                     "detail": detail,
                     "due": None,
-                    "href": f"/workload/tickets?state={state}",
+                    "href": f"/workload/tickets?tech=me&state={state}",
                     "action": "Xem task trên danh sách",
                 }
             )
@@ -107,7 +128,7 @@ async def load(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
                 "key": f"evidence:{p.id}",
                 "kind": "purchase_evidence",
                 "priority": 2,
-                "title": f"Bổ sung bằng chứng Function Head cho “{p.item}”",
+                "title": f"Bổ sung bằng chứng Function Head: {p.item}",
                 "detail": "Chưa có bằng chứng thì Supervisor chưa duyệt được.",
                 "due": None,
                 "href": f"/workload/purchases?open={p.id}",
@@ -165,12 +186,12 @@ async def summary(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
         return int(await session.scalar(select(func.count()).select_from(Ticket).where(mine, *where)) or 0)
 
     return [
-        {"key": "tickets:done", "group": "done", "label": "task SDP", "href": "/workload/tickets?state=done",
+        {"key": "tickets:done", "group": "done", "label": "task SDP", "href": "/workload/tickets?tech=me&state=done",
          "count": await count(Ticket.state == "done", Ticket.completed_at >= now - timedelta(days=7))},
-        {"key": "tickets:late", "group": "late", "label": "task SDP", "href": "/workload/tickets?state=overdue",
+        {"key": "tickets:late", "group": "late", "label": "task SDP", "href": "/workload/tickets?tech=me&state=overdue",
          "count": await count(is_open, Ticket.due_by < now)},
-        {"key": "tickets:soon", "group": "soon", "label": "task SDP", "href": "/workload/tickets?state=open",
+        {"key": "tickets:soon", "group": "soon", "label": "task SDP", "href": "/workload/tickets?tech=me&state=open",
          "count": await count(is_open, Ticket.due_by >= now, Ticket.due_by < now + timedelta(days=3))},
-        {"key": "tickets:open", "group": "open", "label": "task SDP", "href": "/workload/tickets?state=open",
+        {"key": "tickets:open", "group": "open", "label": "task SDP", "href": "/workload/tickets?tech=me&state=open",
          "count": await count(is_open)},
     ]  # fmt: skip

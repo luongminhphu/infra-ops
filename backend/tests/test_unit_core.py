@@ -148,4 +148,5 @@ def test_job_next_action_rules() -> None:
     assert job_item(job("running"), today) is None
     stalled = job("running")
     stalled.updated_at = datetime.now(UTC) - timedelta(hours=2)
-    assert job_item(stalled, today)["priority"] == 3
+    passive = job_item(stalled, today)
+    assert passive["priority"] == 3 and passive["passive"] is True  # nothing for the operator to do

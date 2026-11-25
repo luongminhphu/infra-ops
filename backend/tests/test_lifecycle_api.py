@@ -413,3 +413,34 @@ async def test_second_biostar_matched_on_last_six_digits(admin, configured, resp
     summary = await _sync()
     rows = {r["employee_id"]: r for r in (await admin.get("/api/lifecycle/reconciliation")).json()["items"]}
     assert rows["003551"]["cells"]["biostar"]["status"] == "skipped"
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_stalled_job_goes_to_the_coordinator_not_the_operator(admin, configured, respx_mock) -> None:  # type: ignore[no-untyped-def]
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import select
+
+    from app.core.workflow.models import Job
+
+    mock_systems(respx_mock)
+    await _sync()
+    me = (await admin.get("/api/core/me")).json()
+    async with get_sessionmaker()() as s:
+        job = (await s.scalars(select(Job).where(Job.workflow_key == "lifecycle.onboard"))).first()
+        assert job is not None
+        job.status, job.assignee_user_id = "running", me["id"]
+        job.params = {**job.params, "effective_date": "2020-01-01"}  # long past
+        job.updated_at = datetime.now(UTC) - timedelta(hours=3)
+        await s.commit()
+    items = {i["key"]: i for i in (await admin.get("/api/core/me/next")).json()["items"]}
+    # As assignee: shown apart, not as work. As coordinator (job.assign): one actionable "kiểm tra worker".
+    assert items[f"job:{job.id}"]["passive"] is True
+    assert (
+        items["jobs:stalled"]["priority"] == 1
+        and items["jobs:stalled"]["href"] == "/lifecycle/jobs?status=needs"
+    )
+    late = {i["key"]: i for i in (await admin.get("/api/core/me/summary")).json()["items"]}["jobs:late"]
+    assert (
+        late["count"] == 0 and "assignee=me" in late["href"]
+    )  # waiting on the system is not the person's lateness
