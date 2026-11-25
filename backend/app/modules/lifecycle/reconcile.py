@@ -170,7 +170,10 @@ def reconcile(
 
     bs_by_emp = {b.get("employee_id") or b["user_id"]: b for b in biostar_users if b.get("user_id")}
 
-    employees = set(req_by_emp) | set(users_by_emp) | set(bs_by_emp)
+    # Users moved to a "left the company" BioStar group are not reconciled on their own (no SDP check).
+    employees = (
+        set(req_by_emp) | set(users_by_emp) | {e for e, b in bs_by_emp.items() if not b.get("retired")}
+    )
     rows: list[Row] = []
     for emp in sorted(employees):
         reqs = req_by_emp.get(emp, [])
@@ -241,7 +244,11 @@ def reconcile(
         elif bs is None:
             row.cells["biostar"] = {"status": "pending", "label": "Không có", "detail": ""}
         else:
-            state = "Hoạt động" if bs["active"] else ("Vô hiệu" if bs["disabled"] else "Hết hạn")
+            state = (
+                "Nhóm nghỉ việc"
+                if bs.get("retired")
+                else ("Hoạt động" if bs["active"] else ("Vô hiệu" if bs["disabled"] else "Hết hạn"))
+            )
             row.cells["biostar"] = {
                 "status": "match" if bs["active"] else "skipped",
                 "label": state,
@@ -292,7 +299,7 @@ def reconcile(
                 row.issues.append(
                     Issue("onboard_no_assets", f"Ngày hiệu lực {_fmt(today_eff)} nhưng chưa có tài sản nào.")
                 )
-        if bs and sources.get("sdp") and sdp_has_emp_ids and not users and not reqs:
+        if bs and not bs.get("retired") and sources.get("sdp") and sdp_has_emp_ids and not users and not reqs:
             row.issues.append(
                 Issue(
                     "biostar_unknown_employee",
@@ -303,7 +310,11 @@ def reconcile(
             row.issues.append(
                 Issue(
                     "sdp_duplicate_employee_id",
-                    f"{len(users)} user SDP cùng Mã NV: " + ", ".join(u["name"] for u in users),
+                    f"{len(users)} user SDP cùng Mã NV: "
+                    + ", ".join(
+                        f"{u['name']} (id {u['id']}{', ' + u['email'] if u.get('email') else ''})"
+                        for u in users
+                    ),
                 )
             )
         names = {

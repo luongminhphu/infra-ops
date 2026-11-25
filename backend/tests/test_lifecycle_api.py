@@ -378,6 +378,7 @@ async def test_second_biostar_with_prefix_rule(admin, configured, respx_mock) ->
     )
     values = (await admin.get("/api/lifecycle/settings")).json()["values"]
     values["biostar_sources"] = [{"profile_id": prof["id"], "id_prefix": "1", "id_prefix_to": "0"}]
+    values["biostar_retired_groups"] = ["kế toán"]  # 002100 is in group "Kế Toán" (case-insensitive)
     assert (await admin.put("/api/lifecycle/settings", json=values)).status_code == 200
 
     summary = await _sync()
@@ -386,6 +387,7 @@ async def test_second_biostar_with_prefix_rule(admin, configured, respx_mock) ->
     assert "103551" not in rows  # consolidated under the real employee ID
     assert rows["003551"]["cells"]["biostar"]["label"] == "Hoạt động"
     assert "BS Office (user 103551)" in rows["003551"]["cells"]["biostar"]["detail"]
+    assert rows["002100"]["cells"]["biostar"]["label"] == "Nhóm nghỉ việc"
 
     # "Tự động" main must skip a connection listed as an extra source: here BS E2E (created first) is the extra
     # source, so the automatic main is BS Office and both systems are still read.

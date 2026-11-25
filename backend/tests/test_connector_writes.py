@@ -108,3 +108,16 @@ async def test_biostar_error_code_in_body_is_an_error() -> None:
     async with bs() as c:
         with pytest.raises(BioStarError, match="Duplicate user ID"):
             await c.create_user({"user_id": "1"})
+
+
+@respx.mock
+async def test_sdp_list_all_drops_records_repeated_across_pages() -> None:
+    # Offset paging over a shifting list can hand back a record twice (seen on a real SDP: every user doubled).
+    pages = [
+        {"users": [{"id": "1"}, {"id": "2"}], "list_info": {"has_more_rows": True}},
+        {"users": [{"id": "2"}, {"id": "3"}], "list_info": {"has_more_rows": False}},
+    ]
+    respx.get(f"{SDP}/api/v3/users").mock(side_effect=[httpx.Response(200, json=p) for p in pages])
+    async with sdp() as c:
+        rows = await c.list_all("/api/v3/users", "users", page_size=2)
+    assert [r["id"] for r in rows] == ["1", "2", "3"]
