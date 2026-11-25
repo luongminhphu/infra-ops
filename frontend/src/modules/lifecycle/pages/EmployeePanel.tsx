@@ -111,7 +111,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 /** Where a mismatch gets fixed: the onboard/offboard Job of this employee, or a button to create it from the
  * RTR request when none exists yet. */
-function JobsSection({ employeeId, requests }: { employeeId: string; requests: RtrRequest[] }) {
+function JobsSection({ employeeId, requests, latestId }: { employeeId: string; requests: RtrRequest[]; latestId?: string | null }) {
   const { can } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -131,7 +131,10 @@ function JobsSection({ employeeId, requests }: { employeeId: string; requests: R
   if (!can("lifecycle.job.view")) return null;
   const items = (jobs.data?.items ?? []).filter((j) => j.status !== "cancelled");
   const withJob = new Set(items.map((j) => j.external_ref));
-  const open = requests.filter((r) => (r.kind === "onboard" || r.kind === "offboard") && !withJob.has(r.id) && !r.parse_errors.length);
+  // Only the latest request is open work; an older one (the onboard of someone now leaving) never gets a new Job here.
+  const open = requests.filter(
+    (r) => r.id === latestId && (r.kind === "onboard" || r.kind === "offboard") && !withJob.has(r.id) && !r.parse_errors.length,
+  );
   return (
     <Section title="Xử lý">
       {items.length > 0 && (
@@ -291,7 +294,7 @@ export function EmployeePanel({
               </ul>
             )}
           </Section>
-          <JobsSection employeeId={employeeId} requests={d.requests} />
+          <JobsSection employeeId={employeeId} requests={d.requests} latestId={d.row.latest_request_id} />
           <DocumentsSection employeeId={employeeId} />
           <Section title="Request RTR">
             {d.requests.length === 0 ? (

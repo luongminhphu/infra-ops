@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   flexRender,
   getCoreRowModel,
@@ -22,6 +22,8 @@ interface DataTableProps<T> {
   density?: Density;
   empty?: ReactNode;
   maxHeight?: string;
+  /** Row ids in the order shown (after the user's sort), e.g. for previous/next navigation. */
+  onOrderChange?: (ids: string[]) => void;
 }
 
 /**
@@ -39,6 +41,7 @@ export function DataTable<T>({
   density = "compact",
   empty,
   maxHeight = "calc(100dvh - 230px)",
+  onOrderChange,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const table = useReactTable({
@@ -51,6 +54,11 @@ export function DataTable<T>({
     getRowId,
   });
   const rows = table.getRowModel().rows;
+  const order = rows.map((r) => r.id).join("\n");
+  useEffect(() => {
+    onOrderChange?.(order ? order.split("\n") : []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order]);
   // relative: sr-only (absolute) cell text must be clipped by this scroller, not widen the page.
   return (
     <div className="relative overflow-auto rounded-md border border-line bg-surface shadow-card" style={{ maxHeight }}>

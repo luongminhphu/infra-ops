@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import { Link, Navigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, CalendarClock, ChevronRight, PartyPopper, Plug } from "lucide-react";
 import { api } from "@/core/api/client";
@@ -255,29 +254,3 @@ export function DashboardPage() {
   );
 }
 
-const LANDED = "infraops.landed";
-
-/** Home route: an Operator's first stop in a session is "Việc của tôi" (their queue); afterwards, and for every
- * other role, it is Tổng quan. */
-export function HomePage() {
-  const { me } = useAuth();
-  const roles = me?.roles ?? [];
-  const operatorOnly = roles.includes("operator") && !roles.some((r) => ["supervisor", "manager", "admin"].includes(r));
-  // Read once per mount (StrictMode renders twice); mark the session only once the user is known.
-  const [first] = useState(() => {
-    try {
-      return !sessionStorage.getItem(LANDED);
-    } catch {
-      return false; // storage blocked: just show Tổng quan
-    }
-  });
-  useEffect(() => {
-    if (!me) return;
-    try {
-      sessionStorage.setItem(LANDED, "1");
-    } catch {
-      // storage blocked
-    }
-  }, [me]);
-  return operatorOnly && first ? <Navigate to="/me/work" replace /> : <DashboardPage />;
-}
