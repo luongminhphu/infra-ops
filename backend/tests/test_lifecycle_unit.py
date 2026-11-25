@@ -235,15 +235,17 @@ def test_allocation_reuses_stock_by_date_and_band() -> None:
     assert plan["noband"] == []
 
 
-def test_biostar_employee_id_last_six_digits_and_merge() -> None:
-    from app.modules.lifecycle.normalize import id_key, merge_biostar_users, resolve_employee_id
+def test_biostar_employee_id_last_five_digits_and_merge() -> None:
+    from app.modules.lifecycle.normalize import id_key, merge_biostar_users, resolve_employee_id, sdp_id_index
 
-    assert id_key("1002352") == "002352" and id_key("002352") == "002352" and id_key("2352") == "2352"
+    assert id_key("100008") == "00008" and id_key("1002352") == "02352" and id_key("2352") == "2352"
     assert id_key("GUEST-01") == "GUEST-01"  # non-numeric IDs are compared as they are
-    sdp = {"002352": "002352", "000008": "000008"}  # last 6 digits → SDP employee ID
+    sdp = sdp_id_index(["002352", "000008", "100100", "000100"])
     assert resolve_employee_id("1002352", sdp) == "002352"
+    assert resolve_employee_id("100008", sdp) == "000008"  # Office 100008 = SDP 000008
     assert resolve_employee_id("000008", sdp) == "000008"
-    assert resolve_employee_id("100008", sdp) == "100008"  # last 6 digits differ from SDP's: stays (flagged)
+    assert resolve_employee_id("200100", sdp) == "200100"  # 00100 is shared by two SDP IDs: not guessed
+    assert resolve_employee_id("777777", sdp) == "777777"  # unknown to SDP: kept as is (flagged)
     old = {"user_id": "100002", "employee_id": "000002", "active": True, "source": "Office"}
     new = {"user_id": "000002", "employee_id": "000002", "active": False, "source": "Server"}
     assert merge_biostar_users([new, old]) == [old]  # an active user anywhere wins (offboard checks)

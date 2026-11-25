@@ -77,19 +77,26 @@ def _count(raw: dict[str, Any], *keys: str) -> int:
     return 0
 
 
-EMPLOYEE_ID_DIGITS = 6
+EMPLOYEE_ID_DIGITS = 5
 
 
 def id_key(employee_id: str) -> str:
-    """The part of an employee ID compared across systems: its last 6 digits ("1002352" → "002352")."""
+    """The part of an employee ID compared across systems: its last 5 digits ("100008" → "00008")."""
     return employee_id[-EMPLOYEE_ID_DIGITS:] if employee_id.isdigit() else employee_id
 
 
+def sdp_id_index(employee_ids: list[str]) -> dict[str, str]:
+    """Last 5 digits → SDP employee ID. A key shared by two SDP IDs is left out: never guess between people."""
+    by_key: dict[str, set[str]] = {}
+    for e in employee_ids:
+        by_key.setdefault(id_key(e), set()).add(e)
+    return {k: next(iter(ids)) for k, ids in by_key.items() if len(ids) == 1}
+
+
 def resolve_employee_id(user_id: str, sdp_ids: dict[str, str]) -> str:
-    """Employee ID for a BioStar user: the SDP employee ID with the same last 6 digits (SDP is the reference),
-    else those 6 digits."""
-    key = id_key(user_id)
-    return sdp_ids.get(key, key)
+    """Employee ID for a BioStar user: the SDP employee ID with the same last 5 digits (SDP is the reference),
+    else the BioStar ID as it is."""
+    return sdp_ids.get(id_key(user_id), user_id)
 
 
 def biostar_user(raw: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:

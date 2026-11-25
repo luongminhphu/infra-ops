@@ -235,10 +235,8 @@ async def _sync(
     ]
     read_users: list[dict[str, Any]] = []
     retired_groups = {g.strip().lower() for g in settings.biostar_retired_groups if g.strip()}
-    # SDP is the reference: BioStar and SDP employee IDs are matched on their last 6 digits.
-    sdp_ids = {
-        normalize.id_key(u["employee_id"]): u["employee_id"] for u in sdp_users if u.get("employee_id")
-    }
+    # SDP is the reference: BioStar and SDP employee IDs are matched on their last 5 digits.
+    sdp_ids = normalize.sdp_id_index([u["employee_id"] for u in sdp_users if u.get("employee_id")])
     for err_key, which in reads:
         try:
             profile, ctx = await open_connection(session, "biostar", Purpose.READ, **which)

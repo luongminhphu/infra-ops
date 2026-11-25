@@ -166,11 +166,11 @@ export function SettingsPage() {
             BioStar đọc thêm (chỉ để đối soát)
             <HelpTip title="BioStar đọc thêm">
               <span className="block">Hệ thống BioStar khác (vd. máy cũ ở văn phòng) được đọc mỗi lần đồng bộ và gộp với hệ thống chính theo Mã NV. Job không ghi vào các hệ thống này.</span>
-              <span className="block">Mã NV được so theo 6 số cuối trên mọi BioStar và SDP (vd. user 1002352 → Mã NV 002352); Mã NV và họ tên lấy theo SDP.</span>
+              <span className="block">Mã NV được so theo 5 số cuối trên mọi BioStar và SDP (vd. user 100008 → Mã NV 000008); Mã NV và họ tên lấy theo SDP.</span>
               <span className="block">Một người có user ở cả hai hệ thống: user đang hoạt động được ưu tiên để không bỏ sót người đã nghỉ còn quyền ra vào.</span>
             </HelpTip>
           </h3>
-          <p className="mb-3 text-sm text-muted">Mã NV so theo 6 số cuối với SDP (vd. 1002352 → 002352); Mã NV và họ tên lấy theo SDP.</p>
+          <p className="mb-3 text-sm text-muted">Mã NV so theo 5 số cuối với SDP (vd. 100008 → 000008); Mã NV và họ tên lấy theo SDP.</p>
           <ul className="space-y-3">
             {v.biostar_sources.map((src, k) => {
               const upd = (patch: Partial<BioStarSource>) => set("biostar_sources", v.biostar_sources.map((x, j) => (j === k ? { ...x, ...patch } : x)));
