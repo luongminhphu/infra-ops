@@ -241,12 +241,15 @@ async def close_request(ctx: StepContext) -> StepOutcome:
                 if doc.signed_file_id:
                     f, data = await read_file(ctx.session, doc.signed_file_id)
                     # Read first: a timed-out upload may have landed; never attach the same record twice.
+                    # Match on the record number (put in the uploaded name), never on a generic name like scan.pdf.
+                    num = doc.number or str(doc.id)  # signed records are always numbered; id as a fallback
+                    fname = f.filename if num in f.filename else f"{num}-{f.filename}"
                     names = [str(x.get("name") or "") for x in await c.request_attachments(rid)]
-                    if not any(n == f.filename or (doc.number and doc.number in n) for n in names):
+                    if not any(num in n for n in names):
                         await c.post_file(
                             s.sdp_attach_path.replace("{request_id}", rid),
                             s.sdp_attach_field,
-                            f.filename,
+                            fname,
                             data,
                             f.mime,
                         )

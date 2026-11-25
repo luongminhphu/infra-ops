@@ -247,7 +247,7 @@ export function SettingsPage() {
             <Field label="Offboard: cho phép trễ (ngày)" hint="Sau ngày nghỉ việc bao lâu thì báo còn quyền/tài sản.">
               <Input type="number" min={0} max={60} value={v.offboard_grace_days} onChange={num("offboard_grace_days")} className="w-28" />
             </Field>
-            <Field label="Giữ chi tiết mỗi lần đồng bộ (ngày)">
+            <Field label="Giữ kết quả đối soát (ngày)" hint="Dữ liệu thô của SDP/BioStar chỉ giữ cho vài lần đồng bộ gần nhất.">
               <Input type="number" min={7} max={730} value={v.snapshot_retention_days} onChange={num("snapshot_retention_days")} className="w-28" />
             </Field>
           </div>
