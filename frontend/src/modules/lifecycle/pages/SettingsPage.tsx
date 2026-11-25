@@ -178,7 +178,7 @@ export function SettingsPage() {
               <span className="block">Một người có user ở cả hai hệ thống: user đang hoạt động được ưu tiên để không bỏ sót người đã nghỉ còn quyền ra vào.</span>
             </HelpTip>
           </h3>
-          <p className="mb-3 text-sm text-muted">Hệ thống chính dùng đúng Mã NV thì không cần quy tắc.</p>
+          <p className="mb-3 text-sm text-muted">Mã NV và họ tên theo SDP: user có mã SDP không biết được tự khớp vào Mã NV SDP cùng số cuối và cùng họ tên. Quy tắc bên dưới chỉ cần khi tự khớp không đủ.</p>
           <ul className="space-y-3">
             {v.biostar_sources.map((src, k) => {
               const upd = (patch: Partial<BioStarSource>) => set("biostar_sources", v.biostar_sources.map((x, j) => (j === k ? { ...x, ...patch } : x)));

@@ -22,6 +22,11 @@ def fold(text: str) -> str:
     return re.sub(r"\s+", " ", "".join(c for c in decomposed if not unicodedata.combining(c))).strip().lower()
 
 
+def name_key(name: str) -> tuple[str, ...]:
+    """Name compared without accents, punctuation or word order: "Thinh. Nguyen Canh" == "NGUYEN CANH THINH"."""
+    return tuple(sorted(re.findall(r"\w+", fold(name))))
+
+
 def html_to_text(value: str) -> str:
     text = _BLOCK_TAGS.sub("\n", value or "")
     text = _TAGS.sub("", text)
