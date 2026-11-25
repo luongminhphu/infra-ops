@@ -227,7 +227,16 @@ async def _sync(
     # Main BioStar, then the extra systems with their employee-ID prefix rule. BioStar counts as read only when
     # every system was read: never judge "no BioStar user" on a partial picture.
     main = main_biostar(settings)
-    reads: list[tuple[str, dict[str, Any], tuple[str, str, int]]] = [("biostar", main, ("", "", 0))]
+    # A system both chosen as main and listed as a source is read once, as main, with its ID rule.
+    main_rule = next(
+        (
+            (s.id_prefix, s.id_prefix_to, s.id_keep_last)
+            for s in settings.biostar_sources
+            if s.profile_id == main.get("profile_id")
+        ),
+        ("", "", 0),
+    )
+    reads: list[tuple[str, dict[str, Any], tuple[str, str, int]]] = [("biostar", main, main_rule)]
     reads += [
         (
             f"biostar:{s.profile_id}",
@@ -235,7 +244,7 @@ async def _sync(
             (s.id_prefix, s.id_prefix_to, s.id_keep_last),
         )
         for s in settings.biostar_sources
-        if s.profile_id != main.get("profile_id")  # an extra source chosen as main is read once, as main
+        if s.profile_id != main.get("profile_id")
     ]
     read_users: list[dict[str, Any]] = []
     retired_groups = {g.strip().lower() for g in settings.biostar_retired_groups if g.strip()}

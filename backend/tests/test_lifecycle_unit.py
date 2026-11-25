@@ -269,3 +269,10 @@ def test_retired_biostar_group_is_not_reconciled() -> None:
     assert "001500" not in {
         r.employee_id for r in reconcile(requests, users, assets, left, S, date(2026, 11, 16)).rows
     }
+
+
+def test_name_key_ignores_order_and_punctuation() -> None:
+    from app.modules.lifecycle.reconcile import name_key
+
+    assert name_key("Thinh. Nguyen Canh") == name_key("NGUYEN CANH THINH") == name_key("Nguyễn Cảnh Thịnh")
+    assert name_key("Nguyen Canh Thinh") != name_key("Nguyen Van Thinh")
