@@ -194,6 +194,12 @@ class SdpClient:
         }
         return await self.write("POST", f"/api/v3/requests/{request_id}/notes", {"note": note})
 
+    async def request_notes(self, request_id: str) -> list[dict[str, Any]]:
+        return await self.list_all(f"/api/v3/requests/{request_id}/notes", "notes", max_rows=500)
+
+    async def request_attachments(self, request_id: str) -> list[dict[str, Any]]:
+        return await self.list_all(f"/api/v3/requests/{request_id}/attachments", "attachments", max_rows=500)
+
     async def set_request_status(self, request_id: str, status: str) -> dict[str, Any]:
         return await self.write(
             "PUT", f"/api/v3/requests/{request_id}", {"request": {"status": {"name": status}}}
