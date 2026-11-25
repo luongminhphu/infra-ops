@@ -273,6 +273,73 @@ tạo tài khoản với Tên đăng nhập = UPN (ở chế độ SSO form khô
 `create-admin` là tài khoản nội bộ, chỉ đăng nhập được ở chế độ `local`; khi chuyển sang SSO, đặt
 `INFRAOPS_BOOTSTRAP_ADMIN_UPNS=<UPN của quản trị viên>` để người đó nhận vai trò Administrator ở lần đăng nhập SSO.
 
+### Cấu hình SSO Microsoft Entra ID
+
+infra-ops dùng OpenID Connect (authorization code + PKCE, client secret) với endpoint v2.0 của tenant công ty.
+Cần: HTTPS đã chạy đúng tên miền (bước 3 phần Docker), máy chủ ra được `login.microsoftonline.com:443`, và người cấu
+hình có quyền **Application Administrator** (hoặc Cloud Application Administrator) trên Entra ID.
+
+**1. Tạo App registration** – [Entra admin center](https://entra.microsoft.com) → *Identity → Applications → App
+registrations → New registration*:
+- *Name*: `infra-ops`.
+- *Supported account types*: **Accounts in this organizational directory only (Single tenant)**.
+- *Redirect URI*: nền tảng **Web**, giá trị `<INFRAOPS_PUBLIC_BASE_URL>/api/core/auth/oidc/callback`, vd.
+  `https://infraops.congty.local/api/core/auth/oidc/callback` – phải **trùng từng ký tự** với `INFRAOPS_PUBLIC_BASE_URL`
+  trong `.env` (https, không có `/` thừa, không có cổng nếu dùng 443).
+- Bấm *Register*. Ở trang *Overview*, ghi lại **Application (client) ID** và **Directory (tenant) ID**.
+
+**2. Tạo client secret** – *Certificates & secrets → Client secrets → New client secret*: mô tả `infra-ops`, thời hạn
+12–24 tháng. Chép ngay cột **Value** (không phải *Secret ID*; Value chỉ hiện một lần) và ghi lịch nhắc gia hạn trước
+ngày hết hạn.
+
+**3. Quyền API** – *API permissions*: giữ **Microsoft Graph → User.Read** (delegated) và thêm delegated **openid**,
+**profile**, **email** (*Add a permission → Microsoft Graph → Delegated permissions → OpenId permissions*). Bấm
+**Grant admin consent for <tên công ty>** để người dùng không phải tự đồng ý khi đăng nhập lần đầu.
+
+**4. Giới hạn ai được đăng nhập (khuyến nghị)** – *Enterprise applications → infra-ops → Properties*: đặt
+**Assignment required? = Yes**, rồi *Users and groups → Add user/group* chọn nhóm IT (vd. `IT-Infra`). Người ngoài
+nhóm bị Entra từ chối (lỗi `AADSTS50105`) trước khi vào app. Có thể bật thêm Conditional Access / MFA cho ứng dụng này.
+
+**5. Tạo sẵn tài khoản trong app (tuỳ chọn)** – còn đang ở chế độ `local`, đăng nhập `admin` → *Hệ thống → Người dùng &
+quyền → Thêm người dùng*: **Tên đăng nhập = UPN** trên Entra (vd. `nguyen.van.a@congty.vn`), chọn vai trò. Ai chưa
+được tạo sẵn sẽ vào với vai trò Viewer ở lần đăng nhập đầu, Administrator gán lại sau.
+
+**6. Bật SSO trong `.env`** rồi áp dụng:
+
+```bash
+INFRAOPS_AUTH_MODE=oidc
+INFRAOPS_PUBLIC_BASE_URL=https://infraops.congty.local
+INFRAOPS_OIDC_TENANT_ID=<Directory (tenant) ID>
+INFRAOPS_OIDC_CLIENT_ID=<Application (client) ID>
+INFRAOPS_OIDC_CLIENT_SECRET=<Value của client secret>
+INFRAOPS_BOOTSTRAP_ADMIN_UPNS=admin.it@congty.vn   # UPN nhận vai trò Administrator khi đăng nhập SSO (nhiều người: cách nhau dấu phẩy)
+```
+
+```bash
+sudo docker compose up -d        # tạo lại api/worker với cấu hình mới
+```
+
+**7. Kiểm tra** – mở `https://infraops.congty.local` → **Đăng nhập bằng tài khoản Microsoft** → đăng nhập bằng tài
+khoản trong `INFRAOPS_BOOTSTRAP_ADMIN_UPNS` → menu tài khoản ở góc phải hiện *Vai trò: Administrator*. Sau đó gán vai trò cho các
+thành viên khác ở *Người dùng & quyền*.
+
+Lưu ý:
+- Ở chế độ `oidc`, mọi tài khoản nội bộ (kể cả `admin` tạo bằng `create-admin`) **không đăng nhập được**. Muốn quay lại
+  tạm thời: đặt `INFRAOPS_AUTH_MODE=local` rồi `sudo docker compose up -d`.
+- Gia hạn client secret: tạo secret mới trên Entra → thay `INFRAOPS_OIDC_CLIENT_SECRET` → `sudo docker compose up -d`
+  → xoá secret cũ trên Entra.
+- Vô hiệu hoá một người trong app (*Người dùng & quyền*) chặn đăng nhập ngay cả khi tài khoản Entra còn hoạt động;
+  khoá tài khoản trên Entra chặn ở lần đăng nhập tiếp theo (phiên hiện tại hết hạn sau tối đa 10 giờ).
+
+| Lỗi khi đăng nhập | Nguyên nhân / cách sửa |
+|---|---|
+| `AADSTS50011` (redirect URI mismatch) | Redirect URI trên App registration khác `INFRAOPS_PUBLIC_BASE_URL` + `/api/core/auth/oidc/callback` – sửa cho trùng |
+| `AADSTS7000215` (invalid client secret) | Dùng nhầm *Secret ID* thay cho *Value*, hoặc secret đã hết hạn – tạo secret mới |
+| `AADSTS50105` (user not assigned) | Đã bật *Assignment required* nhưng người dùng chưa thuộc nhóm được gán – thêm vào *Users and groups* |
+| `AADSTS65001` (consent required) | Chưa *Grant admin consent* ở bước 3 |
+| Quay lại trang đăng nhập với thông báo “Đăng nhập Microsoft không thành công” | Xem `sudo docker compose logs api`: thường do máy chủ không ra được `login.microsoftonline.com`, sai tenant ID, hoặc giờ máy chủ lệch (kiểm tra NTP) |
+| Đăng nhập được nhưng chỉ là Viewer | UPN chưa được tạo sẵn / chưa nằm trong `INFRAOPS_BOOTSTRAP_ADMIN_UPNS` (so khớp theo UPN, không theo e-mail phụ) – Administrator gán vai trò trong app |
+
 ## Kết nối hệ thống (Admin)
 
 **Hệ thống → Kết nối hệ thống → Thêm kết nối**, sau đó nhập credential **Read** (đọc, đối soát) và

@@ -228,7 +228,7 @@ request thử rồi mới chuyển sang Production.
 
 ### 9.2 Người dùng, vai trò và module
 
-- **Hệ thống → Người dùng & quyền**: tạo tài khoản, gán Manager / Supervisor / Operator / Chỉ xem.
+- **Hệ thống → Người dùng & quyền**: tạo tài khoản, gán Viewer / Operator / Supervisor / Manager.
 - **Vòng đời → Cấu hình module**: nhãn trường RTR, ánh xạ *Loại biến động*, nhóm BioStar mặc định, người duyệt.
 - **Công việc → Cấu hình công việc**: kết nối SDP, nhóm hỗ trợ, liên kết Operator ↔ technician SDP.
 - **Vòng đời → Lưu đồ quy trình**: Manager rà soát checklist và bước bắt buộc bằng chứng.
@@ -236,16 +236,12 @@ request thử rồi mới chuyển sang Production.
 
 ### 9.3 Đăng nhập SSO Microsoft Entra ID (tuỳ chọn)
 
-1. Entra admin center → **App registrations → New registration**, loại *Single tenant*.
-   Redirect URI (Web): `https://infraops.congty.local/api/core/auth/oidc/callback`.
-2. **Certificates & secrets → New client secret**; ghi lại *Application (client) ID*, *Directory (tenant) ID*.
-3. Trong `.env`: `INFRAOPS_AUTH_MODE=oidc`, `INFRAOPS_OIDC_TENANT_ID`, `INFRAOPS_OIDC_CLIENT_ID`,
-   `INFRAOPS_OIDC_CLIENT_SECRET`, và `INFRAOPS_BOOTSTRAP_ADMIN_UPNS=admin.it@congty.vn` (người được cấp Quản trị
-   khi đăng nhập lần đầu).
-4. Áp dụng: `sudo docker compose up -d`.
-
-Người đăng nhập SSO lần đầu có vai trò **Chỉ xem**; Quản trị gán vai trò trong app. Máy chủ cần ra được
-`login.microsoftonline.com`.
+Các bước đầy đủ (App registration, client secret, quyền API, giới hạn người đăng nhập, `.env`, kiểm tra và xử lý lỗi
+`AADSTS…`): xem **README → Đăng nhập → Cấu hình SSO Microsoft Entra ID**. Tóm tắt: Redirect URI (Web) là
+`https://infraops.congty.local/api/core/auth/oidc/callback`; trong `.env` đặt `INFRAOPS_AUTH_MODE=oidc`,
+`INFRAOPS_OIDC_TENANT_ID`, `INFRAOPS_OIDC_CLIENT_ID`, `INFRAOPS_OIDC_CLIENT_SECRET` và
+`INFRAOPS_BOOTSTRAP_ADMIN_UPNS=admin.it@congty.vn`; áp dụng bằng `sudo docker compose up -d`. Người đăng nhập SSO lần
+đầu có vai trò **Viewer**; máy chủ cần ra được `login.microsoftonline.com`.
 
 ## 10. Tuỳ chọn
 
