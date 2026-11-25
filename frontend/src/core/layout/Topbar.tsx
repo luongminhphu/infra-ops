@@ -18,7 +18,7 @@ const THEMES: { key: ThemeChoice; label: string; icon: typeof Sun }[] = [
   { key: "dark", label: "Tối", icon: Moon },
 ];
 
-const ROLE_LABEL: Record<string, string> = { admin: "Quản trị", manager: "Manager", supervisor: "Supervisor", operator: "Operator", viewer: "Chỉ xem" };
+const ROLE_LABEL: Record<string, string> = { admin: "Administrator", manager: "Manager", supervisor: "Supervisor", operator: "Operator", viewer: "Viewer" };
 
 export function Topbar() {
   const { me } = useAuth();
