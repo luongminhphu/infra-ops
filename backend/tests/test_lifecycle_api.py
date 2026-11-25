@@ -399,6 +399,13 @@ async def test_second_biostar_with_prefix_rule(admin, configured, respx_mock) ->
     rows = {r["employee_id"]: r for r in (await admin.get("/api/lifecycle/reconciliation")).json()["items"]}
     assert "103551" in rows  # BS Office read as the (automatic) main system, without a prefix rule
     assert "BS E2E (user 002100)" in rows["002100"]["cells"]["biostar"]["detail"]
+    # BS Office chosen as main AND listed with its rule: the rule still applies (read once, as main).
+    values["biostar_profile_id"] = prof["id"]
+    values["biostar_sources"] = [{"profile_id": prof["id"], "id_prefix": "1", "id_prefix_to": "0"}]
+    assert (await admin.put("/api/lifecycle/settings", json=values)).status_code == 200
+    await _sync()
+    rows = {r["employee_id"]: r for r in (await admin.get("/api/lifecycle/reconciliation")).json()["items"]}
+    assert "103551" not in rows and rows["003551"]["cells"]["biostar"]["label"] == "Hoạt động"
     values["biostar_profile_id"] = configured[1]["id"]
     values["biostar_sources"] = [{"profile_id": prof["id"], "id_prefix": "1", "id_prefix_to": "0"}]
     assert (await admin.put("/api/lifecycle/settings", json=values)).status_code == 200

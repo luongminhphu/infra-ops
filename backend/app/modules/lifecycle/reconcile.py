@@ -6,6 +6,7 @@ and the list of detected discrepancies. No I/O, so every rule is unit-tested dir
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -86,6 +87,11 @@ class Row:
 class ReconcileResult:
     rows: list[Row]
     notes: list[dict[str, Any]]  # global findings not tied to one employee
+
+
+def name_key(name: str) -> tuple[str, ...]:
+    """Name compared without accents, punctuation or word order: "Thinh. Nguyen Canh" == "NGUYEN CANH THINH"."""
+    return tuple(sorted(re.findall(r"\w+", fold(name))))
 
 
 def _fmt(d: date | None) -> str:
@@ -322,7 +328,7 @@ def reconcile(
             "SDP": users[0]["name"] if users else None,
         }
         present = {k: v for k, v in names.items() if v}
-        if len({fold(v) for v in present.values()}) > 1:
+        if len({name_key(v) for v in present.values()}) > 1:
             row.issues.append(Issue("name_mismatch", " · ".join(f"{k}: {v}" for k, v in present.items())))
         for r in reqs:
             if r.get("parse_errors"):
