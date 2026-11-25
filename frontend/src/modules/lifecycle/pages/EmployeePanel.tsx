@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCheck, FilePlus2, Play, RotateCcw, X } from "lucide-react";
+import { CheckCheck, ChevronDown, ChevronUp, FilePlus2, Play, RotateCcw, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
@@ -200,7 +200,18 @@ function DocumentsSection({ employeeId }: { employeeId: string }) {
   );
 }
 
-export function EmployeePanel({ employeeId, onClose, className }: { employeeId: string; onClose: () => void; className?: string }) {
+export function EmployeePanel({
+  employeeId,
+  onClose,
+  onStep,
+  className,
+}: {
+  employeeId: string;
+  onClose: () => void;
+  /** Move to the previous (-1) / next (+1) row of the list; undefined at either end. */
+  onStep?: { prev?: () => void; next?: () => void };
+  className?: string;
+}) {
   const heading = useRef<HTMLHeadingElement>(null);
   // Keyboard and screen-reader users land in the panel they just opened.
   useEffect(() => heading.current?.focus(), [employeeId]);
@@ -217,6 +228,15 @@ export function EmployeePanel({ employeeId, onClose, className }: { employeeId: 
         if (e.key === "Escape" && !e.defaultPrevented) {
           e.preventDefault();
           onClose();
+          return;
+        }
+        // j / k walk the list without leaving the panel (not while typing a note).
+        const typing = (e.target as HTMLElement).closest("input, textarea, select, [contenteditable]");
+        if (typing || e.altKey || e.ctrlKey || e.metaKey) return;
+        const go = e.key === "j" ? onStep?.next : e.key === "k" ? onStep?.prev : undefined;
+        if (go) {
+          e.preventDefault();
+          go();
         }
       }}
       className={className ?? "sticky top-[calc(var(--topbar-h)+1.25rem)] max-h-[calc(100dvh-110px)] overflow-y-auto rounded-md border border-line bg-surface"}
@@ -229,9 +249,21 @@ export function EmployeePanel({ employeeId, onClose, className }: { employeeId: 
             {d?.row.department && ` · ${d.row.department}`}
           </p>
         </div>
-        <Button variant="ghost" size="icon" aria-label="Đóng chi tiết" onClick={onClose}>
-          <X className="size-4" aria-hidden="true" />
-        </Button>
+        <div className="flex shrink-0 items-center">
+          {onStep && (
+            <>
+              <Button variant="ghost" size="icon" aria-label="Nhân viên trước (phím k)" title="Nhân viên trước (k)" disabled={!onStep.prev} onClick={onStep.prev}>
+                <ChevronUp className="size-4" aria-hidden="true" />
+              </Button>
+              <Button variant="ghost" size="icon" aria-label="Nhân viên sau (phím j)" title="Nhân viên sau (j)" disabled={!onStep.next} onClick={onStep.next}>
+                <ChevronDown className="size-4" aria-hidden="true" />
+              </Button>
+            </>
+          )}
+          <Button variant="ghost" size="icon" aria-label="Đóng chi tiết" onClick={onClose}>
+            <X className="size-4" aria-hidden="true" />
+          </Button>
+        </div>
       </header>
       {q.isLoading && <LoadingRows rows={6} />}
       {q.isError && <div className="p-4"><ErrorState error={q.error} onRetry={() => q.refetch()} /></div>}

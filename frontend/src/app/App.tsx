@@ -8,7 +8,7 @@ import { LoginPage } from "@/core/auth/LoginPage";
 import { RequireAuth, RequirePermission } from "@/core/auth/guards";
 import { AppShell } from "@/core/layout/AppShell";
 import { LiveRegion } from "@/core/ui/live-region";
-import { DashboardPage } from "@/core/pages/DashboardPage";
+import { HomePage } from "@/core/pages/DashboardPage";
 import { ConnectionsPage } from "@/core/pages/connections/ConnectionsPage";
 import { ConnectionDetailPage } from "@/core/pages/connections/ConnectionDetailPage";
 import { AuditPage } from "@/core/pages/AuditPage";
@@ -36,7 +36,7 @@ const queryClient: QueryClient = new QueryClient({
 });
 
 const coreRoutes: RouteObject[] = [
-  { index: true, element: <RequirePermission permission="core.dashboard.view"><DashboardPage /></RequirePermission> },
+  { index: true, element: <RequirePermission permission="core.dashboard.view"><HomePage /></RequirePermission> },
   { path: "me/work", element: <RequirePermission permission="core.dashboard.view"><MyWorkPage /></RequirePermission> },
   { path: "settings/connections", element: <RequirePermission permission="core.connections.view"><ConnectionsPage /></RequirePermission> },
   { path: "settings/connections/:id", element: <RequirePermission permission="core.connections.view"><ConnectionDetailPage /></RequirePermission> },
