@@ -28,6 +28,8 @@ router = APIRouter(tags=["auth"])
 
 class AuthConfig(BaseModel):
     mode: str
+    # Secure session cookie: browsers drop it on plain http://, so the login page warns before signing in.
+    cookie_secure: bool
 
 
 class LoginBody(BaseModel):
@@ -37,7 +39,8 @@ class LoginBody(BaseModel):
 
 @router.get("/auth/config", response_model=AuthConfig)
 async def auth_config() -> AuthConfig:
-    return AuthConfig(mode=get_settings().auth_mode)
+    settings = get_settings()
+    return AuthConfig(mode=settings.auth_mode, cookie_secure=settings.session_cookie_secure)
 
 
 @router.post("/auth/login", status_code=204)

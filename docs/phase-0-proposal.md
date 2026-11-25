@@ -1040,3 +1040,12 @@ Quyết định:
 - Đề xuất từ request: tiêu đề request hiện làm ngữ cảnh, thiết bị chỉ điền khi khớp rõ bảng giá; `Wizard` focus ô
   `[data-autofocus]` của bước nếu có.
 
+## 31. Phase 18 – Đăng nhập khi chưa có HTTPS (25/11/2026)
+
+- Sự cố khi triển khai: tạo admin xong đăng nhập không được – `POST /auth/login` trả 204 nhưng `GET /me` vẫn 401 vì
+  trang mở bằng `http://<ip>:8080`, cookie phiên có cờ `Secure` nên trình duyệt bỏ.
+- `GET /api/core/auth/config` trả thêm `cookie_secure`; trang đăng nhập (trên http://, trừ localhost) hiện cảnh báo
+  *Cần mở trang bằng HTTPS* kèm liên kết https://, và sau khi đăng nhập kiểm tra lại `/me` để báo lỗi rõ ràng thay vì
+  quay về trang đăng nhập. Không đổi cơ chế bảo mật: môi trường thật vẫn cần HTTPS; chỉ khi thử nghiệm mới đặt
+  `INFRAOPS_SESSION_COOKIE_SECURE=false`.
+

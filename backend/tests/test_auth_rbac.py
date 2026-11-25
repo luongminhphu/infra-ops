@@ -11,6 +11,12 @@ async def test_me_requires_login(client) -> None:  # type: ignore[no-untyped-def
     assert resp.json()["error"]["code"] == "not_authenticated"
 
 
+async def test_auth_config_reports_secure_cookie(client) -> None:  # type: ignore[no-untyped-def]
+    # The login page warns on plain http:// when the session cookie is Secure (browsers would drop it).
+    r = await client.get("/api/core/auth/config")
+    assert r.json() == {"mode": "dev", "cookie_secure": False}
+
+
 async def test_bootstrap_admin_gets_all_permissions(admin) -> None:  # type: ignore[no-untyped-def]
     me = (await admin.get("/api/core/me")).json()
     assert "admin" in me["roles"]
