@@ -11,10 +11,9 @@ import { formatDate, formatRelative, pluralDays } from "@/core/lib/format";
 import { modules } from "@/modules";
 import { FROM_QUEUE, LEVEL, useNextActions } from "./MyWorkPage";
 
-const moduleWidgets = Object.assign({}, ...modules.map((m) => m.widgets ?? {})) as Record<
-  string,
-  React.ComponentType<{ data: unknown }>
->;
+// Looked up on use, not at import: the Playbook home (a module) imports this file, and the module list imports it.
+const widgetFor = (kind: string) =>
+  modules.map((m) => m.widgets?.[kind]).find(Boolean) as React.ComponentType<{ data: unknown }> | undefined;
 
 interface ConnItem {
   id: string;
@@ -52,7 +51,7 @@ function Tile({ label, value, tone }: { label: string; value: number; tone?: "fa
 }
 
 /** The cross-module "Việc tiếp theo" queue (same as Việc của tôi), first on the home page: what needs you now. */
-function NextActions() {
+export function NextActions() {
   const q = useNextActions();
   // Same rule as Việc của tôi: notices and items waiting on the system are not "next things to do".
   const items = (q.data?.items ?? []).filter((i) => !i.passive && i.kind !== "notice");
@@ -226,9 +225,9 @@ export function DashboardPage() {
               <ConnectionsWidget data={w.data as { items: ConnItem[] }} />
             ) : w.kind === "expiring_secrets" ? (
               <ExpiringWidget data={w.data as { warn_days: number; items: ExpItem[] }} />
-            ) : moduleWidgets[w.kind] ? (
+            ) : widgetFor(w.kind) ? (
               (() => {
-                const Widget = moduleWidgets[w.kind]!;
+                const Widget = widgetFor(w.kind)!;
                 return <Widget data={w.data} />;
               })()
             ) : (
@@ -255,3 +254,16 @@ export function DashboardPage() {
   );
 }
 
+
+/** One dashboard widget by kind, outside the overview page (e.g. the team queue on the Playbook home). */
+export function WidgetSlot({ kind }: { kind: string }) {
+  const q = useQuery({ queryKey: ["dashboard"], queryFn: () => api<DashboardWidget[]>("/api/core/dashboard") });
+  const w = q.data?.find((x) => x.kind === kind);
+  const Widget = widgetFor(kind);
+  if (!w || !Widget) return null;
+  return (
+    <Panel title={w.title} bodyClassName="py-1">
+      {w.error ? <ErrorState error={new Error(w.error)} /> : <Widget data={w.data} />}
+    </Panel>
+  );
+}

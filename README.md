@@ -2,8 +2,15 @@
 
 Nền tảng web nội bộ cho các tác vụ vận hành của team IT Infrastructure, giao diện tiếng Việt.
 Kiến trúc **Platform Core + Modules**: core dùng chung (đăng nhập, phân quyền, kết nối hệ thống, nhật ký kiểm tra,
-dashboard, hàng chờ việc, workflow) và các module cắm vào: **Vòng đời nhân sự** (Onboard/Offboard) và
-**Công việc Infra Support** (task SDP, đề xuất mua, PO, nhận hàng).
+dashboard, hàng chờ việc, workflow) và các module cắm vào: **Infra Playbook**, **Vòng đời nhân sự**
+(Onboard/Offboard) và **Công việc Infra Support** (task SDP, đề xuất mua, PO, nhận hàng).
+
+**Mọi thứ bắt đầu từ Playbook.** Trang chính hỏi *“Bạn cần xử lý việc gì?”*: tìm tình huống (nhân viên mới, nghỉ
+việc, cấp thêm thiết bị, rà soát chấm công…), mở hướng dẫn dạng sơ đồ rẽ nhánh; mỗi bước mở sẵn công cụ cần dùng
+(Job, đối soát, kho, chấm công…). Bước **kiểm tra** để app tự so sánh dữ liệu của nhân viên (tài sản đang dùng, band,
+tiêu chuẩn cấp phát…) và bước **kết luận** xếp loại Tiêu chuẩn / Adhoc / Exception; **Chạy với Mã NV** cho thấy từng
+điều kiện, giá trị và nguồn. Thanh trái chỉ còn: Playbook · Việc của tôi · Công cụ (mọi trang của các module) ·
+Hệ thống. Manager và Supervisor (và Administrator) soạn, sửa, thay thế, xuất bản và xoá Playbook.
 
 | Thành phần | Công nghệ |
 |---|---|

@@ -1,7 +1,7 @@
 """rename handbook to playbook
 
 Tables, keys and indexes move from handbook_* to playbook_*; image URLs inside the stored maps and the
-roles' permission grants follow the new name, so nothing already written or granted is lost.
+roles' permission grants and the known-permission registry follow the new name, so nothing already written or granted is lost.
 
 Revision ID: 0002_playbook
 Revises: 0001_handbook
@@ -44,6 +44,8 @@ def _move(a: str, b: str) -> None:
             f"UPDATE {table} SET {col} = replace({col}::text, '/api/{a}/images/', '/api/{b}/images/')::jsonb"  # noqa: S608
         )
         op.execute(sql)
+    sql = f"UPDATE core_permission SET code = replace(code, '{a}.', '{b}.'), module_id = '{b}' WHERE code LIKE '{a}.%'"  # noqa: S608
+    op.execute(sql)
     sql = f"UPDATE core_role_permission SET permission_code = replace(permission_code, '{a}.', '{b}.') WHERE permission_code LIKE '{a}.%'"  # noqa: S608
     op.execute(sql)
 

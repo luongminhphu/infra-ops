@@ -10,6 +10,8 @@ import { RequireAuth, RequirePermission } from "@/core/auth/guards";
 import { AppShell } from "@/core/layout/AppShell";
 import { LiveRegion } from "@/core/ui/live-region";
 import { HomePage } from "@/core/pages/HomePage";
+import { DashboardPage } from "@/core/pages/DashboardPage";
+import { ToolsPage } from "@/core/pages/ToolsPage";
 import { ConnectionsPage } from "@/core/pages/connections/ConnectionsPage";
 import { ConnectionDetailPage } from "@/core/pages/connections/ConnectionDetailPage";
 import { AuditPage } from "@/core/pages/AuditPage";
@@ -44,6 +46,8 @@ const queryClient: QueryClient = new QueryClient({
 
 const coreRoutes: RouteObject[] = [
   { index: true, element: <RequirePermission permission="core.dashboard.view"><HomePage /></RequirePermission> },
+  { path: "overview", element: <RequirePermission permission="core.dashboard.view"><DashboardPage /></RequirePermission> },
+  { path: "tools", element: <RequirePermission permission="core.dashboard.view"><ToolsPage /></RequirePermission> },
   { path: "me/work", element: <RequirePermission permission="core.dashboard.view"><MyWorkPage /></RequirePermission> },
   { path: "me/credentials", element: <MyCredentialsPage /> },
   { path: "settings/connections", element: <RequirePermission permission="core.connections.view"><ConnectionsPage /></RequirePermission> },

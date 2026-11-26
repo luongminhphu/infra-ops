@@ -3,7 +3,15 @@
 Single reference for every module, current and future. Tokens live in
 `frontend/src/core/styles/tokens.css`; shared components in `frontend/src/core/ui/`.
 
-## Direction: "Phòng điều khiển" (control room) – since Phase 7
+## Direction since §48: Playbook-first, bright and quiet
+
+The app opens on Infra Playbook ("Bạn cần xử lý việc gì?"); module pages are *tools* opened from playbook steps or
+from Công cụ. The page is white (`paper` = `surface`), structure is drawn with hairlines (`line`) rather than boxes,
+shadows are near-invisible, and cobalt `primary` is the only accent – reserved for the main action and links. Status
+colours appear only when something needs attention (always with an icon and a label). Lists are rows with
+dividers, not grids of same-size cards.
+
+## Previous direction: "Phòng điều khiển" (control room) – Phase 7
 
 Chosen by the product owner from two directions (mockup `docs/design/redesign-mockup.html`, direction B).
 Cool slate neutrals, one cobalt accent, an **icon rail** of modules and a **sub-navigation** for the pages of
@@ -18,13 +26,13 @@ All colours use `light-dark()`; never hard-code hex in components – use Tailwi
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
-| `ink` | #0F172A | #E5EAF3 | Primary text |
-| `muted` | #526077 | #95A1B6 | Secondary text |
-| `paper` | #F1F4F9 | #0B1120 | App background |
+| `ink` | #111827 | #E5EAF3 | Primary text |
+| `muted` | #5B6472 | #95A1B6 | Secondary text |
+| `paper` | #FFFFFF | #0B1120 | App background (same as `surface` in light mode) |
 | `surface` | #FFFFFF | #111A2C | Panels, tables, cards |
-| `surface-2` | #E8EDF5 | #18233A | Table header, hover, code |
-| `rail` | #FFFFFF | #0E1626 | Module rail |
-| `line` / `line-strong` | #DBE2EC / #C2CCDA | #233049 / #33425F | Dividers (decorative) |
+| `surface-2` | #F4F6F9 | #18233A | Table header, hover, code |
+| `rail` | #FAFBFC | #0E1626 | Module rail |
+| `line` / `line-strong` | #E4E8EE / #C2CCDA | #233049 / #33425F | Dividers (decorative) |
 | `control-border` | #74819A | #6F7D97 | Form control borders (≥ 3:1) |
 | `primary` (cobalt) | #2F5BD3 | #7C9DFF | Primary buttons, links, active nav |
 | `focus` | #2F5BD3 | #A1B8FF | Focus ring (2px outline, offset 2) |

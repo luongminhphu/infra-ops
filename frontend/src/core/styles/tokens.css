@@ -6,13 +6,13 @@
 :root {
   color-scheme: light dark;
 
-  /* Neutrals – cool slate ("Phòng điều khiển") */
-  --ink: light-dark(#0f172a, #e5eaf3);
-  --muted: light-dark(#526077, #95a1b6);
-  --paper: light-dark(#f1f4f9, #0b1120);
+  /* Neutrals – bright and quiet: white page, hairline structure, one accent (cobalt) for actions */
+  --ink: light-dark(#111827, #e5eaf3);
+  --muted: light-dark(#5b6472, #95a1b6);
+  --paper: light-dark(#ffffff, #0b1120);
   --surface: light-dark(#ffffff, #111a2c);
-  --surface-2: light-dark(#e8edf5, #18233a);
-  --line: light-dark(#dbe2ec, #233049);
+  --surface-2: light-dark(#f4f6f9, #18233a);
+  --line: light-dark(#e4e8ee, #233049);
   --line-strong: light-dark(#c2ccda, #33425f);
   /* Form control borders must reach 3:1 against the surface (WCAG 1.4.11). */
   --control-border: light-dark(#74819a, #6f7d97);
@@ -24,7 +24,7 @@
   --primary-soft: light-dark(#e4ebfc, #1a2747);
   --focus: light-dark(#2f5bd3, #a1b8ff);
   /* Rail (module navigation) */
-  --rail: light-dark(#ffffff, #0e1626);
+  --rail: light-dark(#fafbfc, #0e1626);
 
   /* Status – always paired with an icon and a label */
   --done: light-dark(#166534, #4ade80);
@@ -41,7 +41,7 @@
   --mismatch-soft: light-dark(#f7e3fa, #3a1a40);
 
   /* Depth */
-  --shadow-color: light-dark(rgb(15 23 42 / 0.07), rgb(0 0 0 / 0));
+  --shadow-color: light-dark(rgb(15 23 42 / 0.04), rgb(0 0 0 / 0));
   --shadow-card: 0 1px 2px var(--shadow-color), 0 1px 3px var(--shadow-color);
 
   /* Chart series (categorical, validated with the dataviz validator; never status colours) */

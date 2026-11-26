@@ -209,3 +209,21 @@ async def test_lifecycle_facts_and_run_endpoint(admin, client) -> None:  # type:
     async with get_sessionmaker()() as s:  # the far-future run must not become other tests' "latest sync"
         await s.delete(await s.get(SyncRun, run.id))
         await s.commit()
+
+
+async def test_permission_sync_tolerates_grants_moved_by_a_migration(admin) -> None:  # type: ignore[no-untyped-def]
+    """A migration that renames a permission moves its grants; start-up must not insert them a second time."""
+    from sqlalchemy import delete
+
+    from app.core.db import get_sessionmaker
+    from app.core.modules.registry import get_registry
+    from app.core.rbac.models import KnownPermission
+    from app.core.rbac.service import sync_permissions
+
+    async with get_sessionmaker()() as s:
+        await s.execute(delete(KnownPermission).where(KnownPermission.code == "playbook.guides.view"))
+        await s.commit()
+        assert await sync_permissions(s, get_registry()) == [
+            "playbook.guides.view"
+        ]  # grants already there: no error
+        await s.commit()

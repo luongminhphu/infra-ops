@@ -5,12 +5,65 @@ export interface Branch {
   label: string;
   to: string;
 }
+export interface Operand {
+  fact: string | null;
+  param: string;
+  value: string | null;
+}
+export type Op = ">=" | ">" | "<=" | "<" | "==" | "!=";
+export type OutcomeResult = "standard" | "adhoc" | "exception";
 export interface StepNode {
+  /** step: read and act; check: the app tests a condition (branch 1 = Đúng, 2 = Sai); outcome: classification. */
+  kind?: "step" | "check" | "outcome";
   title: string;
   /** Light markdown: **bold**, `code`, lists, [links](url), ![images](url). */
   note: string;
   children: Branch[];
+  /** Tools the step opens: a page key ("lifecycle.jobs" = /lifecycle/jobs). */
+  actions?: { tool: string; label: string }[];
+  check?: { left: Operand; op: Op; right: Operand } | null;
+  outcome?: { result: OutcomeResult; approval: string } | null;
 }
+export interface Fact {
+  key: string;
+  label: string;
+  kind: "number" | "text";
+  param_label: string | null;
+  param_hint: string;
+}
+export interface TraceValue {
+  label: string;
+  value: string | number;
+  source: string;
+}
+export interface TraceEntry {
+  id: string;
+  kind: "step" | "check" | "outcome";
+  title: string;
+  left?: TraceValue | null;
+  right?: TraceValue | null;
+  op?: Op;
+  result?: boolean;
+  missing?: string;
+  options?: { index: number; label: string; to: string }[];
+  chosen?: number;
+}
+export interface RunResult {
+  status: "outcome" | "needs_choice" | "missing_data" | "end" | "loop";
+  trace: TraceEntry[];
+  outcome?: { result: OutcomeResult; approval: string; label: string };
+  employee_id: string;
+}
+
+export const OP_LABEL: Record<Op, string> = { ">=": "≥", ">": ">", "<=": "≤", "<": "<", "==": "bằng", "!=": "khác" };
+export const OUTCOME: Record<OutcomeResult, { label: string; status: "done" | "warning" | "failed" }> = {
+  standard: { label: "Tiêu chuẩn", status: "done" },
+  adhoc: { label: "Adhoc", status: "warning" },
+  exception: { label: "Exception", status: "failed" },
+};
+
+/** A tool key is a page path without slashes: "lifecycle.offboard-review" = /lifecycle/offboard-review. */
+export const toolKey = (path: string) => path.replace(/^\//, "").replaceAll("/", ".");
 export interface Tree {
   root: string;
   nodes: Record<string, StepNode>;

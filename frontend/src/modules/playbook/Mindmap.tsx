@@ -1,14 +1,14 @@
 import { useMemo } from "react";
-import { CornerDownRight } from "lucide-react";
+import { CircleCheck, CornerDownRight, Flag, Split } from "lucide-react";
 import { cn } from "@/core/lib/cn";
-import type { Tree } from "./api";
+import { OUTCOME, type Tree } from "./api";
 import { BOX_H, BOX_W, layoutTree } from "./layout";
 
 /**
  * The guide as a left-to-right mind map. Every step is a button (Tab order follows the map); a branch that goes
  * back to a step drawn elsewhere is a small "→ step" box that selects that step.
  */
-export function Mindmap({ tree, selected, onSelect, label }: { tree: Tree; selected: string | null; onSelect: (id: string) => void; label: string }) {
+export function Mindmap({ tree, selected, onSelect, label, path }: { tree: Tree; selected: string | null; onSelect: (id: string) => void; label: string; path?: Set<string> }) {
   const { boxes, links, width, height } = useMemo(() => layoutTree(tree), [tree]);
   const pad = 16;
   return (
@@ -35,6 +35,10 @@ export function Mindmap({ tree, selected, onSelect, label }: { tree: Tree; selec
           const node = tree.nodes[b.id];
           if (!node) return null;
           const on = selected === b.id;
+          const kind = node.kind ?? "step";
+          const walked = path?.has(b.id);
+          const tone = kind === "outcome" && node.outcome ? OUTCOME[node.outcome.result].status : null;
+          const Icon = kind === "check" ? Split : kind === "outcome" ? Flag : null;
           return b.jump ? (
             <button
               key={b.key}
@@ -54,13 +58,20 @@ export function Mindmap({ tree, selected, onSelect, label }: { tree: Tree; selec
               aria-pressed={on}
               onClick={() => onSelect(b.id)}
               className={cn(
-                "absolute rounded-sm border px-2.5 py-1.5 text-left text-sm leading-snug shadow-card transition-colors",
-                on ? "border-primary bg-primary-soft text-ink ring-2 ring-primary/30" : "border-line bg-surface hover:border-primary",
+                "absolute flex items-start gap-1.5 rounded-sm border px-2.5 py-1.5 text-left text-sm leading-snug transition-colors",
+                kind === "check" && "border-dashed",
+                tone === "done" && "bg-done-soft", tone === "warning" && "bg-waiting-soft", tone === "failed" && "bg-failed-soft",
+                !tone && "bg-surface",
+                on ? "border-primary ring-2 ring-primary/30" : walked ? "border-primary" : "border-line-strong hover:border-primary",
+                path && path.size > 0 && !walked && "opacity-55",
                 b.id === tree.root && "font-semibold",
               )}
               style={{ left: b.x + pad, top: b.y + pad, width: BOX_W, height: BOX_H }}
             >
+              {walked && !Icon && <CircleCheck className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden="true" />}
+              {Icon && <Icon className="mt-0.5 size-3.5 shrink-0 text-muted" aria-hidden="true" />}
               <span className="line-clamp-2">{node.title}</span>
+              <span className="sr-only">{kind === "check" ? " – bước kiểm tra" : kind === "outcome" && node.outcome ? ` – kết luận ${OUTCOME[node.outcome.result].label}` : ""}{walked ? " – đã đi qua" : ""}</span>
               {node.note.trim() && <span className="sr-only"> – có ghi chú</span>}
             </button>
           );

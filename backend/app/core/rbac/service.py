@@ -54,6 +54,12 @@ async def sync_permissions(session: AsyncSession, registry: ModuleRegistry) -> l
     await session.flush()
 
     known = set((await session.scalars(select(KnownPermission.code))).all())
+    granted = {
+        (r, c)
+        for r, c in (
+            await session.execute(select(RolePermission.role_id, RolePermission.permission_code))
+        ).all()
+    }
     new_codes: list[str] = []
     for module_id, perm in registry.permissions():
         if perm.code in known:
@@ -61,7 +67,8 @@ async def sync_permissions(session: AsyncSession, registry: ModuleRegistry) -> l
         session.add(KnownPermission(code=perm.code, module_id=module_id))
         for role_code in perm.default_roles:
             role = roles.get(role_code)
-            if role is not None and not role.all_permissions:
+            # A grant may already exist (e.g. moved by a migration that renamed the permission).
+            if role is not None and not role.all_permissions and (role.id, perm.code) not in granted:
                 session.add(RolePermission(role_id=role.id, permission_code=perm.code))
         new_codes.append(perm.code)
     await session.flush()

@@ -21,6 +21,6 @@ manifest = ModuleManifest(
         Permission(PUBLISH, "Xuất bản và xoá Playbook", ("manager", "supervisor")),
     ],
     routers=[router],
-    nav=[NavItem("Infra Playbook", "/playbook", "book-open", VIEW)],
+    nav=[NavItem("Thư viện Playbook", "/playbook", "book-open", VIEW)],
     migrations_branch="playbook",
 )
