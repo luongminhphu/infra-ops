@@ -36,6 +36,7 @@ from app.modules.lifecycle.offboard_review import next_action as offboard_review
 from app.modules.lifecycle.offboard_review_api import router as offboard_review_router
 from app.modules.lifecycle.stock import ASSET_DISPOSE, ASSET_STATE
 from app.modules.lifecycle.stock import router as stock_router
+from app.modules.lifecycle.stocktake_api import router as stocktake_router
 from app.modules.lifecycle.workflows import OFFBOARD, ONBOARD, TRANSFER
 
 
@@ -126,6 +127,21 @@ manifest = ModuleManifest(
             "Rà soát nhân sự nghỉ việc hằng tháng và lập email gửi HR (ISO 27001)",
             ("manager", "supervisor"),
         ),
+        Permission(
+            "lifecycle.stocktake.view",
+            "Xem kỳ kiểm kê tài sản IT và xuất file đối chiếu cho Hành chánh / Kế toán",
+            ("manager", "supervisor", "operator", "viewer"),
+        ),
+        Permission(
+            "lifecycle.stocktake.count",
+            "Kiểm thực tế: đánh dấu tài sản có / không, thêm tài sản ngoài sổ",
+            ("manager", "supervisor", "operator"),
+        ),
+        Permission(
+            "lifecycle.stocktake.manage",
+            "Mở / kết thúc / đóng kỳ kiểm kê và chọn hướng xử lý chênh lệch",
+            ("manager", "supervisor"),
+        ),
         # Administrator has every permission; only Managers among the other roles may dispose.
         Permission(
             "lifecycle.stock.dispose", "Thanh lý tài sản (trạng thái Disposed) trên SDP", ("manager",)
@@ -139,6 +155,7 @@ manifest = ModuleManifest(
         stock_router,
         attendance_router,
         offboard_review_router,
+        stocktake_router,
     ],
     workflows=[ONBOARD, OFFBOARD, TRANSFER, REASSIGN_JOB, ASSET_STATE, ASSET_DISPOSE],
     document_kinds=[HANDOVER, RETURN],
@@ -158,6 +175,13 @@ manifest = ModuleManifest(
             "/lifecycle/offboard-review",
             "user-check",
             "lifecycle.offboard_review.export",
+            NAV_REVIEWS,
+        ),
+        NavItem(
+            "Kiểm kê tài sản IT",
+            "/lifecycle/stocktake",
+            "clipboard-check",
+            "lifecycle.stocktake.view",
             NAV_REVIEWS,
         ),
         NavItem("Request RTR", "/lifecycle/requests", "ticket", RECON_VIEW, NAV_SOURCES),
