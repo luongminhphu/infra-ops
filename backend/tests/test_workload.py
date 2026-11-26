@@ -381,10 +381,15 @@ async def test_portal_accounts_and_purchase_flow(admin, client, sdp) -> None:  #
         sdp.requests[r["id"]] = r
     async with get_sessionmaker()() as s:
         await run_sync(s)
+    # Users are only the people an administrator adds or confirms: a sync never creates accounts.
+    assert "wl-new@test.local" not in {u["upn"] for u in (await admin.get("/api/core/users")).json()}
+    made = await admin.post("/api/workload/technicians/14/account")
+    assert made.status_code == 201, made.text
     users = {u["upn"]: u for u in (await admin.get("/api/core/users")).json()}
-    assert "wl-new@test.local" in users
     roles = {r["id"]: r["code"] for r in (await admin.get("/api/core/roles")).json()}
     assert [roles[i] for i in users["wl-new@test.local"]["role_ids"]] == ["operator"]
+    again = await admin.post("/api/workload/technicians/14/account")
+    assert again.json()["error"]["code"] == "already_linked"
 
     await client.login("wl-op1@test.local")
     work = (await client.get("/api/workload/my-work")).json()

@@ -154,6 +154,22 @@ async def test_end_to_end_sync_and_reconciliation(admin, configured, respx_mock)
     ]
     assert criteria[0] == {"field": "requester.name", "condition": "is", "value": "RTR"}
 
+    # Groups to pick as excluded: those BioStar holds, with user counts; excluded ones are never read.
+    # Read live from BioStar (the vendor group too, with no synced users) plus the latest sync's counts.
+    respx_mock.get(f"{BS}/api/user_groups").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "UserGroupCollection": {
+                    "rows": [{"id": "1", "name": "Kế Toán"}, {"id": "9", "name": "3. VENDOR"}]
+                }
+            },
+        )
+    )
+    got = (await admin.get("/api/lifecycle/biostar/user-groups")).json()
+    groups = {g["name"]: g["users"] for g in got["items"]}
+    assert groups == {"Kế Toán": 1, "3. VENDOR": None} and got["errors"] == []
+
     data = (await admin.get("/api/lifecycle/reconciliation")).json()
     by_emp = {r["employee_id"]: r for r in data["items"]}
     assert set(by_emp) == {"003551", "002100", "001500", "003261"}

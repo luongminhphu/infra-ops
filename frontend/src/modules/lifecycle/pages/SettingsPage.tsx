@@ -6,7 +6,7 @@ import { Button } from "@/core/ui/button";
 import { ErrorState, LoadingRows, PageHeader, Panel } from "@/core/ui/feedback";
 import { Field, Input, Select, Switch } from "@/core/ui/field";
 import { HelpTip } from "@/core/ui/help-tip";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, X } from "lucide-react";
 import { DateInput } from "@/core/ui/date-input";
 import { announce } from "@/core/ui/live-region";
 import type { Kind } from "../api";
@@ -201,20 +201,24 @@ export function SettingsPage() {
           >
             <Plus className="size-4" aria-hidden="true" />Thêm hệ thống BioStar
           </Button>
-          <Field
+          <GroupPicker
+            id="retired-groups"
             label="Nhóm nghỉ việc trên BioStar"
-            className="mt-5 max-w-xl"
-            hint="Tên nhóm người dùng, cách nhau dấu phẩy (vd. 0.NGHIVIEC). User trong nhóm này coi như đã nghỉ việc: không đối soát với SDP, không báo “còn hoạt động”."
-          >
-            <Input value={retiredGroups} onChange={(e) => setRetiredGroups(e.target.value)} placeholder="0.NGHIVIEC" />
-          </Field>
-          <Field
+            hint="User trong nhóm này coi như đã nghỉ việc: không đối soát với SDP, không báo “còn hoạt động”."
+            placeholder="0.NGHIVIEC"
+            value={retiredGroups}
+            onChange={setRetiredGroups}
+            className="mt-5"
+          />
+          <GroupPicker
+            id="excluded-groups"
             label="Nhóm loại trừ khỏi đối soát"
-            className="mt-4 max-w-xl"
-            hint="Tên nhóm người dùng, cách nhau dấu phẩy (vd. 3. VENDOR). User trong nhóm này không xuất hiện trong đối soát (nhà cung cấp, khách, nhà thầu…)."
-          >
-            <Input value={excludedGroups} onChange={(e) => setExcludedGroups(e.target.value)} placeholder="3. VENDOR" />
-          </Field>
+            hint="User trong nhóm này không được đối soát SDP với BioStar và không xuất hiện trong đối soát (nhà cung cấp, khách, nhà thầu…)."
+            placeholder="3. VENDOR"
+            value={excludedGroups}
+            onChange={setExcludedGroups}
+            className="mt-4"
+          />
         </Panel>
 
         <Panel title="Request RTR trên ServiceDesk Plus">
@@ -447,11 +451,96 @@ export function SettingsPage() {
         </Panel>
 
         {serverError && <p role="alert" className="rounded-sm bg-failed-soft px-3 py-2 text-sm text-failed">{serverError}</p>}
-        <div className="sticky bottom-0 -mx-5 flex justify-end gap-2 border-t border-line bg-paper/95 px-5 py-3 backdrop-blur">
+        <div className="sticky bottom-0 -mx-4 sm:-mx-5 flex justify-end gap-2 border-t border-line bg-paper/95 px-5 py-3 backdrop-blur">
           <Button onClick={() => { setV(d.values); setProductTypes(d.values.asset_product_types.join(", ")); setClosedStatuses(d.values.sdp_closed_statuses.join(", ")); setRetiredGroups(d.values.biostar_retired_groups.join(", ")); setExcludedGroups(d.values.biostar_excluded_groups.join(", ")); setStd(toRows(d.values.allocation_standard)); }}>Hoàn tác thay đổi</Button>
           <Button type="submit" variant="primary" loading={save.isPending}>Lưu cấu hình</Button>
         </div>
       </form>
     </>
+  );
+}
+
+const splitGroups = (text: string) => text.split(",").map((x) => x.trim()).filter(Boolean);
+
+/** BioStar user groups as removable chips; add one from the groups read live from BioStar, or by name. */
+function GroupPicker({ id, label, hint, placeholder, value, onChange, className }: {
+  id: string;
+  label: string;
+  hint: string;
+  placeholder: string;
+  value: string;
+  onChange: (next: string) => void;
+  className?: string;
+}) {
+  const groups = useQuery({
+    queryKey: ["lifecycle", "biostar-user-groups"],
+    queryFn: () => api<{ items: { name: string; users: number | null }[]; errors: string[] }>("/api/lifecycle/biostar/user-groups"),
+    staleTime: 60_000,
+  });
+  const [draft, setDraft] = useState("");
+  const chosen = splitGroups(value);
+  const known = new Set(chosen.map((g) => g.toLowerCase()));
+  const add = (raw: string) => {
+    const name = raw.trim();
+    if (name && !name.includes(",") && !known.has(name.toLowerCase())) onChange([...chosen, name].join(", "));
+    setDraft("");
+  };
+  const available = (groups.data?.items ?? []).filter((g) => !known.has(g.name.toLowerCase()));
+  return (
+    <fieldset className={`max-w-3xl ${className ?? ""}`}>
+      <legend className="mb-1.5 text-sm font-medium">{label}</legend>
+      <p className="mb-2 text-sm text-muted">{hint}</p>
+      {chosen.length > 0 ? (
+        <ul className="mb-2 flex flex-wrap gap-1.5" aria-label={`${label} đã chọn`}>
+          {chosen.map((g) => (
+            <li key={g} className="inline-flex h-7 items-center gap-1 rounded-full border border-primary bg-primary-soft pl-2.5 pr-1 text-sm text-primary">
+              {g}
+              <button type="button" className="inline-flex size-6 cursor-pointer items-center justify-center rounded-full hover:bg-surface" aria-label={`Bỏ nhóm ${g}`} onClick={() => onChange(chosen.filter((x) => x !== g).join(", "))}>
+                <X className="size-3.5" aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mb-2 text-sm text-muted">Chưa chọn nhóm nào.</p>
+      )}
+      <p className="mb-1 text-xs text-muted">Nhóm trên BioStar – bấm để thêm:</p>
+      {groups.isLoading && <p className="text-sm text-muted">Đang đọc nhóm từ BioStar…</p>}
+      {available.length > 0 && (
+        <ul className="mb-2 flex max-h-40 flex-wrap gap-1.5 overflow-y-auto" aria-label={`Nhóm BioStar có thể thêm vào ${label.toLowerCase()}`}>
+          {available.map((g) => (
+            <li key={g.name}>
+              <button type="button" onClick={() => add(g.name)} className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-full border border-line-strong bg-surface px-2.5 text-sm hover:bg-surface-2">
+                <Plus className="size-3.5" aria-hidden="true" />
+                {g.name}
+                {g.users != null && <span className="text-muted tabular">({g.users})</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {groups.data && groups.data.errors.length > 0 && (
+        <p role="status" className="mb-2 text-sm text-waiting">Không đọc được nhóm từ một hệ thống BioStar: {groups.data.errors.join("; ")}. Danh sách lấy theo lần đồng bộ gần nhất.</p>
+      )}
+      <div className="flex gap-2">
+        <Input
+          id={id}
+          aria-label={`Thêm tên nhóm khác vào ${label.toLowerCase()}`}
+          value={draft}
+          placeholder={`Hoặc gõ tên nhóm, vd. ${placeholder}`}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add(draft);
+            }
+          }}
+        />
+        <Button type="button" onClick={() => add(draft)} disabled={!draft.trim()}>
+          <Plus className="size-4" aria-hidden="true" />Thêm
+        </Button>
+      </div>
+      <p className="mt-1 text-xs text-muted">Thay đổi có hiệu lực sau khi bấm Lưu và chạy đồng bộ.</p>
+    </fieldset>
   );
 }

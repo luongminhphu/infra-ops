@@ -372,3 +372,31 @@ async def update_user(
     out = await _user_out(session, target)
     await session.commit()
     return out
+
+
+@router.delete("/users/{user_id}", status_code=204)
+async def delete_user(
+    user_id: uuid.UUID, user: CurrentUser = Depends(manage), session: AsyncSession = Depends(get_session)
+) -> None:
+    """Remove an account. Its sessions, roles and personal keys go with it; jobs and audit keep the name."""
+    target = await session.get(User, user_id)
+    if target is None:
+        raise NotFound("Không tìm thấy người dùng.")
+    if target.id == user.id:
+        raise AppError("Không thể tự xoá tài khoản của chính mình.", code="self_delete")
+    before = (await _user_out(session, target)).model_dump(mode="json", include={"display_name", "role_ids"})
+    await session.delete(target)
+    await session.flush()
+    if await count_active_admins(session) == 0:
+        raise AppError("Phải còn ít nhất một quản trị viên đang hoạt động.", code="last_admin")
+    await record(
+        session,
+        actor=user.actor,
+        module_id="core",
+        action="rbac.user_deleted",
+        target_type="user",
+        target_id=str(user_id),
+        target_label=target.upn,
+        before=before,
+    )
+    await session.commit()

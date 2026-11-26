@@ -63,46 +63,36 @@ async def sync_technicians(
             tech.active = False
     await session.flush()
     await auto_link(session, list(existing.values()))
-    if settings is None or settings.auto_create_users:
-        await create_accounts(session, [t for t in existing.values() if t.active])
     return len(seen)
 
 
-async def create_accounts(session: AsyncSession, techs: list[Technician]) -> int:
-    """Give every active technician without a linked user an Operator account (SSO login by e-mail).
-
-    A link cleared by hand (mapped_manually without user) is left alone.
-    """
-    created = 0
-    for tech in techs:
-        if tech.user_id or tech.mapped_manually or not tech.email:
-            continue
-        # An account with this e-mail that auto_link did not use (linked elsewhere): never duplicate it.
-        taken = await session.scalar(
-            select(User.id).where(
-                (func.lower(User.upn) == tech.email) | (func.lower(User.email) == tech.email)
-            )
-        )
-        if taken is not None:
-            continue
-        user = User(upn=tech.email, display_name=tech.name or tech.email, email=tech.email)
-        session.add(user)
-        await session.flush()
-        await grant_role(session, user.id, "operator")
-        tech.user_id = user.id
-        created += 1
-        await record(
-            session,
-            actor=Actor(None, "system"),
-            module_id=MODULE_ID,
-            action="workload.user_created",
-            target_type="user",
-            target_id=str(user.id),
-            target_label=user.upn,
-            after={"technician": tech.name, "role": "operator"},
-        )
+async def create_account(session: AsyncSession, tech: Technician, actor: Actor) -> User:
+    """Give a technician an Operator account (SSO login by e-mail), confirmed by an administrator.
+    Accounts are never created automatically: users are only the people an administrator adds or confirms."""
+    email = (tech.email or "").lower()
+    taken = await session.scalar(
+        select(User).where((func.lower(User.upn) == email) | (func.lower(User.email) == email))
+    )
+    if taken is not None:  # never duplicate an account: link the existing one
+        tech.user_id, tech.mapped_manually = taken.id, True
+        return taken
+    user = User(upn=email, display_name=tech.name or email, email=email)
+    session.add(user)
     await session.flush()
-    return created
+    await grant_role(session, user.id, "operator")
+    tech.user_id, tech.mapped_manually = user.id, True
+    await record(
+        session,
+        actor=actor,
+        module_id=MODULE_ID,
+        action="workload.user_created",
+        target_type="user",
+        target_id=str(user.id),
+        target_label=user.upn,
+        after={"technician": tech.name, "role": "operator"},
+    )
+    await session.flush()
+    return user
 
 
 async def reclassify(session: AsyncSession, settings: WorkloadSettings, only_missing: bool = True) -> int:

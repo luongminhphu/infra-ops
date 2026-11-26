@@ -4,7 +4,8 @@ import { toast } from "sonner";
 import { api } from "@/core/api/client";
 import { Button } from "@/core/ui/button";
 import { ErrorState, LoadingRows, PageHeader, Panel } from "@/core/ui/feedback";
-import { Field, Input, Select, Switch, Textarea } from "@/core/ui/field";
+import { Field, Input, Select, Textarea } from "@/core/ui/field";
+import { UserPlus } from "lucide-react";
 import { HelpTip } from "@/core/ui/help-tip";
 import { StatusBadge } from "@/core/ui/status";
 import { formatNumber, formatVnd } from "@/core/lib/format";
@@ -18,7 +19,6 @@ interface Values {
   cancelled_statuses: string[];
   in_progress_statuses: string[];
   on_hold_statuses: string[];
-  auto_create_users: boolean;
   device_keywords: Record<"replace" | "upgrade" | "repair", string[]>;
   po_limit_vnd: number;
   quote_categories: string[];
@@ -120,14 +120,6 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
         <Field label="Trạng thái được tính là tạm dừng" hint="Các trạng thái mở khác được tính là “Chưa bắt đầu”.">
           <Textarea rows={2} value={text.on_hold_statuses} onChange={(e) => setText({ ...text, on_hold_statuses: e.target.value })} />
         </Field>
-        <div className="sm:col-span-2">
-          <Switch
-            label="Tự tạo tài khoản Operator cho technician chưa có tài khoản"
-            description="Mỗi lần đồng bộ: tạo tài khoản theo e-mail của technician (đăng nhập bằng SSO), vai trò Operator, liên kết luôn."
-            checked={v.auto_create_users}
-            onChange={(c) => setV({ ...v, auto_create_users: c })}
-          />
-        </div>
         <fieldset className="grid gap-3 sm:col-span-2 sm:grid-cols-3">
           <legend className="mb-1 text-sm font-medium">Từ khoá nhận diện yêu cầu thiết bị (gợi ý đề xuất mua)</legend>
           <Field label="Thay thế"><Textarea rows={3} value={text.kw_replace} onChange={(e) => setText({ ...text, kw_replace: e.target.value })} /></Field>
@@ -212,10 +204,17 @@ function TechnicianLinks() {
       void qc.invalidateQueries({ queryKey: ["workload", "technicians"] });
     },
   });
+  const confirm = useMutation({
+    mutationFn: (id: string) => api<{ upn: string }>(`/api/workload/technicians/${id}/account`, { method: "POST" }),
+    onSuccess: async (r) => {
+      toast.success(`Đã tạo tài khoản ${r.upn} (Operator, đăng nhập SSO).`);
+      await Promise.all([qc.invalidateQueries({ queryKey: ["workload", "technicians"] }), qc.invalidateQueries({ queryKey: ["workload", "users"] })]);
+    },
+  });
   return (
     <Panel
       title="Operator ↔ Technician SDP"
-      description="Technician được liên kết tự động khi e-mail trên SDP trùng tài khoản đăng nhập. Chọn tay khi khác nhau; chọn “Tự động” để quay lại khớp theo e-mail."
+      description="Technician được liên kết tự động khi e-mail trên SDP trùng tài khoản đăng nhập. Chọn tay khi khác nhau; chọn “Tự động” để quay lại khớp theo e-mail. Technician chưa có tài khoản: bấm “Tạo tài khoản” để xác nhận (không tự tạo)."
       bodyClassName="p-0"
     >
       {techs.isLoading && <LoadingRows rows={4} />}
@@ -252,6 +251,12 @@ function TechnicianLinks() {
                       {users.data?.map((u) => <option key={u.id} value={u.id}>{u.display_name} ({u.upn})</option>)}
                     </Select>
                     {t.user && <span className="mt-0.5 block text-xs text-muted">{t.mapped_manually ? "Chọn tay" : "Khớp tự động theo e-mail"}</span>}
+                    {!t.user && t.active && t.email && (
+                      <Button size="sm" className="mt-1" loading={confirm.isPending && confirm.variables === t.id} onClick={() => confirm.mutate(t.id)} aria-label={`Tạo tài khoản cho ${t.name}`}>
+                        <UserPlus className="size-4" aria-hidden="true" />
+                        Tạo tài khoản
+                      </Button>
+                    )}
                   </td>
                 </tr>
               ))}

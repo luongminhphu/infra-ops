@@ -1135,3 +1135,15 @@ Quyết định:
   request SDP. Không tự động sửa AD/Exchange (tích hợp Microsoft vẫn hoãn). RTR "Thay đổi cấp trên trực tiếp" phân
   loại là Thuyên chuyển; Job nháp được tạo tự động như onboard/offboard.
 
+## 39. Người dùng do Administrator quản lý; chọn nhóm BioStar loại trừ (26/11/2026)
+
+- Yêu cầu: "Người dùng & quyền" chỉ gồm người Administrator thêm hoặc xác nhận, không phải mọi technician SDP;
+  Administrator được xoá tài khoản; chọn nhóm BioStar loại trừ từ danh sách đọc từ BioStar 2.
+- Quyết định: bỏ tự tạo tài khoản Operator khi đồng bộ (`auto_create_users` bỏ khỏi cấu hình) bằng
+  nút **Tạo tài khoản** trên từng technician (`POST /api/workload/technicians/{id}/account`, audit). Xoá tài khoản:
+  `DELETE /api/core/users/{id}` (quyền `core.rbac.manage` – mặc định chỉ Administrator; không tự xoá mình; luôn còn ít
+  nhất một admin; audit `rbac.user_deleted`; vai trò, phiên, API key cá nhân xoá theo; Job/biên bản/nhật ký giữ tên).
+  Không tự động xoá tài khoản cũ – Administrator tự chọn.
+- Nhóm loại trừ / nghỉ việc: `GET /api/lifecycle/biostar/user-groups` đọc nhóm người dùng trực tiếp từ mọi BioStar
+  (chính + đọc thêm) kèm số user của lần đồng bộ gần nhất; hệ thống nào không đọc được thì dùng nhóm của lần đồng bộ.
+

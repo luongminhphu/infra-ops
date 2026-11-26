@@ -44,7 +44,7 @@ Tài liệu: [cài đặt Ubuntu + Docker](docs/install-ubuntu-docker.md) · [ki
 
 ### Module Công việc Helpdesk
 - Task SDP theo từng Operator (chưa bắt đầu / đang thực hiện / tạm dừng / quá hạn / đã xong), **chuyển việc**
-  (đổi technician trên SDP), **thống kê** theo tuần → năm hoặc khoảng ngày tuỳ chọn; tự tạo tài khoản Operator.
+  (đổi technician trên SDP), **thống kê** theo tuần → năm hoặc khoảng ngày tuỳ chọn; tạo tài khoản Operator khi Administrator xác nhận.
 - **Đề xuất mua thiết bị** từng bước (gợi ý từ request và từ onboard thiếu máy), bằng chứng Function Head đã duyệt.
 - **Định giá**: PC/Laptop theo báo giá từng đề xuất (trên 20 triệu cần 3 báo giá, lấy giá thấp nhất, xác nhận
   *không có hàng* kèm ảnh chụp website); thiết bị khác theo **Bảng giá** cập nhật từ PDF báo giá, **tự nhận diện
@@ -388,7 +388,9 @@ Lưu ý:
    SDP / RTR nào nằm ở mục riêng **BioStar không có trên SDP** (người còn quyền ra vào xếp trước) để rà soát quyền ra
    vào, không thành dòng nhân viên – trừ khi lần đó không đọc được SDP. Tài sản đọc cả danh sách tài sản lẫn **workstation** của SDP (laptop/PC do SDP quét
    về nằm riêng ở đó), chỉ giữ các loại trong **Cấu hình module → Loại tài sản** cộng mọi loại có trong **Tiêu chuẩn cấp phát** (UPS,
-   IP Phone… kể cả tài sản Non-IT trên SDP – app lọc theo loại tài sản, không theo nhóm IT/Non-IT). **Nhóm loại trừ khỏi đối soát** (vd. `3. VENDOR`) bỏ hẳn các user nhà cung cấp, khách… Mỗi lần đồng bộ đọc cả hai và gộp theo Mã NV; người có user ở cả hai
+   IP Phone… kể cả tài sản Non-IT trên SDP – app lọc theo loại tài sản, không theo nhóm IT/Non-IT). **Nhóm loại trừ khỏi đối soát** (vd. `3. VENDOR`) bỏ hẳn các user nhà cung cấp, khách…: ở **Cấu hình module**,
+   app đọc danh sách nhóm người dùng trực tiếp từ BioStar 2 (kèm số user lần đồng bộ gần nhất) – bấm một nhóm để thêm
+   vào *Nhóm loại trừ* hoặc *Nhóm nghỉ việc*, hoặc gõ tên nhóm khác. Mỗi lần đồng bộ đọc cả hai và gộp theo Mã NV; người có user ở cả hai
    nơi thì user đang hoạt động được ưu tiên (để phát hiện người đã nghỉ còn quyền ra vào). Một hệ thống đọc lỗi thì cả
    cột BioStar được bỏ qua lần đó, không kết luận sai.
 6. **Nhóm nghỉ việc trên BioStar**: nếu quy trình là chuyển user nghỉ việc vào một nhóm (vd. `0.NGHIVIEC`) thay vì xoá,
@@ -442,9 +444,10 @@ Lưu ý:
    đúng hạn / trễ hạn, thời gian xử lý trung bình, đang chờ và quá hạn theo Operator.
 
 5. **Trạng thái task:** request đang mở được chia *Chưa bắt đầu* / *Đang thực hiện* / *Tạm dừng* theo trạng thái SDP
-   (cấu hình ở **Cấu hình công việc**, mặc định `In Progress`, `On Hold`/`Pending`). Bật **Tự tạo tài khoản
-   Operator** để mỗi technician có e-mail mà chưa có tài khoản được tạo tài khoản vai trò Operator (đăng nhập SSO
-   bằng e-mail đó) và liên kết sẵn.
+   (cấu hình ở **Cấu hình công việc**, mặc định `In Progress`, `On Hold`/`Pending`). App **không tự tạo** tài khoản:
+   ở **Cấu hình công việc → Operator ↔ Technician SDP**, bấm **Tạo tài khoản** cạnh technician để xác nhận (vai trò
+   Operator, đăng nhập SSO bằng e-mail đó, liên kết sẵn). Administrator xoá tài khoản ở **Người dùng & quyền → Xoá**
+   (nhập lại e-mail để xác nhận; Job, biên bản, nhật ký giữ tên người đó).
 6. **Đề xuất mua thiết bị** (chỉ lưu trong infra-ops, không ghi lên SDP):
    - Gợi ý từ request có từ khoá thay thế / nâng cấp / sửa chữa (ở **Việc của tôi**) và từ **Kho thiết bị**
      (onboard thiếu thiết bị). Operator **Lập đề xuất**: chọn thiết bị trong bảng giá, số lượng, người dùng, lý do và
