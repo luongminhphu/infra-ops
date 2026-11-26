@@ -218,6 +218,11 @@ export function useJobActions(job: Job | undefined) {
       onSuccess: (j) => done(j, "Đã huỷ Job."),
       onError: fail,
     }),
+    reopen: useMutation({
+      mutationFn: (reason: string) => api<Job>(`/api/core/jobs/${id}/reopen`, { method: "POST", json: { reason } }),
+      onSuccess: (j) => done(j, "Đã mở lại Job – Job về bản nháp."),
+      onError: fail,
+    }),
     override: useMutation({
       mutationFn: (reason: string) => api<Job>(`/api/core/jobs/${id}/override-close`, { method: "POST", json: { reason } }),
       onSuccess: (j) => done(j, "Đã buộc đóng Job."),
@@ -241,7 +246,7 @@ export function JobPage() {
   const [flowOpen, setFlowOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("");
-  const [closeMode, setCloseMode] = useState<"cancel" | "override" | null>(null);
+  const [closeMode, setCloseMode] = useState<"cancel" | "override" | "reopen" | null>(null);
   const [reason, setReason] = useState("");
   const preview = useQuery({
     queryKey: ["job-preview", id, job?.version],
@@ -313,7 +318,16 @@ export function JobPage() {
       />
 
       <PendingAssignment job={job} />
-      {job.close_reason && <p className="mb-3 rounded-sm bg-surface-2 px-3 py-2 text-sm">{job.status === "cancelled" ? "Đã huỷ" : "Ghi chú đóng"}: {job.close_reason}</p>}
+      {job.close_reason && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-sm bg-surface-2 px-3 py-2 text-sm">
+          <span>{job.status === "cancelled" ? "Đã huỷ" : "Ghi chú đóng"}: {job.close_reason}</span>
+          {job.status === "cancelled" && canRun && (
+            <Button size="sm" onClick={() => { setReason(""); setCloseMode("reopen"); }}>
+              <RotateCcw className="size-4" aria-hidden="true" />Mở lại Job
+            </Button>
+          )}
+        </div>
+      )}
 
       {job.status === "draft" && job.params.kind === "onboard" && canRun && (
         <Panel title="Chuẩn bị trước khi bắt đầu" className="mb-4" description="Chỉ sửa được khi Job còn là bản nháp. Bản nháp không thay đổi gì trên SDP hay BioStar.">
@@ -446,24 +460,26 @@ export function JobPage() {
       <Dialog
         open={closeMode !== null}
         onClose={() => setCloseMode(null)}
-        title={closeMode === "cancel" ? "Huỷ Job?" : "Buộc đóng Job?"}
+        title={closeMode === "cancel" ? "Huỷ Job?" : closeMode === "reopen" ? "Mở lại Job?" : "Buộc đóng Job?"}
         size="sm"
         footer={
           <>
             <Button onClick={() => setCloseMode(null)}>Giữ nguyên</Button>
             <Button
-              variant="danger"
+              variant={closeMode === "reopen" ? "primary" : "danger"}
               disabled={reason.trim().length < 3}
-              loading={act.cancel.isPending || act.override.isPending}
-              onClick={() => (closeMode === "cancel" ? act.cancel : act.override).mutate(reason, { onSuccess: () => setCloseMode(null) })}
+              loading={act.cancel.isPending || act.override.isPending || act.reopen.isPending}
+              onClick={() => act[closeMode ?? "cancel"].mutate(reason, { onSuccess: () => setCloseMode(null) })}
             >
-              {closeMode === "cancel" ? "Huỷ Job" : "Buộc đóng Job"}
+              {closeMode === "cancel" ? "Huỷ Job" : closeMode === "reopen" ? "Mở lại Job" : "Buộc đóng Job"}
             </Button>
           </>
         }
       >
         <p className="mb-3 text-sm">
-          {closeMode === "cancel"
+          {closeMode === "reopen"
+            ? "Job quay về bản nháp, các bước trở về “Chưa chạy” để làm lại từ đầu. Chỉ mở lại được khi chưa có bước nào ghi lên SDP/BioStar hoặc đã làm tay; nếu đã có, hãy tạo Job mới."
+            : closeMode === "cancel"
             ? "Các bước chưa chạy sẽ không chạy nữa. Những thay đổi đã thực hiện trên SDP/BioStar giữ nguyên (xem “Trạng thái trước khi thay đổi” ở từng bước để khôi phục thủ công)."
             : "Job được đánh dấu hoàn tất dù còn bước chưa xong (ví dụ chưa có biên bản đã ký). Chỉ dùng khi đã xử lý bên ngoài infra-ops."}
         </p>

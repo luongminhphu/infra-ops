@@ -427,6 +427,9 @@ Lưu ý:
    (có lịch sử, ghi nhật ký). Job đang chạy giữ phiên bản lúc bắt đầu.
 7. Bước lỗi có thể **Chạy lại** (an toàn: bước đọc trạng thái hiện tại trước khi ghi); trạng thái trước khi thay
    đổi được lưu ở từng bước để khôi phục thủ công. Manager có thể **Buộc đóng Job** kèm lý do (mục *Kết thúc Job sớm* cuối trang Job).
+   Job đã huỷ mà chưa có bước nào ghi lên SDP/BioStar hoặc làm tay có thể **Mở lại Job** (về bản nháp, các bước làm
+   lại từ đầu); đã có thì tạo Job mới. Bước dùng API key cá nhân lấy key của người phụ trách, nếu chưa có thì của
+   người bấm **Bắt đầu**.
 
 ### Module Công việc Helpdesk
 1. **Cấu hình công việc**: chọn kết nối SDP (dùng credential Read để đọc, Write để chuyển việc), nhóm hỗ trợ cần

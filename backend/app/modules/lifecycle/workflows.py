@@ -40,9 +40,10 @@ def _fmt(iso: str | None) -> str:
 
 
 async def _sdp(ctx: StepContext, purpose: Purpose) -> SdpClient:
-    """SDP as the person responsible for the Job (its assignee, else whoever created it): their own API key
-    reads and writes, so SDP records who did the work."""
-    who = ctx.job.assignee_user_id or ctx.job.created_by
+    """SDP as the person responsible for the Job (its assignee, else whoever started it, else whoever created
+    it): their own API key reads and writes, so SDP records who did the work. A job the sync drafted has no
+    human creator, so the person who pressed "Bắt đầu" is the fallback."""
+    who = ctx.job.assignee_user_id or ctx.job.started_by or ctx.job.created_by
     s = await load_module_settings(ctx.session)
     _, conn = await open_connection(ctx.session, "sdp", purpose, profile_id=s.sdp_profile_id, as_user=who)
     return SdpClient(conn)
