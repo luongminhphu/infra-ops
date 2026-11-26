@@ -1147,3 +1147,16 @@ Quyết định:
 - Nhóm loại trừ / nghỉ việc: `GET /api/lifecycle/biostar/user-groups` đọc nhóm người dùng trực tiếp từ mọi BioStar
   (chính + đọc thêm) kèm số user của lần đồng bộ gần nhất; hệ thống nào không đọc được thì dùng nhóm của lần đồng bộ.
 
+
+## 40. Gộp nhóm loại trừ BioStar; báo cáo chấm công (26/11/2026)
+
+- Yêu cầu: gộp *Nhóm nghỉ việc* và *Nhóm loại trừ khỏi đối soát* thành một mục; xuất báo cáo chấm công khi HR yêu cầu
+  rà soát chấm công / Overtime (danh sách Mã NV + khung thời gian).
+- Quyết định: chỉ còn `biostar_excluded_groups`. User trong nhóm được đọc nhưng coi như không còn quyền ra vào (ẩn,
+  không báo “còn hoạt động” / “không có trên SDP”; vẫn hiện nếu còn request RTR, nhãn *Nhóm loại trừ*). Cấu hình cũ
+  `biostar_retired_groups` được gộp tự động khi đọc.
+- Chấm công: `POST /api/lifecycle/attendance/export` (quyền `lifecycle.attendance.export`: Manager, Supervisor,
+  Operator; audit `lifecycle.attendance_exported`). Đọc trực tiếp mọi BioStar bằng credential Read: user khớp Mã NV
+  theo 5 số cuối, `POST /api/events/search` (BETWEEN theo giờ Việt Nam, IN user), chỉ tính quẹt thành công (mã sự
+  kiện 4096–4351, 4864–5119). Giới hạn 500 Mã NV, 62 ngày mỗi lần. Giờ vào/ra = lần đầu/cuối trong ngày; ca qua đêm
+  chưa gộp (chờ quy tắc ca từ HR). Chạy trong request vì là thao tác đọc theo yêu cầu, không ghi gì.

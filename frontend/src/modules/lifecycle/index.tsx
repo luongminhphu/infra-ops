@@ -1,6 +1,7 @@
 import { Navigate } from "react-router-dom";
 import { RequirePermission } from "@/core/auth/guards";
 import type { FrontendModule } from "@/core/modules";
+import { AttendancePage } from "./pages/AttendancePage";
 import { DocumentPage } from "./pages/DocumentPage";
 import { DocumentsPage } from "./pages/DocumentsPage";
 import { FlowsPage } from "./pages/FlowsPage";
@@ -31,6 +32,7 @@ export const lifecycleModule: FrontendModule = {
     { path: "lifecycle/documents", element: <RequirePermission permission="lifecycle.documents.view"><DocumentsPage /></RequirePermission> },
     { path: "lifecycle/documents/new", element: <RequirePermission permission="lifecycle.documents.create"><DocumentPage /></RequirePermission> },
     { path: "lifecycle/documents/:id", element: <RequirePermission permission="lifecycle.documents.view"><DocumentPage key="doc" /></RequirePermission> },
+    { path: "lifecycle/attendance", element: <RequirePermission permission="lifecycle.attendance.export"><AttendancePage /></RequirePermission> },
     { path: "lifecycle/templates", element: <RequirePermission permission="lifecycle.templates.manage"><TemplatesPage /></RequirePermission> },
     { path: "lifecycle/settings", element: <RequirePermission permission="lifecycle.settings.manage"><SettingsPage /></RequirePermission> },
   ],
