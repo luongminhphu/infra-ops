@@ -3,20 +3,24 @@
 from __future__ import annotations
 
 from app.core.modules.manifest import ModuleManifest, NavItem, Permission
-from app.modules.handbook.api import EDIT, PUBLISH, VIEW, router
+from app.modules.playbook.api import EDIT, PUBLISH, VIEW, router
 
 manifest = ModuleManifest(
-    id="handbook",
+    id="playbook",
     name="Infra Playbook",
     description="Quy định và hướng dẫn xử lý cho IT Support, dạng sơ đồ rẽ nhánh.",
     permissions=[
         Permission(
             VIEW, "Xem Infra Playbook (bản đã xuất bản)", ("manager", "supervisor", "operator", "viewer")
         ),
-        Permission(EDIT, "Soạn hướng dẫn (bản nháp, ảnh minh hoạ)", ("manager", "supervisor")),
-        Permission(PUBLISH, "Xuất bản và xoá hướng dẫn", ("manager",)),
+        Permission(
+            EDIT,
+            "Soạn Playbook: thêm, sửa, thay thế bước (bản nháp, ảnh minh hoạ)",
+            ("manager", "supervisor"),
+        ),
+        Permission(PUBLISH, "Xuất bản và xoá Playbook", ("manager", "supervisor")),
     ],
     routers=[router],
-    nav=[NavItem("Infra Playbook", "/handbook", "book-open", VIEW)],
-    migrations_branch="handbook",
+    nav=[NavItem("Thư viện Playbook", "/playbook", "book-open", VIEW)],
+    migrations_branch="playbook",
 )

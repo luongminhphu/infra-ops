@@ -2,8 +2,15 @@
 
 Nền tảng web nội bộ cho các tác vụ vận hành của team IT Infrastructure, giao diện tiếng Việt.
 Kiến trúc **Platform Core + Modules**: core dùng chung (đăng nhập, phân quyền, kết nối hệ thống, nhật ký kiểm tra,
-dashboard, hàng chờ việc, workflow) và các module cắm vào: **Vòng đời nhân sự** (Onboard/Offboard) và
-**Công việc Infra Support** (task SDP, đề xuất mua, PO, nhận hàng).
+dashboard, hàng chờ việc, workflow) và các module cắm vào: **Infra Playbook**, **Vòng đời nhân sự**
+(Onboard/Offboard) và **Công việc Infra Support** (task SDP, đề xuất mua, PO, nhận hàng).
+
+**Mọi thứ bắt đầu từ Playbook.** Trang chính hỏi *“Bạn cần xử lý việc gì?”*: tìm tình huống (nhân viên mới, nghỉ
+việc, cấp thêm thiết bị, rà soát chấm công…), mở hướng dẫn dạng sơ đồ rẽ nhánh; mỗi bước mở sẵn công cụ cần dùng
+(Job, đối soát, kho, chấm công…). Bước **kiểm tra** để app tự so sánh dữ liệu của nhân viên (tài sản đang dùng, band,
+tiêu chuẩn cấp phát…) và bước **kết luận** xếp loại Tiêu chuẩn / Adhoc / Exception; **Chạy với Mã NV** cho thấy từng
+điều kiện, giá trị và nguồn. Thanh trái chỉ còn: Playbook · Việc của tôi · Công cụ (mọi trang của các module) ·
+Hệ thống. Manager và Supervisor (và Administrator) soạn, sửa, thay thế, xuất bản và xoá Playbook.
 
 | Thành phần | Công nghệ |
 |---|---|
@@ -105,7 +112,7 @@ echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
 | `INFRAOPS_PUBLIC_BASE_URL` | Địa chỉ người dùng mở, có `https`, vd. `https://infraops.congty.local` |
 | `INFRAOPS_MASTER_KEYS` / `INFRAOPS_SIGNING_SECRET` / `POSTGRES_PASSWORD` | Các dòng vừa sinh |
 | `INFRAOPS_AUTH_MODE` | `local` (tài khoản trong app); `oidc` khi bật SSO Entra |
-| `INFRAOPS_ENABLED_MODULES` | `lifecycle,workload,handbook` |
+| `INFRAOPS_ENABLED_MODULES` | `lifecycle,workload,playbook` |
 | `INFRAOPS_HTTP_BIND` / `INFRAOPS_HTTPS_BIND` | Mặc định `80` / `443`. Chỉ đổi khi máy chủ đã có reverse proxy khác chiếm 80/443 (vd. `127.0.0.1:8080` / `127.0.0.1:8443`) |
 
 > Cất `INFRAOPS_MASTER_KEYS` ở nơi an toàn ngoài máy chủ: mất key là mất mọi credential SDP/BioStar đã nhập.

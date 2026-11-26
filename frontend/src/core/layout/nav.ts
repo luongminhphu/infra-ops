@@ -11,23 +11,40 @@ export interface RailSection {
   bottom?: boolean;
 }
 
-const SHORT: Record<string, string> = { lifecycle: "Vòng đời", workload: "Công việc", handbook: "Playbook" };
-const ICON: Record<string, string> = { lifecycle: "users", workload: "list-checks", handbook: "book-open" };
+/** The entry module (its pages live under the Playbook rail entry, not under Công cụ). */
+const ENTRY = "playbook";
 
-/** Rail = Tổng quan, one entry per module, and the platform settings ("Hệ thống") at the bottom. */
+/**
+ * Rail = Playbook (the entry point: "what do you need to handle?"), Việc của tôi, Công cụ (every module page,
+ * grouped by module – opened from Playbook steps or from here) and Hệ thống at the bottom.
+ */
 export function railSections(nav: NavGroup[]): RailSection[] {
   const out: RailSection[] = [];
   let system: NavItem[] = [];
+  let home: NavItem | undefined;
+  let mine: NavItem | undefined;
+  const entry: NavItem[] = [];
+  const tools: NavItem[] = [];
   for (const g of nav) {
     if (g.module === "core") {
-      const home = g.items.find((i) => i.path === "/");
-      const mine = g.items.find((i) => i.path === "/me/work");
-      if (mine) out.unshift({ id: "mine", label: "Việc của tôi", title: "Việc của tôi", icon: mine.icon, items: [mine] });
-      if (home) out.unshift({ id: "home", label: "Tổng quan", title: "Tổng quan", icon: home.icon, items: [home] });
+      home = g.items.find((i) => i.path === "/");
+      mine = g.items.find((i) => i.path === "/me/work");
       system = g.items.filter((i) => i.path !== "/" && i.path !== "/me/work");
-    } else if (g.items.length) {
-      out.push({ id: g.module, label: SHORT[g.module] ?? g.label, title: g.label, icon: ICON[g.module] ?? g.items[0]!.icon, items: g.items });
+    } else if (g.module === ENTRY) {
+      entry.push(...g.items);
+    } else {
+      tools.push(...g.items.map((i) => ({ ...i, group: g.label })));
     }
+  }
+  if (home) {
+    const start = { ...home, label: "Tình huống", icon: "book-open" };
+    out.push({ id: "home", label: "Playbook", title: "Infra Playbook", icon: "book-open", items: [start, ...entry] });
+  }
+  if (mine) out.push({ id: "mine", label: "Việc của tôi", title: "Việc của tôi", icon: mine.icon, items: [mine] });
+  if (tools.length && home) {
+    const all = { label: "Tất cả công cụ", path: "/tools", icon: "layout-grid", permission: home.permission };
+    const overview = { label: "Tổng quan số liệu", path: "/overview", icon: "layout-dashboard", permission: home.permission };
+    out.push({ id: "tools", label: "Công cụ", title: "Công cụ", icon: "layout-grid", items: [all, overview, ...tools] });
   }
   if (system.length) out.push({ id: "system", label: "Hệ thống", title: "Hệ thống", icon: "settings", items: system, bottom: true });
   return out;

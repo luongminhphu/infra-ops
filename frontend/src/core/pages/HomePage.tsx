@@ -1,19 +1,9 @@
-import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
-import { useAuth } from "@/core/auth/AuthProvider";
-import { firstLanding, markLanded } from "@/core/auth/landing";
+import { modules } from "@/modules";
 import { DashboardPage } from "./DashboardPage";
 
-/** Home route: an Operator's first stop in a session is "Việc của tôi" (their queue); afterwards, and for every
- * other role, it is Tổng quan. */
+/** Home route: the entry module's page (Playbook – "what do you need to handle?"), else the overview. */
 export function HomePage() {
-  const { me } = useAuth();
-  const roles = me?.roles ?? [];
-  const operatorOnly = roles.includes("operator") && !roles.some((r) => ["supervisor", "manager", "admin"].includes(r));
-  // Read once per mount (StrictMode renders twice); mark the session only once the user is known.
-  const [first] = useState(firstLanding);
-  useEffect(() => {
-    if (me) markLanded();
-  }, [me]);
-  return operatorOnly && first ? <Navigate to="/me/work" replace /> : <DashboardPage />;
+  // Read on render, not at import (the module list and the Playbook home import each other through core pages).
+  const Home = modules.find((m) => m.home)?.home;
+  return Home ? <Home /> : <DashboardPage />;
 }

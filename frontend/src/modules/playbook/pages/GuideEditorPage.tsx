@@ -11,16 +11,18 @@ import { ErrorState, LoadingRows, PageHeader, Panel } from "@/core/ui/feedback";
 import { Field, Input, Select, Textarea } from "@/core/ui/field";
 import { HelpTip } from "@/core/ui/help-tip";
 import { formatDateTime } from "@/core/lib/format";
-import { getGuide, newId, reachable, removeStep, type GuideDetail, type Tree } from "../api";
+import { getGuide, newId, reachable, removeStep, type Fact, type GuideDetail, type Tree } from "../api";
 import { Mindmap } from "../Mindmap";
 import { Note } from "../Note";
+import { RunPanel } from "../Run";
+import { StepKindEditor } from "../StepKindEditor";
 
 export function GuideEditorPage() {
   const { id = "" } = useParams();
   const { can } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const q = useQuery({ queryKey: ["handbook", "guide", id, "draft"], queryFn: () => getGuide(id, "draft") });
+  const q = useQuery({ queryKey: ["playbook", "guide", id, "draft"], queryFn: () => getGuide(id, "draft") });
   const [tree, setTree] = useState<Tree | null>(null);
   const [meta, setMeta] = useState({ title: "", category: "", description: "" });
   const [base, setBase] = useState("");
@@ -30,6 +32,8 @@ export function GuideEditorPage() {
   const [publishNote, setPublishNote] = useState("");
   const [removeOpen, setRemoveOpen] = useState(false);
   const [preview, setPreview] = useState(false);
+  const [path, setPath] = useState<Set<string>>(new Set());
+  const facts = useQuery({ queryKey: ["playbook", "facts"], queryFn: () => api<Fact[]>("/api/playbook/facts"), staleTime: Infinity });
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -53,22 +57,22 @@ export function GuideEditorPage() {
 
   const change = (next: Tree) => { setTree(next); setDirty(true); };
   const save = useMutation({
-    mutationFn: () => api<GuideDetail>(`/api/handbook/guides/${id}/draft`, { method: "PUT", json: { ...meta, tree, base_updated_at: base } }),
+    mutationFn: () => api<GuideDetail>(`/api/playbook/guides/${id}/draft`, { method: "PUT", json: { ...meta, tree, base_updated_at: base } }),
     onSuccess: (g) => { load(g); toast.success("Đã lưu bản nháp. Người đọc vẫn thấy bản đã xuất bản cho đến khi xuất bản lại."); },
     onError: (e) => toast.error(errorMessage(e)),
   });
   const publish = useMutation({
-    mutationFn: () => api(`/api/handbook/guides/${id}/publish`, { method: "POST", json: { note: publishNote } }),
+    mutationFn: () => api(`/api/playbook/guides/${id}/publish`, { method: "POST", json: { note: publishNote } }),
     onSuccess: async () => {
       setPublishOpen(false);
-      await qc.invalidateQueries({ queryKey: ["handbook"] });
+      await qc.invalidateQueries({ queryKey: ["playbook"] });
       toast.success("Đã xuất bản. IT Support thấy phiên bản mới ngay.");
-      navigate(`/handbook/${id}`);
+      navigate(`/playbook/${id}`);
     },
     onError: (e) => toast.error(errorMessage(e)),
   });
   const upload = useMutation({
-    mutationFn: (f: File) => { const fd = new FormData(); fd.set("file", f); return api<{ url: string }>(`/api/handbook/guides/${id}/images`, { method: "POST", body: fd }); },
+    mutationFn: (f: File) => { const fd = new FormData(); fd.set("file", f); return api<{ url: string }>(`/api/playbook/guides/${id}/images`, { method: "POST", body: fd }); },
     onSuccess: (r) => insert(`\n![Ảnh minh hoạ](${r.url})\n`),
     onError: (e) => toast.error(e instanceof ApiError && e.code === "unsupported_file" ? "Chỉ nhận ảnh PNG hoặc JPEG." : errorMessage(e)),
   });
@@ -85,11 +89,12 @@ export function GuideEditorPage() {
   }
   const addChild = () => {
     const nid = newId();
-    change({ ...tree, nodes: { ...tree.nodes, [sel]: { ...node, children: [...node.children, { label: "", to: nid }] }, [nid]: { title: "Bước mới", note: "", children: [] } } });
+    const label = node.kind === "check" ? (node.children.length ? "Sai" : "Đúng") : "";
+    change({ ...tree, nodes: { ...tree.nodes, [sel]: { ...node, children: [...node.children, { label, to: nid }] }, [nid]: { title: "Bước mới", note: "", children: [] } } });
     setSelected(nid);
   };
   const others = Object.entries(tree.nodes).filter(([k]) => k !== sel);
-  const addJump = () => others[0] && setNode({ children: [...node.children, { label: "", to: others[0][0] }] });
+  const addJump = () => others[0] && setNode({ children: [...node.children, { label: node.kind === "check" ? (node.children.length ? "Sai" : "Đúng") : "", to: others[0][0] }] });
   const afterRemove = removeStep(tree, sel);
   const removing = Object.keys(tree.nodes).length - Object.keys(afterRemove.nodes).length;
   const orphans = Object.keys(tree.nodes).length - reachable(tree).size;
@@ -97,7 +102,7 @@ export function GuideEditorPage() {
   return (
     <>
       <nav aria-label="Đường dẫn">
-        <Link to={q.data?.published_version ? `/handbook/${id}` : "/handbook"} className="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-ink">
+        <Link to={q.data?.published_version ? `/playbook/${id}` : "/playbook"} className="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-ink">
           <ChevronLeft className="size-4" aria-hidden="true" />{q.data?.published_version ? "Xem bản đã xuất bản" : "Infra Playbook"}
         </Link>
       </nav>
@@ -115,7 +120,7 @@ export function GuideEditorPage() {
             <Button variant={dirty ? "primary" : "secondary"} loading={save.isPending} onClick={() => save.mutate()} disabled={!meta.title.trim()}>
               {!save.isPending && <Save className="size-4" aria-hidden="true" />}Lưu nháp
             </Button>
-            {can("handbook.guides.publish") && (
+            {can("playbook.guides.publish") && (
               <Button variant={dirty ? "secondary" : "primary"} disabled={dirty} title={dirty ? "Lưu nháp trước khi xuất bản" : undefined} onClick={() => { setPublishNote(""); setPublishOpen(true); }}>
                 <Send className="size-4" aria-hidden="true" />Xuất bản
               </Button>
@@ -137,7 +142,14 @@ export function GuideEditorPage() {
       {orphans > 0 && <p role="status" className="mb-3 rounded-sm bg-waiting-soft px-3 py-2 text-sm">Có {orphans} bước không nối với sơ đồ – sẽ bị từ chối khi xuất bản.</p>}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
-        <Mindmap tree={tree} selected={sel} onSelect={setSelected} label="Sơ đồ đang soạn" />
+        <div className="space-y-4">
+          <Mindmap tree={tree} selected={sel} onSelect={setSelected} label="Sơ đồ đang soạn" path={path} />
+          {dirty ? (
+            <p className="text-sm text-muted">Lưu nháp để chạy thử bản nháp với một Mã NV.</p>
+          ) : (
+            <RunPanel guideId={id} tree={tree} version="draft" onPath={setPath} onSelect={setSelected} />
+          )}
+        </div>
         <Panel
           title={sel === tree.root ? "Bước gốc" : "Bước đang chọn"}
           actions={
@@ -152,6 +164,7 @@ export function GuideEditorPage() {
             <Field label="Tiêu đề bước" required>
               <Input value={node.title} maxLength={200} onChange={(e) => setNode({ title: e.target.value })} />
             </Field>
+            <StepKindEditor node={node} facts={facts.data ?? []} onChange={setNode} />
             <div>
               <div className="mb-1 flex items-center justify-between gap-2">
                 <span className="text-sm font-medium">Ghi chú</span>
@@ -185,7 +198,7 @@ export function GuideEditorPage() {
               {node.children.map((b, i) => (
                 <div key={i} className="grid grid-cols-[1fr_1.4fr_auto] items-end gap-2">
                   <Field label={`Lựa chọn ${i + 1}`}>
-                    <Input value={b.label} maxLength={100} placeholder="Có / Không…" onChange={(e) => setNode({ children: node.children.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })} />
+                    <Input value={node.kind === "check" ? (i === 0 ? "Đúng" : "Sai") : b.label} readOnly={node.kind === "check"} maxLength={100} placeholder="Có / Không…" onChange={(e) => setNode({ children: node.children.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })} />
                   </Field>
                   <Field label="Tới bước">
                     <Select value={b.to} onChange={(e) => setNode({ children: node.children.map((x, j) => (j === i ? { ...x, to: e.target.value } : x)) })}>
@@ -196,8 +209,8 @@ export function GuideEditorPage() {
                 </div>
               ))}
               <span className="flex flex-wrap gap-2">
-                <Button size="sm" onClick={addChild}><Plus className="size-4" aria-hidden="true" />Thêm bước con</Button>
-                <Button size="sm" onClick={addJump} disabled={!others.length}>Nhánh tới bước có sẵn</Button>
+                <Button size="sm" onClick={addChild} disabled={node.kind === "check" && node.children.length >= 2}><Plus className="size-4" aria-hidden="true" />Thêm bước con</Button>
+                <Button size="sm" onClick={addJump} disabled={!others.length || (node.kind === "check" && node.children.length >= 2)}>Nhánh tới bước có sẵn</Button>
               </span>
             </fieldset>
             {sel !== tree.root && (

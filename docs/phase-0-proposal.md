@@ -1236,3 +1236,30 @@ Quyết định:
   Exception → cấp duyệt, luồng xử lý). Giai đoạn 1: chạy thử theo Mã NV kèm vết từng điều kiện; 2: gắn với nhóm
   request SDP, tự kiểm tra khi đồng bộ; 3: kết luận mở đúng luồng (đề xuất mua, Job, sổ ngoại lệ). Chỉ đọc dữ liệu,
   không tự từ chối, thiếu dữ liệu thì báo “Chưa đủ dữ liệu”.
+
+## 47. Mã nội bộ handbook → playbook (26/11/2026)
+
+- Chuẩn hoá theo tên hiển thị: module `playbook`, quyền `playbook.guides.*`, bảng `playbook_*`, API `/api/playbook`,
+  trang `/playbook` (đường dẫn `/handbook…` cũ tự chuyển hướng). Migration `0002_playbook` đổi tên bảng/khoá/chỉ mục,
+  sửa link ảnh trong sơ đồ đã lưu và chuyển quyền đã cấp cho vai trò – không mất dữ liệu. `INFRAOPS_ENABLED_MODULES` cũ
+  có `handbook` vẫn hiểu là `playbook`. Nhật ký cũ giữ tên hành động `handbook.*`.
+
+## 48. Tái thiết kế xoay quanh Playbook (26/11/2026)
+
+- Yêu cầu: giao diện tối giản, mọi thứ xoay quanh Playbook; chỉ Administrator / Manager / Supervisor được thiết kế
+  (thêm, sửa, thay thế, xoá) Playbook. Chủ sản phẩm chọn: Playbook là cửa vào duy nhất; trắng sáng, một màu nhấn; làm
+  một lượt; các việc dở (sửa critique trang Vòng đời, Playbook giai đoạn 1) gộp vào thiết kế mới.
+- Quyết định:
+  - Trang chính `/` = module có `home` (Playbook): “Bạn cần xử lý việc gì?”, tìm tình huống, danh sách theo nhóm, “Đang
+    chờ bạn” và hàng đợi RTR của team. Tổng quan số liệu cũ ở `/overview`. Thanh trái: Playbook · Việc của tôi ·
+    Công cụ (`/tools`, mọi trang module gom theo module) · Hệ thống.
+  - Bước Playbook có loại: *hướng dẫn*, *kiểm tra* (điều kiện: dữ liệu hoặc giá trị, so sánh ≥ > ≤ < bằng khác; nhánh 1
+    Đúng, nhánh 2 Sai), *kết luận* (Tiêu chuẩn / Adhoc / Exception + người duyệt); mỗi bước mở tối đa 6 *công cụ* (khoá
+    = đường dẫn trang). Dữ liệu cho bước kiểm tra do module khai báo (`ModuleManifest.facts`): Vòng đời nhân sự cung
+    cấp band, phòng ban, số tài sản đang dùng theo loại, số lượng theo tiêu chuẩn band – đọc từ lần đối soát gần nhất.
+  - `POST /api/playbook/guides/{id}/run`: đi theo sơ đồ cho một Mã NV, kiểm tra tự quyết kèm giá trị và nguồn; dừng ở
+    bước cần người chọn hoặc thiếu dữ liệu (“Chưa đủ dữ liệu”, không đoán). Chỉ đọc.
+  - Quyền `playbook.guides.publish` (xuất bản, xoá) thêm Supervisor (migration `0003_playbook` cho bản đã cài).
+  - Sửa lỗi khởi động sau khi đổi tên quyền: migration `0002_playbook` đổi cả `core_permission`; đồng bộ quyền lúc khởi
+    động bỏ qua quyền đã được cấp.
+  - Màu: nền trắng, đường kẻ mảnh, bóng gần như không có; cobalt là màu nhấn duy nhất.

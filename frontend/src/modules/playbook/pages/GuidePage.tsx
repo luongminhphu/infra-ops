@@ -1,32 +1,35 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, CornerDownRight, Pencil } from "lucide-react";
+import { ChevronLeft, Pencil } from "lucide-react";
 import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { buttonVariants } from "@/core/ui/button";
 import { ErrorState, LoadingRows, PageHeader, Panel } from "@/core/ui/feedback";
 import { Field, Select } from "@/core/ui/field";
 import { formatDate } from "@/core/lib/format";
-import { getGuide, type GuideVersionInfo } from "../api";
+import { getGuide, type Fact, type GuideVersionInfo } from "../api";
 import { Mindmap } from "../Mindmap";
-import { Note } from "../Note";
+import { RunPanel } from "../Run";
+import { StepView } from "../StepView";
 
 export function GuidePage() {
   const { id = "" } = useParams();
   const { can } = useAuth();
   const [params, setParams] = useSearchParams();
   const version = params.get("v") ?? "published";
-  const q = useQuery({ queryKey: ["handbook", "guide", id, version], queryFn: () => getGuide(id, version) });
-  const history = useQuery({ queryKey: ["handbook", "versions", id], queryFn: () => api<GuideVersionInfo[]>(`/api/handbook/guides/${id}/versions`) });
+  const q = useQuery({ queryKey: ["playbook", "guide", id, version], queryFn: () => getGuide(id, version) });
+  const history = useQuery({ queryKey: ["playbook", "versions", id], queryFn: () => api<GuideVersionInfo[]>(`/api/playbook/guides/${id}/versions`) });
+  const facts = useQuery({ queryKey: ["playbook", "facts"], queryFn: () => api<Fact[]>("/api/playbook/facts"), staleTime: Infinity });
   const [selected, setSelected] = useState<string | null>(null);
+  const [path, setPath] = useState<Set<string>>(new Set());
   const g = q.data;
   useEffect(() => {
     if (g) setSelected((s) => (s && g.tree.nodes[s] ? s : g.tree.root));
   }, [g]);
 
   const back = (
-    <Link to="/handbook" className="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-ink">
+    <Link to="/playbook" className="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-ink">
       <ChevronLeft className="size-4" aria-hidden="true" />Infra Playbook
     </Link>
   );
@@ -44,7 +47,7 @@ export function GuidePage() {
             <span className="block">Phiên bản {g.version} · xuất bản {formatDate(g.published_at)}{g.published_by ? ` bởi ${g.published_by}` : ""}. Bấm vào từng bước trên sơ đồ để đọc hướng dẫn.</span>
           </>
         }
-        actions={can("handbook.guides.edit") && <Link to={`/handbook/${id}/edit`} className={buttonVariants({})}><Pencil className="size-4" aria-hidden="true" />Soạn</Link>}
+        actions={can("playbook.guides.edit") && <Link to={`/playbook/${id}/edit`} className={buttonVariants({})}><Pencil className="size-4" aria-hidden="true" />Soạn</Link>}
       />
       {(history.data?.length ?? 0) > 1 && (
         <Field label="Phiên bản" className="mb-3 w-64">
@@ -53,30 +56,14 @@ export function GuidePage() {
           </Select>
         </Field>
       )}
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <Mindmap tree={g.tree} selected={selected} onSelect={setSelected} label={`Sơ đồ ${g.title}`} />
-        <Panel title={node?.title ?? "Chọn một bước"} className="xl:sticky xl:top-4 xl:self-start">
-          {node && (
-            <>
-              <Note text={node.note} />
-              {node.children.length > 0 && (
-                <div className="mt-4 border-t border-line pt-3">
-                  <p className="mb-1.5 text-sm font-medium text-muted">Bước tiếp theo</p>
-                  <ul className="space-y-1">
-                    {node.children.map((b, i) => (
-                      <li key={i}>
-                        <button type="button" onClick={() => setSelected(b.to)} className="inline-flex min-h-8 items-center gap-1.5 text-left text-primary hover:underline">
-                          <CornerDownRight className="size-4 shrink-0" aria-hidden="true" />
-                          {b.label ? <><b className="font-medium">{b.label}</b> → </> : null}{g.tree.nodes[b.to]?.title}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </>
-          )}
-        </Panel>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_400px]">
+        <Mindmap tree={g.tree} selected={selected} onSelect={setSelected} label={`Sơ đồ ${g.title}`} path={path} />
+        <div className="space-y-4 xl:sticky xl:top-4 xl:self-start">
+          <Panel title={node?.title ?? "Chọn một bước"}>
+            {node && <StepView tree={g.tree} node={node} facts={facts.data ?? []} onSelect={setSelected} />}
+          </Panel>
+          {version === "published" && <RunPanel guideId={id} tree={g.tree} version="published" onPath={setPath} onSelect={setSelected} />}
+        </div>
       </div>
     </>
   );

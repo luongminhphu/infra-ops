@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 
-/** Only links that stay in infra-ops, go to http(s) or mailto; images only from the handbook store or https. */
+/** Only links that stay in infra-ops, go to http(s) or mailto; images only from the playbook store or https. */
 export function safeHref(url: string): string | null {
   const u = url.trim();
   if (/^\/(?!\/)/.test(u) || /^https?:\/\//i.test(u) || /^mailto:/i.test(u)) return u;
@@ -9,7 +9,7 @@ export function safeHref(url: string): string | null {
 }
 export function safeImage(url: string): string | null {
   const u = url.trim();
-  return /^\/api\/handbook\/images\/[0-9a-f-]{36}$/.test(u) || /^https:\/\//i.test(u) ? u : null;
+  return /^\/api\/playbook\/images\/[0-9a-f-]{36}$/.test(u) || /^https:\/\//i.test(u) ? u : null;
 }
 
 const INLINE = /!\[([^\]]*)\]\(([^)\s]+)\)|\[([^\]]+)\]\(([^)\s]+)\)|\*\*([^*]+)\*\*|`([^`]+)`/g;

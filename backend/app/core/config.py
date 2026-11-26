@@ -34,7 +34,7 @@ class Settings(BaseSettings):
 
     # Modules mounted at startup.
     enabled_modules: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: ["lifecycle", "workload", "handbook"]
+        default_factory=lambda: ["lifecycle", "workload", "playbook"]
     )
 
     # Authentication
@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     log_json: bool = True
 
     _split = field_validator("enabled_modules", "bootstrap_admin_upns", mode="before")(_split_csv)
+
+    @field_validator("enabled_modules")
+    @classmethod
+    def _renamed_modules(cls, v: list[str]) -> list[str]:
+        # "handbook" was renamed "playbook": an older .env keeps working.
+        return list(dict.fromkeys("playbook" if m == "handbook" else m for m in v))
 
     @field_validator("bootstrap_admin_upns")
     @classmethod

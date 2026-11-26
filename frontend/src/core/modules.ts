@@ -13,4 +13,6 @@ export interface FrontendModule {
   widgets?: Record<string, ComponentType<{ data: unknown }>>;
   /** Sections of the "Việc của tôi" portal (each fetches the signed-in user's own work). */
   portal?: { key: string; order: number; permission: string; component: ComponentType }[];
+  /** The app's home page ("/"), when this module is the entry point (Playbook). */
+  home?: ComponentType;
 }

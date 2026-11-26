@@ -114,6 +114,30 @@ class DocumentKind:
 
 
 @dataclass(frozen=True)
+class FactValue:
+    """One piece of data about an employee, with where it came from (shown in the Playbook trace)."""
+
+    value: Any  # number or text
+    source: str  # e.g. "SDP: 1 Monitor (HP E24 G5)"
+
+
+@dataclass(frozen=True)
+class FactSource:
+    """Data a Playbook check can test, declared by the module that owns it.
+
+    ``load(session, employee_id, param)`` returns None when the data is unknown (never a guess). ``param_label``
+    names the parameter a check must give (e.g. the product type), or is None when the fact takes none.
+    """
+
+    key: str
+    label: str
+    kind: str  # "number" | "text"
+    load: Callable[[AsyncSession, str, str], Awaitable[FactValue | None]]
+    param_label: str | None = None
+    param_hint: str = ""
+
+
+@dataclass(frozen=True)
 class ModuleManifest:
     id: str
     name: str
@@ -130,12 +154,16 @@ class ModuleManifest:
     scheduled_tasks: Sequence[ScheduledTask] = ()
     document_kinds: Sequence[DocumentKind] = ()
     workflows: Sequence[Any] = ()  # WorkflowDefinition (app.core.workflow.definitions)
+    facts: Sequence[FactSource] = ()
     tags: Sequence[str] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         for perm in self.permissions:
             if not perm.code.startswith(f"{self.id}."):
                 raise ValueError(f"Permission {perm.code!r} must be prefixed with module id {self.id!r}")
+        for fact in self.facts:
+            if not fact.key.startswith(f"{self.id}."):
+                raise ValueError(f"Fact {fact.key!r} must be prefixed with module id {self.id!r}")
         for wf in self.workflows:
             if not wf.key.startswith(f"{self.id}."):
                 raise ValueError(f"Workflow {wf.key!r} must be prefixed with module id {self.id!r}")

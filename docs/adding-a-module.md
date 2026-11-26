@@ -51,6 +51,17 @@ RENEWAL = DocumentKind(
 # manifest: document_kinds=[RENEWAL] – core provides templates, numbering, PDF, signed upload, APIs.
 ```
 
+Data a Playbook check step can test (e.g. "assets in use of type X") is declared by the module that owns it:
+
+```python
+FactSource("assets.renewals_due", "Số dịch vụ sắp hết hạn", "number", load_renewals_due)
+# async load(session, employee_id, param) -> FactValue(value, source) | None  (None = unknown, never a guess)
+# manifest: facts=[...]; keys start with the module id.
+```
+
+Every module nav page is also a *tool* a Playbook step can open; its key is the path without slashes
+(`/assets/renewals` → `assets.renewals`), so keep page paths stable.
+
 Module settings (mappings, thresholds) are a pydantic model with defaults, persisted by core:
 
 ```python
