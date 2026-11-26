@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date
+from typing import Any
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, File, Form, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +28,7 @@ from app.modules.lifecycle.attendance import (
     period,
     to_xlsx,
 )
+from app.modules.lifecycle.attendance_input import MAX_FILE_BYTES, extract, rows_from_file, rows_from_text
 from app.modules.lifecycle.settings import MODULE_ID, main_biostar
 from app.modules.lifecycle.settings import load as load_settings
 
@@ -37,6 +40,28 @@ class AttendanceIn(BaseModel):
     employee_ids: str = Field(min_length=1, max_length=20000)  # pasted list
     date_from: date
     date_to: date
+
+
+@router.post("/attendance/parse")
+async def parse_employee_list(
+    file: UploadFile | None = File(None),
+    text: str = Form("", max_length=200_000),
+    _: CurrentUser = Depends(export_perm),
+) -> dict[str, Any]:
+    """Recognise the employees in HR's file or pasted table, for review before the report. Nothing is stored."""
+    if file is not None and file.filename:
+        data = await file.read(MAX_FILE_BYTES + 1)
+        rows = await asyncio.to_thread(rows_from_file, file.filename, data)
+    else:
+        rows = rows_from_text(text)
+    parsed = extract(rows)
+    if not parsed.items:
+        raise AppError(
+            "Không nhận diện được Mã NV nào. Kiểm tra bảng có cột “Mã NV” hoặc mã 4–8 chữ số.",
+            code="no_employee_ids",
+        )
+    return {"items": parsed.items[:MAX_EMPLOYEES], "total": len(parsed.items), "skipped": parsed.skipped,
+            "column": parsed.header, "max": MAX_EMPLOYEES}  # fmt: skip
 
 
 @router.post("/attendance/export")

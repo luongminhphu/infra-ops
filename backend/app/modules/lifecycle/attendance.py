@@ -4,7 +4,6 @@ period; IT reads every BioStar system and hands back an Excel file (daily first/
 from __future__ import annotations
 
 import io
-import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from typing import Any
@@ -15,6 +14,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from app.core.timeutil import TZ
+from app.modules.lifecycle.attendance_input import extract, rows_from_text
 from app.modules.lifecycle.normalize import id_key
 
 MAX_DAYS = 62
@@ -23,8 +23,9 @@ WEEKDAY = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Ch
 
 
 def parse_ids(text: str) -> list[str]:
-    """Employee IDs pasted from HR's e-mail or Excel: separated by spaces, commas, semicolons or new lines."""
-    return list(dict.fromkeys(t for t in re.split(r"[\s,;]+", text) if t))
+    """Employee IDs from what HR sent: a plain list, or a table pasted from an e-mail / Excel (ID column found
+    by its header, otherwise every 4–8 digit cell)."""
+    return extract(rows_from_text(text)).ids
 
 
 def is_success(event: dict[str, Any]) -> bool:

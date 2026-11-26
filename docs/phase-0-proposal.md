@@ -1202,3 +1202,13 @@ Quyết định:
   phụ trách hoặc đang có lệnh giao chưa xong (`job_being_assigned`), rồi ghi Technician lên SDP bằng khoá API của người
   nhận (job `lifecycle.assign`, như *Chuyển Job*). Job đã nhận hiện ở *Việc của tôi*. Điều phối khi có người nghỉ:
   *Chuyển Job* (quyền `lifecycle.job.assign`).
+
+## 44. Báo cáo chấm công: nhập file / dán bảng từ email (26/11/2026)
+
+- Yêu cầu: nhập file Excel hoặc dán bảng dữ liệu trong email, nhận diện hàng loạt rồi chạy báo cáo.
+- Quyết định: `POST /api/lifecycle/attendance/parse` (multipart `file` .xlsx/.xlsm/.csv/.txt ≤ 5 MB, hoặc `text`; không
+  lưu gì) → `{items: [{employee_id, name}], total, skipped, column}`. Bộ nhận diện thuần (`attendance_input.py`): tìm dòng
+  tiêu đề trong 10 dòng đầu (Mã NV, MSNV, Mã (số) nhân viên, Employee ID…) và cột họ tên; không có tiêu đề thì lấy mọi ô
+  4–8 chữ số (STT, ngày, số điện thoại không bị nhầm); mã số ngắn hơn 6 chữ số được bù 0 đầu; đọc mọi sheet. File `.xls`
+  cũ: báo lưu lại dạng .xlsx. Xuất báo cáo dùng cùng bộ nhận diện cho nội dung ô nhập. Giao diện: dán bảng (có tab /
+  chữ) được gửi nhận diện ngay, ô chỉ còn danh sách mã, kèm bản xem trước Mã NV · họ tên.
