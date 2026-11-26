@@ -141,9 +141,17 @@ def test_reconcile_rules() -> None:
     # Onboarded 14 days ago: no BioStar user, no assets
     rules, _ = _issues(result, "003551")
     assert {"onboard_no_biostar", "onboard_no_assets"} <= rules
-    # BioStar user with unknown employee ID
-    rules, _ = _issues(result, "009999")
-    assert rules == {"biostar_unknown_employee"}
+    # BioStar user with an employee ID unknown to SDP: not an employee row, listed apart for access review
+    assert all(r.employee_id != "009999" for r in result.rows)
+    unknown = {n["employee_id"]: n for n in result.notes if n["rule"] == "biostar_unknown_employee"}["009999"]
+    assert unknown["employee_id"] == "009999" and unknown["active"] is True
+    assert "còn quyền ra vào" in unknown["message"]
+    # SDP unreadable: nothing can be judged, so BioStar users still show as rows
+    unread = reconcile(
+        requests, users, assets, bs, S, date(2026, 11, 16), {"sdp": False, "assets": True, "biostar": True}
+    )
+    assert any(r.employee_id == "009999" for r in unread.rows)
+    assert not any(n["rule"] == "biostar_unknown_employee" for n in unread.notes)
     # Request without employee ID becomes a global note; printer state notes for unassigned "In Use"
     assert any(n["rule"] == "request_parse_error" for n in result.notes)
     # Disabled BioStar, no request → no issue

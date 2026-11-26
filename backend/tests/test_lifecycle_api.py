@@ -156,7 +156,10 @@ async def test_end_to_end_sync_and_reconciliation(admin, configured, respx_mock)
 
     data = (await admin.get("/api/lifecycle/reconciliation")).json()
     by_emp = {r["employee_id"]: r for r in data["items"]}
-    assert set(by_emp) == {"003551", "002100", "001500", "009999", "003261"}
+    assert set(by_emp) == {"003551", "002100", "001500", "003261"}
+    # SDP is the source of truth: a BioStar-only ID is listed apart for access review, not as an employee.
+    unknown = [n for n in data["notes"] if n["rule"] == "biostar_unknown_employee"]
+    assert [n["employee_id"] for n in unknown] == ["009999"] and unknown[0]["active"]
     # A laptop SDP lists only as a workstation still counts as that person's asset.
     assert WORKSTATIONS[1]["user"]["id"] == "u9" and by_emp["003261"]["asset_ids"] == ["w1"]
     # Office 103261 = SDP 003261: matched, so no "BioStar user without SDP user" issue.
@@ -203,7 +206,7 @@ async def test_end_to_end_sync_and_reconciliation(admin, configured, respx_mock)
     assert "002100" in text and "001500" not in text
     xlsx = await admin.get("/api/lifecycle/reconciliation/export", params={"format": "xlsx"})
     ws = load_workbook(io.BytesIO(xlsx.content)).active
-    assert ws["A1"].value == "Mã NV" and ws.max_row == 6
+    assert ws["A1"].value == "Mã NV" and ws.max_row == 5
 
     # Requests list and mapping-driven parsing
     reqs = (await admin.get("/api/lifecycle/requests")).json()

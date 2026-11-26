@@ -56,6 +56,12 @@ export interface Note {
   request_id?: string;
   subject?: string;
   asset_tag?: string;
+  // biostar_unknown_employee: a BioStar user matching no SDP user (listed apart, not an employee row)
+  employee_id?: string;
+  name?: string;
+  active?: boolean;
+  group?: string | null;
+  source?: string | null;
 }
 
 export interface ReconResponse {
