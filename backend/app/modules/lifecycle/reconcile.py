@@ -27,6 +27,7 @@ RULES: dict[str, tuple[Severity, str, str]] = {
     "onboard_no_assets": ("low", "assets", "Đã onboard nhưng chưa được gán tài sản"),
     "biostar_unknown_employee": ("medium", "biostar", "Mã NV trên BioStar không có trong SDP"),
     "sdp_duplicate_employee_id": ("medium", "sdp", "Mã NV trùng trên nhiều user SDP"),
+    "sdp_user_no_employee_id": ("low", "sdp", "User SDP chưa có Mã NV (nối theo họ tên)"),
     "name_mismatch": ("low", "biostar", "Họ tên không khớp giữa các hệ thống"),
     "request_parse_error": ("medium", "sdp", "Request RTR thiếu hoặc sai thông tin"),
     "asset_state_mismatch": ("low", "assets", "Trạng thái tài sản không khớp với việc gán"),
@@ -128,9 +129,13 @@ def reconcile(
 
     users_by_emp: dict[str, list[dict[str, Any]]] = defaultdict(list)
     users_by_name: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    # SDP users without an employee ID, by name in any word order ("Hau. Nguyen Thi My" = "Nguyễn Thị Mỹ Hậu").
+    no_id_by_name: dict[tuple[str, ...], list[dict[str, Any]]] = defaultdict(list)
     for u in sdp_users:
         if u.get("employee_id"):
             users_by_emp[u["employee_id"]].append(u)
+        elif u.get("name"):
+            no_id_by_name[name_key(u["name"])].append(u)
         if u.get("name"):
             users_by_name[fold(u["name"])].append(u)
     sdp_has_emp_ids = bool(users_by_emp)
@@ -198,6 +203,13 @@ def reconcile(
         reqs = req_by_emp.get(emp, [])
         latest = _latest(reqs)
         users = users_by_emp.get(emp, [])
+        user_by_name = False
+        if not users and reqs:
+            # An RTR employee whose SDP user lacks the employee ID: the one SDP user with the same name.
+            rtr_name = (latest or reqs[0]).get("full_name") or ""
+            same = no_id_by_name.get(name_key(rtr_name), []) if rtr_name else []
+            if len(same) == 1:
+                users, user_by_name = same, True
         bs = bs_by_emp.get(emp)
         # SDP is the reference for the person's name; RTR and BioStar only fill in when SDP has no user.
         ref_name = (
@@ -249,7 +261,8 @@ def reconcile(
         row.cells["sdp"] = {
             "status": "match" if (reqs or users) else "pending",
             "label": sdp_label,
-            "detail": f"{len(reqs)} request RTR · {len(users)} user SDP",
+            "detail": f"{len(reqs)} request RTR · {len(users)} user SDP"
+            + (" · nối theo họ tên (user SDP chưa có Mã NV)" if user_by_name else ""),
         }
         if not sources.get("assets"):
             row.cells["assets"] = {"status": "skipped", "label": "Chưa đọc được", "detail": ""}
@@ -258,7 +271,7 @@ def reconcile(
                 "status": "match" if emp_assets else "pending",
                 "label": f"{len(in_use) if emp_assets else 0} tài sản",
                 "detail": ", ".join(f"{a.get('name')} ({a.get('asset_tag') or '—'})" for a in emp_assets[:6])
-                + (" · nối theo họ tên" if matched_by_name else ""),
+                + (" · nối theo họ tên" if matched_by_name or user_by_name else ""),
             }
         if not sources.get("biostar"):
             row.cells["biostar"] = {"status": "skipped", "label": "Chưa đọc được", "detail": ""}
@@ -323,6 +336,14 @@ def reconcile(
                         f"Ngày hiệu lực {fmt_date(today_eff, '?')} nhưng chưa có tài sản nào.",
                     )
                 )
+        if user_by_name:
+            row.issues.append(
+                Issue(
+                    "sdp_user_no_employee_id",
+                    f"User SDP “{users[0]['name']}” (id {users[0]['id']}) trùng họ tên nhưng chưa có Mã NV – "
+                    f"điền {emp} trên SDP để nối chắc chắn.",
+                )
+            )
         if len(users) > 1:
             row.issues.append(
                 Issue(

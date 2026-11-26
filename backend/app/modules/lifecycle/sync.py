@@ -248,18 +248,18 @@ async def _find_missing_sdp_users(
     settings: LifecycleSettings,
     sdp_users: list[dict[str, Any]],
     biostar_users: list[dict[str, Any]],
+    requests: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """SDP users the full list did not return (offset paging over a shifting list can skip records): for each
-    active BioStar user whose last 5 digits match no listed SDP employee ID, search SDP by employee ID."""
+    RTR request (newest first) and active BioStar user whose employee ID's last 5 digits match no listed SDP
+    employee ID, search SDP by employee ID."""
     known = {normalize.id_key(u["employee_id"]) for u in sdp_users if u.get("employee_id")}
-    missing = sorted(
-        {
-            normalize.id_key(b["user_id"])
-            for b in biostar_users
-            if not b.get("retired") and b.get("user_id", "").isdigit()
-        }
-        - known
-    )[:MAX_SDP_LOOKUPS]
+    newest = sorted(requests, key=lambda r: r.get("created_at") or "", reverse=True)
+    wanted = [r.get("employee_id") or "" for r in newest]
+    wanted += sorted(b.get("user_id", "") for b in biostar_users if not b.get("retired"))
+    missing = [
+        k for k in dict.fromkeys(normalize.id_key(e) for e in wanted if e.isdigit()) if k not in known
+    ][:MAX_SDP_LOOKUPS]
     if not missing:
         return []
     seen = {u["id"] for u in sdp_users}
@@ -365,8 +365,9 @@ async def _sync(
             errors[err_key] = _err(exc)
     sources["biostar"] = not any(k.startswith("biostar") for k in errors)
     # SDP is the reference: BioStar and SDP employee IDs are matched on their last 5 digits.
+    requests = [request_dict(r) for r in (await session.scalars(select(LifecycleRequest))).all()]
     if sources["sdp"] and sdp_users:
-        sdp_users += await _find_missing_sdp_users(session, settings, sdp_users, read_users)
+        sdp_users += await _find_missing_sdp_users(session, settings, sdp_users, read_users, requests)
     sdp_ids = normalize.sdp_id_index(sdp_users)
     for n in read_users:
         n["employee_id"] = normalize.resolve_employee_id(n["user_id"], n.get("name") or "", sdp_ids)
@@ -390,7 +391,6 @@ async def _sync(
             for i in items
         )
 
-    requests = [request_dict(r) for r in (await session.scalars(select(LifecycleRequest))).all()]
     result = reconcile(requests, sdp_users, assets, bs_users, settings, today or today_vn(), sources)
     acks = {(a.employee_id, a.rule) for a in (await session.scalars(select(IssueAck))).all()}
     issue_total = 0

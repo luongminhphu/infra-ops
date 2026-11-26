@@ -497,3 +497,29 @@ async def test_stalled_job_goes_to_the_coordinator_not_the_operator(admin, confi
     assert (
         late["count"] == 0 and "assignee=me" in late["href"]
     )  # waiting on the system is not the person's lateness
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_sdp_user_of_an_rtr_employee_is_searched_when_the_list_skipped_it(
+    configured, respx_mock
+) -> None:  # type: ignore[no-untyped-def]
+    """An RTR employee without a BioStar user: the SDP user the paged list skipped is still found by its ID."""
+    from app.modules.lifecycle.settings import load as load_settings
+    from app.modules.lifecycle.sync import _find_missing_sdp_users
+
+    hidden = {"id": "h1", "name": "Hau. Nguyen Thi My", "employee_id": "003475"}
+
+    def users(request: httpx.Request) -> httpx.Response:
+        crit = json.loads(request.url.params["input_data"])["list_info"]["search_criteria"]
+        return httpx.Response(200, json=sdp_ok("users", [hidden] if crit["value"] in "003475" else []))
+
+    respx_mock.get(f"{SDP}/api/v3/users").mock(side_effect=users)
+    async with get_sessionmaker()() as s:
+        found = await _find_missing_sdp_users(
+            s,
+            await load_settings(s),
+            [{"id": "u1", "employee_id": "003551"}],
+            [],
+            [{"employee_id": "003475", "created_at": "2026-10-01"}, {"employee_id": "003551"}],
+        )
+    assert [u["id"] for u in found] == ["h1"]
