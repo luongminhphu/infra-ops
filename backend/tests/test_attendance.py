@@ -106,3 +106,53 @@ async def test_export_reads_biostar_and_is_audited(admin, client, configured, re
     assert (await admin.post("/api/lifecycle/attendance/export", json=too_long)).status_code == 400
     await client.login("att-viewer@test.local")  # first login = Viewer: no attendance data
     assert (await client.post("/api/lifecycle/attendance/export", json=body)).status_code == 403
+
+
+def test_employee_list_from_email_table_excel_and_plain_text() -> None:
+    from app.modules.lifecycle.attendance_input import extract, rows_from_text
+
+    # Table copied from an e-mail: tab-separated, header row, Excel dropped the leading zeros.
+    table = "STT\tMã NV\tHọ và tên\tPhòng ban\n1\t3551\tNguyễn Văn An\tIT\n2\t003475\tTrần Thị B\tHR\n3\t\tThiếu mã\tIT"
+    p = extract(rows_from_text(table))
+    assert p.header == "Mã NV" and p.skipped == 1
+    assert p.items == [
+        {"employee_id": "003551", "name": "Nguyễn Văn An"},
+        {"employee_id": "003475", "name": "Trần Thị B"},
+    ]
+    # No header: every 4–8 digit cell; row numbers, dates and phone numbers are not IDs.
+    loose = "Nhờ IT kiểm tra:\n1. Nguyễn A - 003551 (OT 15/11)\n2. 003612 Lê B, 0901234567"
+    assert extract(rows_from_text(loose)).ids == ["003551", "003612"]
+    assert extract(rows_from_text("003551, 003475\n003551;  001163")).ids == ["003551", "003475", "001163"]
+
+
+async def test_parse_endpoint_reads_xlsx_and_pasted_text(admin) -> None:  # type: ignore[no-untyped-def]
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.append(["Danh sách rà soát OT tháng 11"])
+    ws.append(["Mã số nhân viên", "Họ tên"])
+    ws.append([3551, "Nguyễn Văn An"])
+    ws.append(["003475", "Trần Thị B"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    files = {
+        "file": (
+            "ot.xlsx",
+            buf.getvalue(),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    }
+    r = await admin.post("/api/lifecycle/attendance/parse", files=files)
+    assert r.status_code == 200, r.text
+    got = r.json()
+    assert [i["employee_id"] for i in got["items"]] == ["003551", "003475"] and got[
+        "column"
+    ] == "Mã số nhân viên"
+    r = await admin.post("/api/lifecycle/attendance/parse", data={"text": "không có mã nào"})
+    assert r.status_code == 400 and r.json()["error"]["code"] == "no_employee_ids"
+    old = {"file": ("ot.xls", b"\xd0\xcf\x11\xe0", "application/vnd.ms-excel")}
+    assert (await admin.post("/api/lifecycle/attendance/parse", files=old)).json()["error"][
+        "code"
+    ] == "unsupported_file"

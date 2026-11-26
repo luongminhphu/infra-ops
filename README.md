@@ -402,7 +402,9 @@ Lưu ý:
 6. User trong **Nhóm loại trừ** coi như không còn quyền ra vào: không đối soát với SDP, không vào mục “BioStar không có
    trên SDP” và bị ẩn khỏi trang Đối soát (dòng đầu trang ghi số user đã ẩn), trừ khi còn request RTR liên quan; khi đó
    ô BioStar ghi *Nhóm loại trừ* và không báo “còn hoạt động” khi offboard.
-7. **Báo cáo chấm công** (HR yêu cầu rà soát chấm công / Overtime): nhập danh sách Mã NV và khoảng thời gian (tối đa
+7. **Báo cáo chấm công** (HR yêu cầu rà soát chấm công / Overtime): **dán nguyên bảng** copy từ email/Excel của HR
+   (app tự tìm cột *Mã NV / MSNV / Mã số nhân viên…*, không có tiêu đề thì lấy mã 4–8 chữ số trong từng dòng, bù số 0
+   đầu bị Excel làm mất), hoặc **Nhập file Excel / CSV**, xem lại danh sách đã nhận diện, chọn khoảng thời gian (tối đa
    62 ngày) → **Xuất Excel**. App đọc log quẹt thành công trên mọi BioStar (Mã NV khớp theo 5 số cuối): sheet *Tổng
    hợp theo ngày* (giờ vào/ra đầu – cuối ngày, số giờ, ngày không quẹt), *Log chi tiết*, *Ghi chú* (Mã NV không có
    trên BioStar, hệ thống đọc lỗi). Quyền `lifecycle.attendance.export` (Manager, Supervisor, Operator); mỗi lần xuất
