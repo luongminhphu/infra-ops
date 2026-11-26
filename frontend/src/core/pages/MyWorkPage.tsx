@@ -9,31 +9,8 @@ import { Button } from "@/core/ui/button";
 import { EmptyState, ErrorState, LoadingRows, PageHeader, Panel } from "@/core/ui/feedback";
 import { HelpTip } from "@/core/ui/help-tip";
 import { STATUS, StatusBadge, type Status } from "@/core/ui/status";
-import { modules } from "@/modules";
-
-export interface NextItem {
-  key: string;
-  kind: string;
-  priority: number;
-  title: string;
-  detail: string;
-  due: string | null;
-  href: string;
-  action: string;
-  /** Needs nothing from this person (waiting on the system, an account notice): never the next thing to do. */
-  passive?: boolean;
-}
-
-/** Links from the queue carry this state so the target page can offer "← Việc của tôi". */
-export const FROM_QUEUE = { from: "me" } as const;
-
-export const LEVEL: Record<number, { label: string; status: Status }> = {
-  0: { label: "Cần bạn làm ngay", status: "waiting" },
-  1: { label: "Quá hạn / gấp", status: "failed" },
-  2: { label: "Sắp đến hạn", status: "warning" },
-  3: { label: "Cần biết", status: "pending" },
-  4: { label: "Gợi ý", status: "pending" },
-};
+import { FROM_QUEUE, LEVEL, useNextActions } from "@/core/lib/nextActions";
+import { useModules } from "@/core/modules";
 
 interface SummaryItem {
   key: string;
@@ -127,13 +104,6 @@ function Summary() {
   );
 }
 
-export const useNextActions = () =>
-  useQuery({
-    queryKey: ["me", "next"],
-    queryFn: () => api<{ items: NextItem[]; failed: string[] }>("/api/core/me/next"),
-    refetchInterval: 60_000,
-  });
-
 /**
  * "Việc của tôi" as one queue across modules, most urgent first. The top item is the next thing to do;
  * "Làm việc tiếp theo" opens it (wizards end by coming back here, so the operator walks the queue).
@@ -142,7 +112,7 @@ export function MyWorkPage() {
   const { can } = useAuth();
   const navigate = useNavigate();
   const q = useNextActions();
-  const sections = modules
+  const sections = useModules()
     .flatMap((m) => m.portal ?? [])
     .filter((s) => can(s.permission))
     .sort((a, b) => a.order - b.order);

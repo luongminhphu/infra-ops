@@ -64,6 +64,9 @@ API/UI: latest successful run · filters · detail · acknowledge (lifecycle_iss
 - A module lives in `backend/app/modules/<id>/` and `frontend/src/modules/<id>/`.
 - It imports only `app.core.*`. `import-linter` (CI) enforces: modules never import each other,
   core never imports modules.
+- Frontend: the same rules, plus modules never import `@/core/pages` (shared pieces live in `core/lib`
+  and `core/ui`). Only `src/app/App.tsx` imports `@/modules`; core reads the list with `useModules()`.
+  Enforced by `src/core/boundaries.test.ts` (vitest, CI).
 - Tables are prefixed `<id>_` and migrations live in the module's own Alembic branch.
 - Modules are enabled with `INFRAOPS_ENABLED_MODULES`; a disabled module keeps its data but
   exposes no routes, nav, permissions or widgets.

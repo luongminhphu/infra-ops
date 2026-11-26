@@ -17,6 +17,7 @@ import { ConnectionDetailPage } from "@/core/pages/connections/ConnectionDetailP
 import { AuditPage } from "@/core/pages/AuditPage";
 import { AccessPage } from "@/core/pages/access/AccessPage";
 import { NotFoundPage } from "@/core/pages/NotFoundPage";
+import { ModulesContext } from "@/core/modules";
 import { modules } from "@/modules";
 
 // Session expired (401 anywhere): re-check /me, which turns into null so RequireAuth redirects to /login.
@@ -73,7 +74,9 @@ export function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <RouterProvider router={router} />
+        <ModulesContext.Provider value={modules}>
+          <RouterProvider router={router} />
+        </ModulesContext.Provider>
         <LiveRegion />
         <Toaster
           position="bottom-right"

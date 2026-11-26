@@ -8,12 +8,8 @@ import { EmptyState, ErrorState, LoadingRows, PageHeader, Panel, Skeleton } from
 import { HelpTip } from "@/core/ui/help-tip";
 import { StatusBadge, type Status } from "@/core/ui/status";
 import { formatDate, formatRelative, pluralDays } from "@/core/lib/format";
-import { modules } from "@/modules";
-import { FROM_QUEUE, LEVEL, useNextActions } from "./MyWorkPage";
-
-// Looked up on use, not at import: the Playbook home (a module) imports this file, and the module list imports it.
-const widgetFor = (kind: string) =>
-  modules.map((m) => m.widgets?.[kind]).find(Boolean) as React.ComponentType<{ data: unknown }> | undefined;
+import { FROM_QUEUE, LEVEL, useNextActions } from "@/core/lib/nextActions";
+import { useWidgetRenderer } from "@/core/ui/widget-slot";
 
 interface ConnItem {
   id: string;
@@ -192,6 +188,7 @@ function GettingStarted() {
 
 export function DashboardPage() {
   const { can } = useAuth();
+  const widgetFor = useWidgetRenderer();
   const q = useQuery({ queryKey: ["dashboard"], queryFn: () => api<DashboardWidget[]>("/api/core/dashboard") });
   const conns = q.data?.find((w) => w.key === "core.connections")?.data as { items: ConnItem[] } | undefined;
   const exp = q.data?.find((w) => w.key === "core.expiring_secrets")?.data as { items: ExpItem[] } | undefined;
@@ -255,15 +252,3 @@ export function DashboardPage() {
 }
 
 
-/** One dashboard widget by kind, outside the overview page (e.g. the team queue on the Playbook home). */
-export function WidgetSlot({ kind }: { kind: string }) {
-  const q = useQuery({ queryKey: ["dashboard"], queryFn: () => api<DashboardWidget[]>("/api/core/dashboard") });
-  const w = q.data?.find((x) => x.kind === kind);
-  const Widget = widgetFor(kind);
-  if (!w || !Widget) return null;
-  return (
-    <Panel title={w.title} bodyClassName="py-1">
-      {w.error ? <ErrorState error={new Error(w.error)} /> : <Widget data={w.data} />}
-    </Panel>
-  );
-}

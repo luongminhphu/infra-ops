@@ -13,7 +13,8 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 ## Conventions
 
 - Code, comments, commit messages: English. UI text: Vietnamese. Dates `dd/MM/yyyy`, tz Asia/Ho_Chi_Minh.
-- Modules import only `app.core.*` (enforced by `uv run lint-imports`). Core never imports modules.
+- Modules import only `app.core.*` (enforced by `uv run lint-imports`). Core never imports modules. Frontend: same
+  rules, and modules never import `@/core/pages`; core reads modules via `useModules()` (`src/core/boundaries.test.ts`).
 - Tables prefixed `core_` / `<module>_`. Never edit another module's migrations.
 - Permissions: `<module>.<resource>.<action>`, declared in the manifest; protect endpoints with `require()`.
   System roles: `admin` (all), `manager`, `supervisor`, `operator`, `viewer` – use them as `default_roles`.

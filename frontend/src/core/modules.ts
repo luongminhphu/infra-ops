@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import { createContext, useContext, type ComponentType } from "react";
 import type { RouteObject } from "react-router-dom";
 
 /**
@@ -16,3 +16,7 @@ export interface FrontendModule {
   /** The app's home page ("/"), when this module is the entry point (Playbook). */
   home?: ComponentType;
 }
+
+/** The registered modules, provided once by the app (src/app/App.tsx) so core never imports src/modules. */
+export const ModulesContext = createContext<FrontendModule[]>([]);
+export const useModules = () => useContext(ModulesContext);
