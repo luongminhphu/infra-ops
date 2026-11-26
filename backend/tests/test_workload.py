@@ -324,6 +324,15 @@ async def test_operator_sees_only_own_tasks_supervisor_coordinates(admin, client
     assert techs["unassigned"] == {"open": 0, "overdue": 0}
     st = (await client.get("/api/workload/stats?from=2026-11-01&to=2026-11-30&technician_id=12")).json()
     assert [t["technician_id"] for t in st["technicians"]] == ["11"]
+    # The Excel report follows the same scope: only the operator's own tasks.
+    from openpyxl import load_workbook
+
+    resp = await client.get("/api/workload/tickets/export?technician_id=12&state=all")
+    assert resp.status_code == 200 and "task-infra-support-" in resp.headers["content-disposition"]
+    wb = load_workbook(io.BytesIO(resp.content))
+    assert wb.sheetnames == ["Tổng hợp tồn", "Chi tiết task"]
+    names = {r[3] for r in wb["Chi tiết task"].iter_rows(min_row=2, values_only=True)}
+    assert names == {"Tech 11"}
 
     await client.login("wl-sup@test.local")
     techs = (await client.get("/api/workload/technicians")).json()
@@ -350,6 +359,43 @@ async def test_operator_sees_only_own_tasks_supervisor_coordinates(admin, client
     assert (await client.get("/api/workload/settings")).status_code == 200
     assert (await client.get("/api/lifecycle/settings")).status_code == 200
     assert (await client.get("/api/core/users")).status_code == 403
+
+
+def test_export_summary_counts_backlog_per_operator() -> None:
+    from datetime import timedelta
+
+    from app.modules.workload.export import days_late, detail_row, summary_rows
+    from app.modules.workload.models import Ticket
+
+    now = datetime(2026, 11, 26, 3, tzinfo=UTC)
+
+    def t(tech: str | None, phase: str, late_days: float | None, state: str = "open") -> Ticket:
+        due = now - timedelta(days=late_days) if late_days is not None else now + timedelta(days=1)
+        return Ticket(
+            id="1", subject="=cmd", technician_name=tech, phase=phase, state=state,
+            created_at=now - timedelta(days=40), due_by=due,
+            completed_at=now if state == "done" else None,
+        )  # fmt: skip
+
+    rows = summary_rows(
+        [
+            t("An", "pending", 3),
+            t("An", "on_hold", 45),
+            t("An", "in_progress", None),
+            t("Bình", "pending", 0.5),
+            t(None, "pending", 10),
+            t("Bình", "pending", 100, state="done"),  # closed: not backlog
+        ],
+        now,
+    )
+    # Most overdue first, unassigned last, then the total.
+    assert rows[0] == ["An", 3, 1, 1, 1, 2, 1, 0, 1, 40]
+    assert rows[1] == ["Bình", 1, 1, 0, 0, 1, 1, 0, 0, 40]
+    assert rows[2][0] == "Chưa giao" and rows[2][7] == 1
+    assert rows[3] == ["Tổng cộng", 5, 3, 1, 1, 4, 2, 1, 1, 40]
+    assert days_late(t("An", "pending", None), now) is None
+    row = detail_row(t("An", "pending", 3), now)
+    assert row[1] == "'=cmd" and row[5] == "Chưa bắt đầu" and row[10] == 3 and row[11] == 40
 
 
 def test_phase_and_device_need_rules() -> None:

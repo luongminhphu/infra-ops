@@ -6,9 +6,9 @@ import uuid
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import Select, and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit.service import record
@@ -22,6 +22,7 @@ from app.core.settings.service import save_settings
 from app.core.timeutil import TZ
 from app.core.workflow.api import job_out
 from app.core.workflow.engine import create_job, start_job
+from app.modules.workload.export import to_xlsx
 from app.modules.workload.models import Technician, Ticket
 from app.modules.workload.po import repack
 from app.modules.workload.rules import pick_bucket
@@ -243,6 +244,44 @@ async def tickets(
     limit: int = Query(500, ge=1, le=2000),
 ) -> dict[str, Any]:
     now = _now()
+    stmt = await _ticket_query(session, user, state, technician_id, q, now)
+    total = await session.scalar(select(func.count()).select_from(stmt.subquery()))
+    rows = (await session.scalars(stmt.limit(limit))).all()
+    return {"total": total, "items": [ticket_out(t, now) for t in rows]}
+
+
+@router.get("/tickets/export")
+async def export_tickets(
+    user: CurrentUser = Depends(view),
+    session: AsyncSession = Depends(get_session),
+    state: State = "open",
+    technician_id: str = Query("", max_length=32),
+    q: str = Query("", max_length=100),
+) -> Response:
+    """Excel report of the tasks in the current filter: backlog per operator + the task list."""
+    now = _now()
+    rows = list(
+        (await session.scalars(await _ticket_query(session, user, state, technician_id, q, now))).all()
+    )
+    await record(
+        session,
+        actor=user.actor,
+        module_id=MODULE_ID,
+        action="workload.tickets_exported",
+        message=f"{len(rows)} tasks, state={state}",
+    )
+    await session.commit()
+    stamp = now.astimezone(TZ).strftime("%Y%m%d-%H%M")
+    return Response(
+        to_xlsx(rows, now, "Thống kê task Infra Support"),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="task-infra-support-{stamp}.xlsx"'},
+    )
+
+
+async def _ticket_query(
+    session: AsyncSession, user: CurrentUser, state: str, technician_id: str, q: str, now: datetime
+) -> Select[tuple[Ticket]]:
     stmt = select(Ticket)
     if state == "overdue":
         stmt = stmt.where(Ticket.state == "open", Ticket.due_by < now)
@@ -265,10 +304,8 @@ async def tickets(
                 func.lower(Ticket.requester_name).like(like),
             )
         )
-    total = await session.scalar(select(func.count()).select_from(stmt.subquery()))
     order = Ticket.completed_at.desc() if state in ("done", "cancelled") else Ticket.due_by.asc().nulls_last()
-    rows = (await session.scalars(stmt.order_by(order, Ticket.created_at.desc()).limit(limit))).all()
-    return {"total": total, "items": [ticket_out(t, now) for t in rows]}
+    return stmt.order_by(order, Ticket.created_at.desc())
 
 
 class ReassignIn(BaseModel):
