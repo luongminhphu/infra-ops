@@ -768,6 +768,20 @@ OFFBOARD = WorkflowDefinition(
     verify_steps=True,
     steps=[
         CHECK,
+        # Access is revoked first: it must not wait for the devices to come back.
+        StepDefinition(
+            "biostar_offboard",
+            "Vô hiệu hoá / xoá user BioStar",
+            "auto",
+            "Theo cấu hình module; cần nhập lại Mã NV để xác nhận.",
+            run=biostar_offboard,
+            preview=preview_biostar_offboard,
+            writes=("biostar",),
+            confirm=True,
+            confirm_text="Nhân viên sẽ không vào được văn phòng bằng thẻ/vân tay/khuôn mặt. Nhập lại Mã NV để xác nhận.",
+            checklist=("User BioStar đã vô hiệu hoá / xoá", "Thẻ / vân tay không còn mở được cửa"),
+            evidence_required=True,
+        ),
         StepDefinition(
             "find_sdp_user",
             "Xác định user SDP",
@@ -798,19 +812,6 @@ OFFBOARD = WorkflowDefinition(
             preview=preview_return,
             writes=("sdp",),
             checklist=("Tài sản đã về In Store và bỏ gán user trên SDP",),
-        ),
-        StepDefinition(
-            "biostar_offboard",
-            "Vô hiệu hoá / xoá user BioStar",
-            "auto",
-            "Theo cấu hình module; cần nhập lại Mã NV để xác nhận.",
-            run=biostar_offboard,
-            preview=preview_biostar_offboard,
-            writes=("biostar",),
-            confirm=True,
-            confirm_text="Nhân viên sẽ không vào được văn phòng bằng thẻ/vân tay/khuôn mặt. Nhập lại Mã NV để xác nhận.",
-            checklist=("User BioStar đã vô hiệu hoá / xoá", "Thẻ / vân tay không còn mở được cửa"),
-            evidence_required=True,
         ),
         StepDefinition(
             "return_doc",

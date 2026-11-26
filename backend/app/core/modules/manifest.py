@@ -35,6 +35,8 @@ class NavItem:
     path: str
     icon: str
     permission: str
+    # Optional heading the item is listed under in the module's sub-navigation.
+    group: str = ""
 
 
 @dataclass(frozen=True)

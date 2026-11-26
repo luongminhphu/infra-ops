@@ -3,6 +3,8 @@ export interface NavItem {
   path: string;
   icon: string;
   permission: string;
+  /** Heading the item is listed under in the module's sub-navigation ("" = none). */
+  group?: string;
 }
 
 export interface NavGroup {

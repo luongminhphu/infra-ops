@@ -26,7 +26,8 @@ manifest = ModuleManifest(
         Permission("assets.renewal.manage", "Cập nhật lịch gia hạn"),
     ],
     routers=[router],                      # mounted under /api/assets
-    nav=[NavItem("Gia hạn dịch vụ", "/assets/renewals", "calendar-clock", "assets.renewal.view")],
+    # 5th argument (optional): heading in the module sub-navigation; the first item is where the module opens.
+    nav=[NavItem("Gia hạn dịch vụ", "/assets/renewals", "calendar-clock", "assets.renewal.view", "Việc cần làm")],
     connectors_used=["sdp"],               # shown as "Dùng bởi" on connection profiles
     dashboard_widgets=[],                  # DashboardWidget(key, title, kind, permission, load)
     scheduled_tasks=[                      # run by the worker: python -m app.worker

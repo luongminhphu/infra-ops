@@ -34,6 +34,16 @@ JOB_LABEL = {
     "completed": "Hoàn tất",
     "cancelled": "Đã huỷ",
 }
+# SDP request statuses as HR reads them (others are shown as SDP names them).
+SDP_STATUS_VN = {
+    "open": "Đang mở",
+    "in progress": "Đang xử lý",
+    "on hold": "Tạm dừng",
+    "resolved": "Đã xử lý",
+    "closed": "Đã đóng",
+    "cancelled": "Đã huỷ",
+    "canceled": "Đã huỷ",
+}
 HEADERS = [
     "STT",
     "Mã NV",
@@ -57,6 +67,7 @@ class ReviewRow:
     request: str
     request_status: str
     job_status: str | None
+    job_id: str | None
     assets_in_use: int | None  # None = not read
     biostar: str
     biostar_active: bool | None
@@ -87,6 +98,7 @@ class ReviewRow:
             "request": self.request,
             "request_status": self.request_status,
             "job_status": self.job_status,
+            "job_id": self.job_id,
             "assets_in_use": self.assets_in_use,
             "biostar": self.biostar,
             "biostar_active": self.biostar_active,
@@ -126,7 +138,7 @@ async def review_rows(session: AsyncSession, month: date) -> list[ReviewRow]:
                 )
             ).all()
         }
-    jobs: dict[str, str] = {}
+    jobs: dict[str, tuple[str, str]] = {}
     if emps:
         for j in (
             await session.scalars(
@@ -135,7 +147,7 @@ async def review_rows(session: AsyncSession, month: date) -> list[ReviewRow]:
                 .order_by(Job.created_at)
             )
         ).all():
-            jobs[j.subject_key] = j.status  # latest job wins
+            jobs[j.subject_key] = (j.status, str(j.id))  # latest job wins
     rows = []
     for r in reqs:
         emp = r.employee_id or ""
@@ -153,8 +165,9 @@ async def review_rows(session: AsyncSession, month: date) -> list[ReviewRow]:
                 department=(r.fields or {}).get("department") or "",
                 effective_date=r.effective_date or first,
                 request=f"#{r.display_id or r.id}",
-                request_status=r.status or "",
-                job_status=jobs.get(emp),
+                request_status=SDP_STATUS_VN.get((r.status or "").lower(), r.status or ""),
+                job_status=jobs[emp][0] if emp in jobs else None,
+                job_id=jobs[emp][1] if emp in jobs else None,
                 assets_in_use=in_use,
                 biostar=bs.get("label") or "Chưa đọc",
                 biostar_active=bs_active,

@@ -49,10 +49,13 @@ export function AppShell() {
   }, [location.pathname]);
 
   const subLinks = (horizontal: boolean) =>
-    sub!.items.map((item) => {
+    sub!.items.map((item, i) => {
       const Icon = iconFor(item.icon);
+      // A heading where the group changes (vertical list only; the phone strip stays one row).
+      const heading = !horizontal && item.group && item.group !== sub!.items[i - 1]?.group ? item.group : null;
       return (
         <li key={item.path} className={horizontal ? "shrink-0" : undefined}>
+          {heading && <p className={cn("px-2 pb-1 text-xs font-medium text-muted", i > 0 && "mt-3 border-t border-line pt-3")}>{heading}</p>}
           <NavLink
             to={item.path}
             end={item.path === "/"}

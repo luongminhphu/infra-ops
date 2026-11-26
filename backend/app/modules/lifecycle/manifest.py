@@ -60,6 +60,9 @@ async def _summary(session: AsyncSession) -> dict[str, Any]:
     return await reconciliation_summary(session)
 
 
+WORK, RECORDS, SOURCES, PROCESS = "Việc cần làm", "Hồ sơ & báo cáo", "Dữ liệu nguồn", "Quy trình & cấu hình"
+RECON_VIEW = "lifecycle.reconciliation.view"
+
 manifest = ModuleManifest(
     id="lifecycle",
     name="Vòng đời nhân sự",
@@ -130,28 +133,28 @@ manifest = ModuleManifest(
     ],
     workflows=[ONBOARD, OFFBOARD, TRANSFER, REASSIGN_JOB, ASSET_STATE, ASSET_DISPOSE],
     document_kinds=[HANDOVER, RETURN],
+    # Grouped by the work: what to do, records & reports, source data, process & configuration.
+    # The first item is where the module opens: the jobs to work on.
     nav=[
+        NavItem("Job onboard / offboard", "/lifecycle/jobs", "workflow", "lifecycle.job.view", WORK),
+        NavItem("Đối soát theo Mã NV", "/lifecycle/reconciliation", "git-compare-arrows", RECON_VIEW, WORK),
+        NavItem("Kho thiết bị", "/lifecycle/stock", "package", "lifecycle.job.view", WORK),
+        NavItem("Biên bản", "/lifecycle/documents", "file-text", "lifecycle.documents.view", RECORDS),
         NavItem(
-            "Đối soát theo Mã NV",
-            "/lifecycle/reconciliation",
-            "git-compare-arrows",
-            "lifecycle.reconciliation.view",
+            "Báo cáo chấm công", "/lifecycle/attendance", "clock", "lifecycle.attendance.export", RECORDS
         ),
-        NavItem("Job onboard / offboard", "/lifecycle/jobs", "workflow", "lifecycle.job.view"),
-        NavItem("Lưu đồ quy trình", "/lifecycle/flows", "route", "lifecycle.job.view"),
-        NavItem("Kho thiết bị", "/lifecycle/stock", "package", "lifecycle.job.view"),
-        NavItem("Request RTR", "/lifecycle/requests", "ticket", "lifecycle.reconciliation.view"),
-        NavItem("Biên bản", "/lifecycle/documents", "file-text", "lifecycle.documents.view"),
-        NavItem("Báo cáo chấm công", "/lifecycle/attendance", "clock", "lifecycle.attendance.export"),
         NavItem(
             "Rà soát nghỉ việc (ISO)",
             "/lifecycle/offboard-review",
             "user-check",
             "lifecycle.offboard_review.export",
+            RECORDS,
         ),
-        NavItem("Đồng bộ dữ liệu", "/lifecycle/sync", "refresh-cw", "lifecycle.reconciliation.view"),
-        NavItem("Mẫu biên bản", "/lifecycle/templates", "file-cog", "lifecycle.templates.manage"),
-        NavItem("Cấu hình module", "/lifecycle/settings", "settings", "lifecycle.settings.manage"),
+        NavItem("Request RTR", "/lifecycle/requests", "ticket", RECON_VIEW, SOURCES),
+        NavItem("Đồng bộ dữ liệu", "/lifecycle/sync", "refresh-cw", RECON_VIEW, SOURCES),
+        NavItem("Lưu đồ quy trình", "/lifecycle/flows", "route", "lifecycle.job.view", PROCESS),
+        NavItem("Mẫu biên bản", "/lifecycle/templates", "file-cog", "lifecycle.templates.manage", PROCESS),
+        NavItem("Cấu hình module", "/lifecycle/settings", "settings", "lifecycle.settings.manage", PROCESS),
     ],
     # Microsoft connectors (entra, ad, exchange) are added once that integration is cleared.
     connectors_used=["sdp", "biostar"],

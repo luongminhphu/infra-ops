@@ -87,7 +87,7 @@ export function AttendancePage() {
             showError={touched}
             required
           >
-            <Textarea rows={6} value={ids} onChange={(e) => setIds(e.target.value)} placeholder={"003551\n003475\n001163"} className="font-mono" />
+            <Textarea rows={6} value={ids} onChange={(e) => setIds(e.target.value)} placeholder="Ví dụ: 003551, 003475 – mỗi Mã NV một dòng hoặc cách nhau bằng dấu phẩy" className="font-mono" />
           </Field>
           <div className="flex flex-wrap items-start gap-4">
             <Field label="Từ ngày" required error={dateError} showError={touched}>

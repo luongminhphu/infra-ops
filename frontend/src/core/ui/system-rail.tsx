@@ -29,8 +29,8 @@ export function SystemRail({ cells, compact = false, className }: { cells: RailC
             <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-xs", def.bg, def.fg)}>
               <Icon className="size-3.5" aria-hidden="true" />
             </span>
-            {!compact && <span className="truncate text-xs text-muted">{cell.label}</span>}
-            {cell.value && <span className="tabular ml-auto text-xs font-medium">{cell.value}</span>}
+            {!compact && <span className="min-w-0 truncate text-xs text-muted">{cell.label}</span>}
+            {cell.value && <span className="tabular ml-auto shrink-0 whitespace-nowrap text-xs font-medium">{cell.value}</span>}
             <span className="sr-only">
               {cell.label}: {def.label}
               {cell.detail ? ` – ${cell.detail}` : ""}

@@ -424,8 +424,9 @@ Lưu ý:
    **Tải danh sách nhóm từ BioStar** để chọn nhóm người dùng và nhóm quyền ra vào mặc định, chọn vô hiệu hoá
    hay xoá user BioStar khi offboard.
 3. Sau mỗi lần đồng bộ, mỗi request *Nhân viên mới* / *Nghỉ việc* có một **Job nháp** (không ghi gì ra ngoài).
-4. Mở Job → (onboard) chọn tài sản trong kho → **Xem trước các bước** → **Bắt đầu ngay** hoặc **Lên lịch**
-   theo ngày hiệu lực. Worker chạy các bước tự động; Infra Support xác nhận các bước thủ công (đăng ký vân tay/thẻ,
+4. Mở Job → **Nhận Job** nếu chưa có người phụ trách → **Làm từng bước** (nút chính), hoặc menu **Thêm** →
+   Xem trước các bước / **Bắt đầu ngay…** (hỏi xác nhận) / **Lên lịch** theo ngày hiệu lực. Job offboard **khoá
+   BioStar trước tiên** (bước 2), không chờ thu hồi thiết bị. Worker chạy các bước tự động; Infra Support xác nhận các bước thủ công (đăng ký vân tay/thẻ,
    tình trạng tài sản thu hồi), nhập lại Mã NV trước khi vô hiệu hoá BioStar, chốt và tải biên bản đã ký.
    Job tự đính kèm biên bản, ghi chú và đóng request SDP.
 5. **Kiểm tra từng bước:** mỗi bước làm xong chuyển sang *Chờ kiểm tra*. Operator kiểm tra trên hệ thống thật,

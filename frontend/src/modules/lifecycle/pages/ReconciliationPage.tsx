@@ -113,6 +113,8 @@ function BulkAckDialog({ rows, rule, ruleTitle, onClose, onDone }: { rows: Recon
   );
 }
 
+const hasOpenIssue = (row: ReconRow, system: string) => row.issues.some((i) => !i.acked && i.system === system);
+
 export function ReconciliationPage() {
   const { can } = useAuth();
   const connections = useQuery({
@@ -190,7 +192,7 @@ export function ReconciliationPage() {
   const allPicked = pickable.length > 0 && pickable.every((id) => picked.includes(id));
 
   const columns = useMemo<ColumnDef<ReconRow, unknown>[]>(() => {
-    const flagged = (row: ReconRow, system: string) => row.issues.some((i) => !i.acked && i.system === system);
+    const flagged = hasOpenIssue;
     const select: ColumnDef<ReconRow, unknown>[] = canBulk
       ? [
           {
@@ -493,6 +495,22 @@ export function ReconciliationPage() {
               caption="Đối soát theo Mã nhân viên"
               getRowId={(r) => r.employee_id}
               onRowClick={(r) => setSelected(r.employee_id)}
+              card={(r) => (
+                <>
+                  <span className="flex items-start justify-between gap-2">
+                    <span className="min-w-0">
+                      <span className="block font-medium">{r.full_name || "—"}</span>
+                      <span className="block text-sm text-muted"><Mono>{r.employee_id}</Mono>{r.department ? ` · ${r.department}` : ""}</span>
+                    </span>
+                    {r.max_severity ? <StatusBadge status={SEVERITY[r.max_severity].status} label={`${r.issue_count} · ${SEVERITY[r.max_severity].short}`} /> : <StatusBadge status="match" label="Khớp" />}
+                  </span>
+                  <span className="mt-1.5 flex flex-wrap gap-1.5">
+                    <CellChip system="SDP" cell={r.cells.sdp} flagged={hasOpenIssue(r, "sdp")} />
+                    <CellChip system="Tài sản" cell={r.cells.assets} flagged={hasOpenIssue(r, "assets")} />
+                    <CellChip system="BioStar" cell={r.cells.biostar} flagged={hasOpenIssue(r, "biostar")} />
+                  </span>
+                </>
+              )}
               selectedId={selected}
               density={density}
               maxHeight="calc(100dvh - 330px)"

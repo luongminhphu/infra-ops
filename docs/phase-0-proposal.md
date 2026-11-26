@@ -1173,3 +1173,21 @@ Quyết định:
   cột *HR xác nhận* / *Ghi chú HR*. Mỗi lần xuất ghi audit `lifecycle.offboard_review_exported` (target = tháng).
 - Nhắc định kỳ: nguồn “Việc tiếp theo” `lifecycle.offboard_review` hiện mục cho tháng trước đến khi có người tải email
   nháp của tháng đó. App không tự gửi email (chưa có SMTP; tích hợp Exchange vẫn hoãn).
+
+## 42. Critique module Vòng đời nhân sự – sửa 5 vấn đề (26/11/2026)
+
+- Critique (26/40): menu theo nguồn dữ liệu, nút chính trang Job ngược quy trình từng bước, Rà soát ISO cho gửi
+  danh sách chưa xong, lỗi kỹ thuật thô, bảng trên điện thoại giấu cột quyết định.
+- Quyết định (chủ sản phẩm: sửa cả 5, khoá BioStar đầu tiên):
+  - `NavItem.group` (core) – sub-nav có tiêu đề nhóm: Việc cần làm / Hồ sơ & báo cáo / Dữ liệu nguồn / Quy trình &
+    cấu hình; module mở vào *Job onboard / offboard*. Nút lọc trạng thái có 0 Job bị ẩn.
+  - Trang Job: một nút chính (*Nhận Job* khi chưa có người phụ trách – `POST /api/lifecycle/jobs/{id}/claim`, quyền
+    execute, cùng đường đổi Technician trên SDP như chuyển Job; sau đó *Làm từng bước*); Lưu đồ, Xem trước, Lên lịch,
+    *Bắt đầu ngay…* (hộp xác nhận) vào menu *Thêm*. Điện thoại: bước hiện tại → danh sách bước → nhật ký.
+  - Offboard: bước *Vô hiệu hoá / xoá user BioStar* chạy ngay sau kiểm tra request, trước thu hồi tài sản. Job đã
+    tạo giữ thứ tự cũ.
+  - Rà soát ISO: cảnh báo khi còn ca chưa xong / chưa có người nhận; email là nút chính chỉ khi sẵn sàng; chip
+    trạng thái; liên kết Mở/Tạo Job offboard; trạng thái SDP tiếng Việt (cả trong Excel/email).
+  - Lỗi: Đồng bộ hiện một dòng mỗi nguồn lỗi (chi tiết khi mở), gợi ý worker chỉ cho admin; Request RTR hiện lý do lỗi
+    đầu tiên ngay trên dòng.
+  - `DataTable.card` (core): dưới 640px mỗi dòng là một thẻ (Đối soát, Job).

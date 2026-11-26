@@ -275,7 +275,8 @@ export function EmployeePanel({
                 key: k,
                 label: SYSTEM_LABEL[k]!,
                 status: flagged.has(k) ? "mismatch" : CELL_STATUS[d.row.cells[k].status],
-                value: k === "assets" ? d.row.cells.assets.label : undefined,
+                // Just the count: "Tài sản · 3" fits the narrow panel, "Tài sản 3 tài sản" was cut to "Tài…".
+                value: k === "assets" ? d.row.cells.assets.label.split(" ")[0] : undefined,
                 detail: d.row.cells[k].detail || d.row.cells[k].label,
               }))}
             />

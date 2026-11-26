@@ -321,12 +321,32 @@ async def assign_job(
     from app.core.auth.models import User
 
     job = await engine.get_job(session, job_id)
+    return await _request_assignment(session, user, job, await session.get(User, body.user_id), body.reason)
+
+
+@router.post("/jobs/{job_id}/claim", status_code=201)
+async def claim_job(
+    job_id: uuid.UUID,
+    user: CurrentUser = Depends(execute),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """An operator takes an unassigned job ("Nhận Job"): same path as a reassignment, to themselves."""
+    from app.core.auth.models import User
+
+    job = await engine.get_job(session, job_id)
+    if job.assignee_user_id is not None:
+        raise Conflict(f"Job đã do {job.assignee_name or 'người khác'} phụ trách.", code="job_assigned")
+    return await _request_assignment(session, user, job, await session.get(User, user.id), "Nhận Job")
+
+
+async def _request_assignment(
+    session: AsyncSession, user: CurrentUser, job: Any, target: Any, reason: str
+) -> dict[str, Any]:
     if job.workflow_key not in JOB_WORKFLOWS:
         raise NotFound("Không tìm thấy Job onboard/offboard.")
     if job.status in ("completed", "cancelled"):
         raise Conflict("Job đã kết thúc.", code="job_finished")
     req = await session.get(LifecycleRequest, job.external_ref)
-    target = await session.get(User, body.user_id)
     if req is None or target is None or not target.is_active:
         raise NotFound("Không tìm thấy request hoặc người nhận.")
     if job.assignee_user_id == target.id:
@@ -335,7 +355,7 @@ async def assign_job(
         session,
         user.actor,
         "lifecycle.assign",
-        params=assignment_params(job, req, target, user.upn, body.reason.strip()),
+        params=assignment_params(job, req, target, user.upn, reason.strip()),
         subject_key=job.subject_key,
         subject_label=f"Chuyển {job.subject_label} cho {target.display_name}",
         external_ref=str(job.id),
@@ -352,7 +372,7 @@ async def assign_job(
         target_label=job.subject_label,
         before={"assignee": job.assignee_name},
         after={"assignee": target.display_name},
-        message=body.reason.strip() or None,
+        message=reason.strip() or None,
     )
     await session.commit()
     return job_out(assign_job_)
