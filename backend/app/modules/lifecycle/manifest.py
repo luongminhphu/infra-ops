@@ -87,6 +87,11 @@ manifest = ModuleManifest(
             "lifecycle.job.execute", "Thực thi Job onboard/offboard", ("manager", "supervisor", "operator")
         ),
         Permission(
+            "lifecycle.job.view_all",
+            "Xem Job onboard/offboard của mọi người (không có: chỉ Job của mình và Job chưa ai nhận)",
+            ("manager", "supervisor", "viewer"),
+        ),
+        Permission(
             "lifecycle.job.assign",
             "Chuyển Job onboard/offboard cho Operator khác (đổi Technician trên SDP)",
             ("manager", "supervisor"),
@@ -233,7 +238,12 @@ manifest = ModuleManifest(
             order=2,  # after the person's own next actions
         ),
         DashboardWidget(
-            "lifecycle.jobs", "Job onboard / offboard", "lifecycle_jobs", "lifecycle.job.view", _jobs, order=3
+            "lifecycle.jobs",
+            "Job onboard / offboard",
+            "lifecycle_jobs",
+            "lifecycle.job.view_all",
+            _jobs,
+            order=3,
         ),
         DashboardWidget(
             "lifecycle.reconciliation",

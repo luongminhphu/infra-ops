@@ -199,8 +199,8 @@ export function ReceivePage() {
   const header = (
     <>
       <nav aria-label="Đường dẫn">
-        <Link to="/workload/purchases?tab=pos" className="mb-1 inline-flex items-center gap-1 text-sm text-muted hover:text-ink">
-          <ChevronLeft className="size-4" aria-hidden="true" />PO tổng
+        <Link to={can("workload.price.view") ? "/workload/purchases?tab=pos" : "/workload/purchases"} className="mb-1 inline-flex items-center gap-1 text-sm text-muted hover:text-ink">
+          <ChevronLeft className="size-4" aria-hidden="true" />{can("workload.price.view") ? "PO tổng" : "Đề xuất mua"}
         </Link>
       </nav>
       <PageHeader title="Nhận hàng theo PO" description="Quét serial từng thiết bị; hệ thống tạo tài sản In Store trên ServiceDesk Plus và cập nhật Kho thiết bị." />

@@ -91,3 +91,6 @@ class WorkflowDefinition:
     # Every step ends in "verify": an operator ticks the checklist (and attaches evidence where
     # required) before the next step runs.
     verify_steps: bool = False
+    # Least privilege: when set, people without it see (and open) only the jobs assigned to them and the
+    # unassigned ones they may take; the rest of the team's jobs stay out of their view.
+    view_all_permission: str | None = None

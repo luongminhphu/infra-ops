@@ -80,7 +80,11 @@ export function SyncPage() {
       <Panel title="Các lần đồng bộ gần đây" bodyClassName="p-0">
         {runs.length === 0 ? (
           <EmptyState icon={RefreshCw} title="Chưa đồng bộ lần nào">
-            Cấu hình kết nối ở <Link className="text-primary underline" to="/settings/connections">Kết nối hệ thống</Link> rồi bấm “Đồng bộ ngay”.
+            {can("core.connections.manage") ? (
+              <>Cấu hình kết nối ở <Link className="text-primary underline" to="/settings/connections">Kết nối hệ thống</Link> rồi bấm “Đồng bộ ngay”.</>
+            ) : (
+              "Nhờ Quản trị thêm kết nối SDP / BioStar, rồi bấm “Đồng bộ ngay”."
+            )}
           </EmptyState>
         ) : (
           <div className="overflow-x-auto">

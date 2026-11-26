@@ -1346,3 +1346,17 @@ Sau `/impeccable critique` (23/40: màn hình quản lý dùng chung cho cả ng
 - **Phân quyền tối thiểu** (`lifecycle.stocktake.view_all`: Manager, Supervisor, Viewer): chế độ Tổng hợp & xử lý, file
   tổng, file khu bất kỳ, danh mục khu. Operator chỉ có Đi kiểm và **file Excel của khu mình được giao** (API kiểm
   `assignee_user_id`); không thấy tên người kiểm khu khác.
+
+## 55. Phân quyền tối thiểu toàn app (26/11/2026)
+
+Nguyên tắc (product owner): user quyền nào chỉ thấy nội dung và chức năng trong phạm vi cho phép; ẩn ở UI và chặn ở API.
+- **Job**: `WorkflowDefinition.view_all_permission`; onboard/offboard/transfer dùng `lifecycle.job.view_all`
+  (Manager, Supervisor, Viewer). Không có quyền này: chỉ thấy / mở Job của mình và Job chưa ai nhận (danh sách, số đếm,
+  chi tiết). Widget tổng Job chỉ cho người có quyền đó.
+- Job **chuyển người phụ trách** chỉ hiện với `lifecycle.job.assign`; Job **đổi trạng thái / thanh lý tồn kho** chỉ với
+  `lifecycle.stock.manage` / `lifecycle.stock.dispose`. Lưu đồ quy trình chỉ liệt kê quy trình mình chạy được; lịch sử
+  checklist chỉ cho `core.workflow.checklist.manage`.
+- **Kết nối**: người chỉ xem không nhận tài khoản dịch vụ, 4 ký tự cuối của secret hay credential Write; không kiểm
+  tra được credential Write. Widget trạng thái kết nối / secret sắp hết hạn chỉ cho `core.connections.manage`.
+- UI: nút “Thử lại” chuyển Job, nhãn “Xem Job của mọi người”, liên kết PO tổng, gợi ý cấu hình kết nối, mô tả trang
+  Đề xuất mua, bảng “Theo Operator”, chọn phiên bản Playbook cũ – chỉ hiện với đúng quyền.

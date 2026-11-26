@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRightLeft } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/core/api/client";
+import { useAuth } from "@/core/auth/AuthProvider";
 import { Button } from "@/core/ui/button";
 import { Dialog } from "@/core/ui/dialog";
 import { Field, Select, Textarea } from "@/core/ui/field";
@@ -75,6 +76,7 @@ export function AssignJobButton({ job }: { job: Job }) {
 
 /** A hand-over still being written to SDP (or refused): never let it fail silently. */
 export function PendingAssignment({ job }: { job: Job }) {
+  const { can } = useAuth();
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["jobs", "assign", job.id],
@@ -96,7 +98,7 @@ export function PendingAssignment({ job }: { job: Job }) {
             <StatusBadge status={failed ? "failed" : "in_progress"} label={failed ? "Chuyển Job lỗi" : "Đang chuyển"} />
             {r.subject_label}
             {failed && <span className="basis-full text-failed">{r.steps[0]?.message}</span>}
-            {failed && <Button size="sm" loading={retry.isPending} onClick={() => retry.mutate(r.id)}>Thử lại</Button>}
+            {failed && can("lifecycle.job.assign") && <Button size="sm" loading={retry.isPending} onClick={() => retry.mutate(r.id)}>Thử lại</Button>}
           </p>
         );
       })}

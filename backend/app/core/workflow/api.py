@@ -132,6 +132,10 @@ def job_out(
     return out
 
 
+def _sees_all(user: CurrentUser, wf: WorkflowDefinition) -> bool:
+    return wf.view_all_permission is None or user.has(wf.view_all_permission)
+
+
 async def _load(
     session: AsyncSession,
     user: CurrentUser,
@@ -141,6 +145,8 @@ async def _load(
 ) -> tuple[Job, WorkflowDefinition]:
     job = await engine.get_job(session, job_id, for_update=for_update)
     wf = _wf(job)
+    if not _sees_all(user, wf) and job.assignee_user_id not in (None, user.id):
+        raise PermissionDenied("Job này do người khác phụ trách.")
     engine.need(
         user.permissions,
         {"view": wf.view_permission, "execute": wf.execute_permission, "override": wf.override_permission}[
@@ -188,7 +194,14 @@ async def list_jobs(
         if workflows
         else allowed
     )
-    stmt = select(Job).where(Job.workflow_key.in_(keys))
+    # Workflows whose other people's jobs I may not see: mine and the unassigned ones only.
+    scoped = {w.key for _, w in get_registry().workflows() if w.key in keys and not _sees_all(user, w)}
+    visible = or_(
+        Job.workflow_key.notin_(scoped) if scoped else Job.workflow_key.in_(keys),
+        Job.assignee_user_id == user.id,
+        Job.assignee_user_id.is_(None),
+    )
+    stmt = select(Job).where(Job.workflow_key.in_(keys), visible)
     if assignee == "me":
         stmt = stmt.where(Job.assignee_user_id == user.id)
     if status == "open":
@@ -210,7 +223,9 @@ async def list_jobs(
     counts = dict(
         (
             await session.execute(
-                select(Job.status, func.count()).where(Job.workflow_key.in_(keys)).group_by(Job.status)
+                select(Job.status, func.count())
+                .where(Job.workflow_key.in_(keys), visible)
+                .group_by(Job.status)
             )
         ).all()
     )
@@ -571,7 +586,14 @@ async def list_workflows(
     user: CurrentUser = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[dict[str, Any]]:
-    return [await _workflow_out(session, m, w) for m, w in _visible(user, module)]
+    """The workflows I may run (or whose checklists I manage); the checklist history only for checklist managers."""
+    manager = user.has(CHECKLIST_MANAGE)
+    out = []
+    for m, w in _visible(user, module):
+        if manager or user.has(w.execute_permission):
+            wf = await _workflow_out(session, m, w)
+            out.append(wf if manager else {**wf, "history": []})
+    return out
 
 
 class ChecklistIn(BaseModel):

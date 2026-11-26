@@ -125,7 +125,7 @@ REASSIGN_JOB = WorkflowDefinition(
             writes=("sdp",),
         )
     ],
-    view_permission="lifecycle.job.view",
+    view_permission=ASSIGN,  # hand-overs are the managers' business
     execute_permission=ASSIGN,
     override_permission=ASSIGN,
 )

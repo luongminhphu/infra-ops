@@ -100,7 +100,7 @@ def _definition(key: str, title: str, permission: str) -> WorkflowDefinition:
                 writes=("sdp",),
             )
         ],
-        view_permission=VIEW,
+        view_permission=permission,  # only those who may change stock see these jobs
         # Retrying a disposal is disposing: only those allowed to dispose can run or retry it.
         execute_permission=permission,
         override_permission=permission,

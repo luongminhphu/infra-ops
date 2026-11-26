@@ -188,7 +188,7 @@ export function StatsPage() {
           ) : (
             <EmptyState icon={ChartColumn} title="Không có task trong kỳ này">Chọn kỳ khác hoặc kiểm tra lần đồng bộ gần nhất.</EmptyState>
           )}
-          <Panel title="Theo Operator" bodyClassName="p-0">
+          {techs.data?.view_all && <Panel title="Theo Operator" bodyClassName="p-0">
             <div className="overflow-x-auto" tabIndex={0} aria-label="Bảng theo Operator (cuộn ngang)">
               <table className="w-full text-left text-sm">
                 <caption className="sr-only">Thống kê theo Operator</caption>
@@ -211,7 +211,7 @@ export function StatsPage() {
                 </tbody>
               </table>
             </div>
-          </Panel>
+          </Panel>}
         </>
       )}
     </>

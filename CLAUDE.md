@@ -8,7 +8,7 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 - `backend/app/core/*` – platform core. `backend/app/modules/<id>/` – modules (manifest.py required).
 - `frontend/src/core/*` – shell, design system (`ui/`), core pages. `frontend/src/modules/<id>/` – module UI.
 - `backend/migrations/<branch>/versions` – one Alembic branch per module (`core`, `lifecycle`, `workload`, `playbook`).
-- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §54).
+- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §55).
 
 ## Conventions
 
@@ -19,6 +19,9 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 - Permissions: `<module>.<resource>.<action>`, declared in the manifest; protect endpoints with `require()`.
   System roles: `admin` (all), `manager`, `supervisor`, `operator`, `viewer` – use them as `default_roles`.
   Row-level scoping (e.g. operators see only their own tasks) is enforced in the API with a `*.view_all` permission.
+  **Least privilege:** a user sees only the content and functions within their permissions. Hide every control,
+  panel, link and figure a role cannot use or should not see (`can()` in the UI), and enforce the same in the API
+  (never hide cosmetically only). Workflows set `view_all_permission` so others' jobs stay out of view.
 - Every state change by a user: `audit.record(...)` in the same transaction. Never log or return secrets.
 - External systems only via `open_connection(session, system_type, Purpose.READ|WRITE)`; credentials
   never come from env. Connectors must not write data in `test_connection()`. Work a person is responsible for
