@@ -160,7 +160,7 @@ export function StocktakesPage() {
           ))}
         </ul>
       )}
-      <AreasPanel />
+      {can("lifecycle.stocktake.view_all") && <AreasPanel />}
       <CreateDialog open={open} onClose={() => setOpen(false)} lastSync={q.data?.last_sync ?? null} onCreated={(id) => navigate(`/lifecycle/stocktake/${id}`)} />
     </>
   );
@@ -260,7 +260,9 @@ export function StocktakePage() {
   ];
   // Đi kiểm (walking a floor) for whoever counts while the count is on; Tổng hợp & xử lý for the rest of the job.
   const canWalk = counting && s.status === "counting" && s.zones.length > 0;
-  const mode = canWalk && (params.get("mode") ?? (mine.length || !manage ? "walk" : "manage")) === "walk" ? "walk" : "manage";
+  // The whole picture (every zone, differences, Excel files) is for lifecycle.stocktake.view_all; an Operator only walks.
+  const overview = can("lifecycle.stocktake.view_all");
+  const mode = canWalk && (!overview || (params.get("mode") ?? (mine.length || !manage ? "walk" : "manage")) === "walk") ? "walk" : "manage";
   const setMode = (m: "walk" | "manage") => setParams((p) => { p.set("mode", m); return p; }, { replace: true });
   const unfinished = s.zones.filter((z) => z.pending > 0);
 
@@ -271,7 +273,7 @@ export function StocktakePage() {
         description={<>Chốt sổ {formatDate(s.cutoff)} · dữ liệu SDP lúc {formatDateTime(s.source_synced_at)} · mở bởi {s.created_by}</>}
         actions={
           <>
-            {mode === "manage" && <a href={`/api/lifecycle/stocktakes/${id}/export`} className={buttonVariants({ variant: "secondary" })}><Download className="size-4" aria-hidden="true" />File tổng (Excel)</a>}
+            {mode === "manage" && overview && <a href={`/api/lifecycle/stocktakes/${id}/export`} className={buttonVariants({ variant: "secondary" })}><Download className="size-4" aria-hidden="true" />File tổng (Excel)</a>}
             {manage && s.status === "counting" && mode === "manage" && <Button variant="primary" loading={step.isPending} onClick={() => setConfirmFinish(true)}>Kết thúc kiểm</Button>}
             {manage && s.status === "reviewing" && (
               <Button variant="primary" loading={step.isPending} disabled={s.summary.unresolved > 0} onClick={() => step.mutate("close")}>
@@ -281,7 +283,7 @@ export function StocktakePage() {
           </>
         }
       />
-      {canWalk && (
+      {canWalk && overview && (
         <div className="mb-4 grid gap-1.5">
           <div role="tablist" aria-label="Chế độ" className="inline-flex w-fit rounded-md border border-line-strong bg-surface p-0.5">
             {MODES.map(([m, label]) => (
@@ -295,6 +297,11 @@ export function StocktakePage() {
       )}
       {mode === "walk" ? (
         <StocktakeWalk stocktakeId={id} items={s.items} zones={s.zones} mine={mine} onSaved={refresh} onExtra={(code, seenAt) => setExtra({ code, seenAt })} />
+      ) : !overview ? (
+        <div role="status" className="flex flex-wrap items-center gap-3 rounded-md border border-line bg-surface-2 px-4 py-3">
+          <StatusBadge status={STATUS[s.status]} label={s.status_label} />
+          <p className="text-sm text-pretty">Phần kiểm thực tế đã kết thúc. Tổng hợp, xử lý chênh lệch và biên bản do Supervisor/Manager thực hiện.</p>
+        </div>
       ) : (
       <>
       <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">

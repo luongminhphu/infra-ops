@@ -135,6 +135,11 @@ manifest = ModuleManifest(
             ("manager", "supervisor", "operator", "viewer"),
         ),
         Permission(
+            "lifecycle.stocktake.view_all",
+            "Xem toàn bộ kỳ kiểm kê (tiến độ mọi khu, chênh lệch, danh mục khu) và tải file Excel",
+            ("manager", "supervisor", "viewer"),
+        ),
+        Permission(
             "lifecycle.stocktake.count",
             "Kiểm thực tế: đánh dấu tài sản có / không, thêm tài sản ngoài sổ",
             ("manager", "supervisor", "operator"),

@@ -166,7 +166,7 @@ export function StocktakeWalk({
           })}
         <Select aria-label="Kiểm khu khác" value="" onChange={(e) => e.target.value && setZoneId(e.target.value)} className="min-h-11 w-auto">
           <option value="">Khu khác…</option>
-          {floors.filter((z) => !mine.includes(z.id!) && z.id !== zoneId).map((z) => <option key={z.id} value={z.id!}>{z.name}{z.assignee_name ? ` – ${z.assignee_name}` : ""}</option>)}
+          {floors.filter((z) => !mine.includes(z.id!) && z.id !== zoneId).map((z) => <option key={z.id} value={z.id!}>{z.name}</option>)}
         </Select>
       </div>
 

@@ -45,6 +45,8 @@ view_perm = require("lifecycle.stocktake.view")
 count_perm = require("lifecycle.stocktake.count")
 manage_perm = require("lifecycle.stocktake.manage")
 assign_perm = require("lifecycle.stocktake.assign")
+# The whole picture (every zone, differences, areas, Excel files). Operators only walk their floors.
+view_all_perm = require("lifecycle.stocktake.view_all")
 
 STATUS_LABEL = {"counting": "Đang kiểm", "reviewing": "Đang xử lý chênh lệch", "closed": "Đã đóng"}
 
@@ -554,7 +556,7 @@ async def close_stocktake(
 @router.get("/stocktakes/{stocktake_id}/export")
 async def export_stocktake(
     stocktake_id: uuid.UUID,
-    user: CurrentUser = Depends(view_perm),
+    user: CurrentUser = Depends(view_all_perm),
     session: AsyncSession = Depends(get_session),
     zone_id: str | None = None,
 ) -> Response:
@@ -868,7 +870,7 @@ def _area_out(a: StocktakeArea) -> dict[str, Any]:
 
 @router.get("/stocktake-areas")
 async def list_areas(
-    _: CurrentUser = Depends(view_perm), session: AsyncSession = Depends(get_session)
+    _: CurrentUser = Depends(view_all_perm), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
     """The areas, the departments of the latest SDP sync, and the people holding assets who are in no area."""
     areas = (

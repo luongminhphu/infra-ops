@@ -209,6 +209,12 @@ async def test_areas_split_the_count_between_counters(admin, client, configured,
         and mine[0]["title"].startswith("Kiểm kê Tầng 5")
         and mine[0]["href"] == f"/lifecycle/stocktake/{st['id']}"
     )
+    # Operators walk their floors only: no Excel files, no area catalogue (the manager's picture).
+    await _user(admin, "operator", "st-op@test.local")
+    await client.login("st-op@test.local")
+    assert (await client.get(base)).status_code == 200
+    assert (await client.get(f"{base}/export")).status_code == 403
+    assert (await client.get("/api/lifecycle/stocktake-areas")).status_code == 403
     # Only Administrator / Manager hand out zones: a Supervisor (who otherwise runs the stocktake) may not.
     await _user(admin, "supervisor", "st-sup@test.local")
     await client.login("st-sup@test.local")
