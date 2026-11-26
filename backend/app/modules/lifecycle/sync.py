@@ -214,6 +214,18 @@ async def run_sync(
         raise
 
 
+def asset_types(settings: LifecycleSettings) -> set[str]:
+    """SDP product types kept from a sync: the reconciled types plus every type the allocation standard names
+    (UPS, IP Phone…), so stock is never empty for a device the standard asks for. Empty = all types."""
+    if not settings.asset_product_types:
+        return set()
+    names = [
+        *settings.asset_product_types,
+        *(t for i in settings.allocation_standard for t in i.product_types),
+    ]
+    return {t.strip().lower() for t in names if t.strip()}
+
+
 async def _workstations(client: SdpClient, seen: set[str]) -> list[dict[str, Any]]:
     """Computers (laptops, PCs) SDP keeps as workstations, which its asset list may leave out. Optional: an SDP
     without that endpoint (or a key without access to it) just adds nothing."""
@@ -305,7 +317,7 @@ async def _sync(
             try:
                 raw_assets = await client.list_all("/api/v3/assets", "assets")
                 raw_assets += await _workstations(client, {str(a.get("id")) for a in raw_assets})
-                types = {t.lower() for t in settings.asset_product_types}
+                types = asset_types(settings)
                 assets = [
                     a
                     for a in map(normalize.sdp_asset, raw_assets)
