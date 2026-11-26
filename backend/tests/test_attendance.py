@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import io
 import json
+import uuid
 from datetime import date
 
 import httpx
 import respx
 from openpyxl import load_workbook
 
+from app.modules.lifecycle import attendance_api
 from app.modules.lifecycle.attendance import (
     Report,
     add_events,
@@ -89,6 +91,13 @@ async def test_export_reads_biostar_and_is_audited(admin, client, configured, re
         resp.headers["x-not-found"] == "1"
         and "cham-cong-20261102-20261103" in resp.headers["content-disposition"]
     )
+    assert (resp.headers["x-requested"], resp.headers["x-not-found-ids"]) == ("2", "003475")
+    assert (
+        resp.headers["x-read-ok"],
+        resp.headers["x-read-errors"],
+        resp.headers["x-read-error-detail"],
+    ) == ("1", "0", "")
+    assert (await admin.get("/api/lifecycle/attendance/status")).json() == {"ready": True, "message": None}
     query = json.loads(search.calls[0].request.content)["Query"]
     assert query["conditions"][1]["values"] == ["003551"]  # only matched users are searched
     assert query["conditions"][0]["values"] == ["2026-11-01T17:00:00.000Z", "2026-11-03T17:00:00.000Z"]
@@ -156,3 +165,25 @@ async def test_parse_endpoint_reads_xlsx_and_pasted_text(admin) -> None:  # type
     assert (await admin.post("/api/lifecycle/attendance/parse", files=old)).json()["error"][
         "code"
     ] == "unsupported_file"
+
+
+async def test_status_and_unreadable_biostar_explain_the_problem(admin, client, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # A BioStar profile that does not exist (other tests may have configured a real one in this database).
+    monkeypatch.setattr(attendance_api, "main_biostar", lambda _s: {"profile_id": uuid.uuid4()})
+    status = (await admin.get("/api/lifecycle/attendance/status")).json()
+    assert status["ready"] is False and "biostar" in status["message"]
+    body = {"employee_ids": "003551", "date_from": "2026-11-02", "date_to": "2026-11-03"}
+    resp = await admin.post("/api/lifecycle/attendance/export", json=body)
+    err = resp.json()["error"]
+    assert err["code"] == "biostar_unreadable" and err["message"].startswith(
+        "Không đọc được BioStar: BioStar chính: "
+    )
+    await client.login("att-status-viewer@test.local")  # Viewer: may not check either
+    assert (await client.get("/api/lifecycle/attendance/status")).status_code == 403
+
+
+async def test_unreachable_biostar_is_reported_without_raw_exception(admin, configured, respx_mock) -> None:  # type: ignore[no-untyped-def]  # noqa: F811
+    respx_mock.post(f"{BS}/api/login").mock(side_effect=httpx.ConnectError("boom: secret-host:1234"))
+    body = {"employee_ids": "003551", "date_from": "2026-11-02", "date_to": "2026-11-03"}
+    err = (await admin.post("/api/lifecycle/attendance/export", json=body)).json()["error"]
+    assert err["code"] == "biostar_unreadable" and "boom" not in err["message"]
