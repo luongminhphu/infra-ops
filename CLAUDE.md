@@ -57,6 +57,8 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 - Project skills in `.claude/skills/` (vendored upstream, do not edit; update by re-copying):
   `ui-ux-pro-max` (nextlevelbuilder/ui-ux-pro-max-skill – design-system/palette/UX search) and
   `impeccable` (pbakaus/impeccable – design critique/polish). Use them for UI work.
+  `graphify` (PyPI `graphifyy` 0.9.120, Graphify-Labs/graphify – `/graphify .` builds a code knowledge graph in
+  `graphify-out/`, git-ignored; installs the `graphifyy` package on first run).
 - Microsoft integrations (Entra/AD/Exchange) are deferred by the product owner – do not add them
   without being asked.
 

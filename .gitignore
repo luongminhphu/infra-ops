@@ -25,3 +25,6 @@ dist/
 # impeccable live-server runtime state
 **/.impeccable/live/
 certs/
+
+# graphify output (rebuild with /graphify .)
+graphify-out/
