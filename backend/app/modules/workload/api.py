@@ -1,4 +1,4 @@
-"""Helpdesk/Support tasks from SDP: per-operator lists, reassignment and statistics."""
+"""Infra Support tasks from SDP: per-operator lists, reassignment and statistics."""
 
 from __future__ import annotations
 

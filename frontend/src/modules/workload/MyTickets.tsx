@@ -60,7 +60,7 @@ export function MyTicketsSection() {
 
   return (
     <Panel
-      title="Task Helpdesk / Support"
+      title="Task Infra Support"
       description={d?.technician ? `Request trên ServiceDesk Plus giao cho ${d.technician}.` : "Request trên ServiceDesk Plus giao cho bạn."}
       actions={<Link to="/workload/tickets?tech=me" className="text-sm font-medium text-primary hover:underline">Mở danh sách đầy đủ</Link>}
     >

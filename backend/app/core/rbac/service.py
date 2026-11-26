@@ -16,7 +16,7 @@ SYSTEM_ROLES: dict[str, tuple[str, str, bool]] = {
     "operator": ("Operator", "Thực hiện các task trên app và xem dữ liệu vận hành.", False),
     "supervisor": (
         "Supervisor",
-        "Xem và điều phối task của các Operator, làm việc Helpdesk/Support; không cấu hình hệ thống, không quản lý người dùng.",
+        "Xem và điều phối task của các Operator, làm việc Infra Support; không cấu hình hệ thống, không quản lý người dùng.",
         False,
     ),
     "manager": (

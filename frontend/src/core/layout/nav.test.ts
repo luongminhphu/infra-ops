@@ -11,7 +11,7 @@ const NAV = [
     { label: "Đối soát", path: "/lifecycle/reconciliation", icon: "git-compare-arrows", permission: "x" },
     { label: "Lưu đồ", path: "/lifecycle/flows", icon: "workflow", permission: "x" },
   ] },
-  { module: "workload", label: "Công việc Helpdesk", items: [] },
+  { module: "workload", label: "Công việc Infra Support", items: [] },
 ];
 
 describe("rail navigation", () => {

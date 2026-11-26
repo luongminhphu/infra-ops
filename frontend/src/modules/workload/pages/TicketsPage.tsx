@@ -253,10 +253,10 @@ export function TicketsPage() {
   return (
     <>
       <PageHeader
-        title="Công việc Helpdesk"
+        title="Công việc Infra Support"
         description={
           <>
-            Task Helpdesk/Support trên ServiceDesk Plus theo từng Operator. Đồng bộ gần nhất:{" "}
+            Task Infra Support trên ServiceDesk Plus theo từng Operator. Đồng bộ gần nhất:{" "}
             {formatRelative(sync.data?.last_synced_at).toLowerCase()}.
             {sync.data?.task?.last_error && <span className="block text-failed">Lần đồng bộ gần nhất lỗi: {sync.data.task.last_error}</span>}
           </>
@@ -336,7 +336,7 @@ export function TicketsPage() {
         <DataTable
           data={items}
           columns={columns}
-          caption="Task Helpdesk/Support"
+          caption="Task Infra Support"
           getRowId={(r) => r.id}
           empty={<EmptyState icon={ListChecks} title="Không có task phù hợp">Thử bộ lọc khác, hoặc đồng bộ lại từ ServiceDesk Plus.</EmptyState>}
         />

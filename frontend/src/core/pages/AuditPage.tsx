@@ -69,7 +69,7 @@ export const ACTION_LABEL: Record<string, string> = {
   "workload.technician_link_reset": "Liên kết lại theo e-mail",
 };
 
-const MODULE_LABEL: Record<string, string> = { core: "Hệ thống", lifecycle: "Vòng đời nhân sự", workload: "Công việc Helpdesk" };
+const MODULE_LABEL: Record<string, string> = { core: "Hệ thống", lifecycle: "Vòng đời nhân sự", workload: "Công việc Infra Support" };
 const RESULT: Record<AuditEntry["result"], { status: Status; label: string }> = {
   success: { status: "done", label: "Thành công" },
   failure: { status: "failed", label: "Thất bại" },

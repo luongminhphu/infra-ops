@@ -1,4 +1,4 @@
-"""Helpdesk/purchase items for the "Việc tiếp theo" queue."""
+"""Infra Support/purchase items for the "Việc tiếp theo" queue."""
 
 from __future__ import annotations
 

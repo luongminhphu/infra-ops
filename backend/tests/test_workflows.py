@@ -559,7 +559,7 @@ async def test_offboard_schedule_confirm_and_override(admin, client, systems) ->
         f"/api/core/jobs/{j['id']}/steps/return_doc/skip", json={"reason": "không cần"}
     )
     assert not_skippable.json()["error"]["code"] == "not_skippable"
-    # Helpdesk cannot force-close; admin can, with a reason
+    # Infra Support cannot force-close; admin can, with a reason
     await client.login("hd-wf@test.local")
     assert (
         await client.post(f"/api/core/jobs/{j['id']}/override-close", json={"reason": "thử đóng"})

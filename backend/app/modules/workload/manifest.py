@@ -1,4 +1,4 @@
-"""Module 2 – Helpdesk/Support workload from ServiceDesk Plus.
+"""Module 2 – Infra Support workload from ServiceDesk Plus.
 
 Syncs SDP requests per technician (Operator), lets Managers reassign them (written back to SDP)
 and reports statistics by period.
@@ -42,12 +42,12 @@ async def _empty(_: AsyncSession) -> dict[str, Any]:
 
 manifest = ModuleManifest(
     id="workload",
-    name="Công việc Helpdesk",
-    description="Task Helpdesk/Support trên ServiceDesk Plus theo từng Operator, chuyển việc và thống kê.",
+    name="Công việc Infra Support",
+    description="Task Infra Support trên ServiceDesk Plus theo từng Operator, chuyển việc và thống kê.",
     permissions=[
         Permission(
             "workload.tickets.view",
-            "Xem task Helpdesk/Support",
+            "Xem task Infra Support",
             ("manager", "supervisor", "operator", "viewer"),
         ),
         Permission(
@@ -106,14 +106,19 @@ manifest = ModuleManifest(
     # The widget renders per-user data itself (operators see only their own tasks).
     dashboard_widgets=[
         DashboardWidget(
-            "workload.next", "Công việc Helpdesk", "workload_next", "workload.tickets.view", _empty, order=1
+            "workload.next",
+            "Công việc Infra Support",
+            "workload_next",
+            "workload.tickets.view",
+            _empty,
+            order=1,
         ),
     ],
     connectors_used=["sdp"],
     scheduled_tasks=[
         ScheduledTask(
             "workload.sync",
-            "Đọc task Helpdesk/Support từ SDP",
+            "Đọc task Infra Support từ SDP",
             _sync,
             interval_seconds=600,
             timeout_seconds=1800,

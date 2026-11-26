@@ -3,7 +3,7 @@
 Nền tảng web nội bộ cho các tác vụ vận hành của team IT Infrastructure, giao diện tiếng Việt.
 Kiến trúc **Platform Core + Modules**: core dùng chung (đăng nhập, phân quyền, kết nối hệ thống, nhật ký kiểm tra,
 dashboard, hàng chờ việc, workflow) và các module cắm vào: **Vòng đời nhân sự** (Onboard/Offboard) và
-**Công việc Helpdesk** (task SDP, đề xuất mua, PO, nhận hàng).
+**Công việc Infra Support** (task SDP, đề xuất mua, PO, nhận hàng).
 
 | Thành phần | Công nghệ |
 |---|---|
@@ -42,7 +42,7 @@ Tài liệu: [cài đặt Ubuntu + Docker](docs/install-ubuntu-docker.md) · [ki
 - **Kho thiết bị**: band trong RTR × tiêu chuẩn cấp phát × tài sản In Store → tận dụng thiết bị trong kho hoặc
   **lập đề xuất mua** (điền sẵn) cho phần còn thiếu.
 
-### Module Công việc Helpdesk
+### Module Công việc Infra Support
 - Task SDP theo từng Operator (chưa bắt đầu / đang thực hiện / tạm dừng / quá hạn / đã xong), **chuyển việc**
   (đổi technician trên SDP), **thống kê** theo tuần → năm hoặc khoảng ngày tuỳ chọn; tạo tài khoản Operator khi Administrator xác nhận.
 - **Đề xuất mua thiết bị** từng bước (gợi ý từ request và từ onboard thiếu máy), bằng chứng Function Head đã duyệt.
@@ -143,7 +143,7 @@ và để proxy đó lo HTTPS ([mục 8 của hướng dẫn](docs/install-ubunt
 
 **7. Cấu hình trong ứng dụng**: *Hệ thống → Kết nối hệ thống* thêm SDP, BioStar và bấm
 *Kiểm tra kết nối* → *Người dùng & quyền* tạo tài khoản, gán vai trò → *Cấu hình module* của Vòng đời nhân sự và
-Công việc Helpdesk → *Đồng bộ ngay*. Chi tiết từng bước ở các mục dưới.
+Công việc Infra Support → *Đồng bộ ngay*. Chi tiết từng bước ở các mục dưới.
 
 **Vận hành**
 
@@ -229,7 +229,7 @@ Test không bao giờ gọi hệ thống thật: SDP/BioStar được mock bằn
 | 2 | SDP + BioStar: đọc request RTR, user, tài sản, user BioStar; đối soát theo Mã NV; export; bộ lập lịch nền | Xong |
 | 3 | Biên bản Bàn giao / Thu hồi theo mẫu thật: mẫu có phiên bản, số tự sinh, PDF, tải bản ký, đính kèm SDP | Xong |
 | 4 | Workflow Onboard / Offboard từ request SDP (gán/thu hồi tài sản, BioStar, biên bản, đóng request) | Xong |
-| 5 | Vai trò Manager / Supervisor / Operator / Viewer; module **Công việc Helpdesk**: task SDP theo Operator, chuyển việc (ghi sang SDP), thống kê theo kỳ | Xong |
+| 5 | Vai trò Manager / Supervisor / Operator / Viewer; module **Công việc Infra Support**: task SDP theo Operator, chuyển việc (ghi sang SDP), thống kê theo kỳ | Xong |
 | 6 | Lưu đồ Onboard/Offboard, checklist từng bước, Operator xác nhận kèm bằng chứng | Xong |
 | 7 | Giao diện “Phòng điều khiển”: rail phân hệ + menu con, màu cobalt, font Inter, cho toàn app | Xong |
 | 8 | **Việc của tôi** cho Operator (task SDP theo trạng thái, Job onboard/offboard, việc cần chuẩn bị), tự tạo tài khoản Operator, Job theo technician request RTR + chuyển Job (ghi sang SDP), lưu đồ swimlane theo người, đề xuất mua thiết bị | Xong |
@@ -415,7 +415,7 @@ Lưu ý:
    hay xoá user BioStar khi offboard.
 3. Sau mỗi lần đồng bộ, mỗi request *Nhân viên mới* / *Nghỉ việc* có một **Job nháp** (không ghi gì ra ngoài).
 4. Mở Job → (onboard) chọn tài sản trong kho → **Xem trước các bước** → **Bắt đầu ngay** hoặc **Lên lịch**
-   theo ngày hiệu lực. Worker chạy các bước tự động; Helpdesk xác nhận các bước thủ công (đăng ký vân tay/thẻ,
+   theo ngày hiệu lực. Worker chạy các bước tự động; Infra Support xác nhận các bước thủ công (đăng ký vân tay/thẻ,
    tình trạng tài sản thu hồi), nhập lại Mã NV trước khi vô hiệu hoá BioStar, chốt và tải biên bản đã ký.
    Job tự đính kèm biên bản, ghi chú và đóng request SDP.
 5. **Kiểm tra từng bước:** mỗi bước làm xong chuyển sang *Chờ kiểm tra*. Operator kiểm tra trên hệ thống thật,
@@ -431,7 +431,7 @@ Lưu ý:
    lại từ đầu); đã có thì tạo Job mới. Bước dùng API key cá nhân lấy key của người phụ trách, nếu chưa có thì của
    người bấm **Bắt đầu**.
 
-### Module Công việc Helpdesk
+### Module Công việc Infra Support
 1. **Cấu hình công việc**: chọn kết nối SDP (dùng credential Read để đọc, Write để chuyển việc), nhóm hỗ trợ cần
    lấy (để trống = tất cả) và các trạng thái được tính là *đã thực hiện* / *đã huỷ*.
 2. Worker đọc technician và request mỗi 10 phút (lần đầu đọc 400 ngày gần nhất, sau đó chỉ đọc request mới cập nhật).
@@ -498,7 +498,7 @@ sách) – để sắp xếp kế hoạch trong ngày. Bên dưới là hàng ch
 - **Onboard / Offboard:** Job có request RTR giao cho bạn trên SDP, chia *Cần bạn xử lý ngay* (bước chờ xác nhận,
   lỗi), *Đang chạy*, *Sắp tới – cần chuẩn bị* (kèm danh sách việc chuẩn bị: chọn tài sản, kiểm tra user SDP…) và
   *Đã xong gần đây*.
-- **Task Helpdesk:** đang thực hiện / chưa bắt đầu / tạm dừng / quá hạn / xong 7 ngày qua, và gợi ý đề xuất mua thiết bị.
+- **Task Infra Support:** đang thực hiện / chưa bắt đầu / tạm dừng / quá hạn / xong 7 ngày qua, và gợi ý đề xuất mua thiết bị.
 
 Người phụ trách Job lấy theo **technician của request RTR** trên SDP (đồng bộ lại mỗi lần sync). Manager /
 Supervisor bấm **Chuyển Job** trên trang Job: worker đổi technician của request trên SDP rồi ghi lịch sử phụ trách.
