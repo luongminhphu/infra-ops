@@ -236,7 +236,8 @@ export function ConnectionDetailPage() {
           </dl>
         </Panel>
         <CredentialPanel profile={profile} type={type} purpose="read" />
-        <CredentialPanel profile={profile} type={type} purpose="write" />
+        {/* The shared Write credential is the administrators' business (the API sends nothing of it to others). */}
+        {can("core.connections.manage") && <CredentialPanel profile={profile} type={type} purpose="write" />}
         {can("core.connections.manage") && (
           <Panel title="Xoá kết nối" className="border-failed/30 xl:col-span-2">
             <div className="flex flex-wrap items-center justify-between gap-3">

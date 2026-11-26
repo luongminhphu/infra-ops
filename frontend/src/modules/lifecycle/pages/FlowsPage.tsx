@@ -145,7 +145,7 @@ export function FlowsPage() {
                 />
               )}
             </div>
-            <Panel title="Phiên bản checklist" bodyClassName="p-0" className="self-start xl:sticky xl:top-[calc(var(--topbar-h)+1.25rem)]">
+            {can("core.workflow.checklist.manage") && <Panel title="Phiên bản checklist" bodyClassName="p-0" className="self-start xl:sticky xl:top-[calc(var(--topbar-h)+1.25rem)]">
               <ol className="divide-y divide-line text-sm">
                 {wf.history.map((h) => (
                   <li key={h.version} className="px-4 py-2">
@@ -159,7 +159,7 @@ export function FlowsPage() {
                   <p className="text-muted">Theo thiết kế ban đầu của infra-ops</p>
                 </li>
               </ol>
-            </Panel>
+            </Panel>}
           </div>
         </Tabs>
       )}

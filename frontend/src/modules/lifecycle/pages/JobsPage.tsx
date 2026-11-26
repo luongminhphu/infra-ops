@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Workflow } from "lucide-react";
 import { api } from "@/core/api/client";
+import { useAuth } from "@/core/auth/AuthProvider";
 import { Button } from "@/core/ui/button";
 import { DataTable } from "@/core/ui/data-table";
 import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
@@ -36,6 +37,7 @@ const VIEWS: Record<string, ((j: Job) => boolean) | undefined> = {
 };
 
 export function JobsPage() {
+  const { can } = useAuth();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const status = params.get("status") ?? "open";
@@ -124,7 +126,8 @@ export function JobsPage() {
       {assignee && (
         <p className="mb-2 flex flex-wrap items-center gap-2 text-sm">
           <span>Chỉ Job bạn phụ trách.</span>
-          <Button size="sm" variant="ghost" onClick={() => set("assignee", "")}>Xem Job của mọi người</Button>
+          {/* Without lifecycle.job.view_all the list holds only my jobs and the unassigned ones. */}
+          <Button size="sm" variant="ghost" onClick={() => set("assignee", "")}>{can("lifecycle.job.view_all") ? "Xem Job của mọi người" : "Xem cả Job chưa ai nhận"}</Button>
         </p>
       )}
       <div className="mb-3 flex flex-wrap gap-1.5" role="group" aria-label="Lọc theo trạng thái">

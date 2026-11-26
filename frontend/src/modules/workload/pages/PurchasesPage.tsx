@@ -43,7 +43,7 @@ export function PurchasesPage() {
     <>
       <PageHeader
         title="Đề xuất mua thiết bị"
-        description="Đề xuất thiết bị cần cấp, duyệt, gom PO theo hạn mức và trình duyệt PO."
+        description={can("workload.purchase.manage") ? "Đề xuất thiết bị cần cấp, duyệt, gom PO theo hạn mức và trình duyệt PO." : "Đề xuất thiết bị cần cấp và theo dõi đề xuất của bạn tới lúc nhận hàng."}
         actions={
           <>
             <a className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-line-strong bg-surface px-3 font-medium hover:bg-surface-2" href="/api/workload/purchases/export">

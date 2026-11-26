@@ -30,6 +30,8 @@ from app.modules.lifecycle.settings import MODULE_ID, main_biostar
 from app.modules.lifecycle.settings import load as load_module_settings
 
 VIEW, EXECUTE, OVERRIDE = "lifecycle.job.view", "lifecycle.job.execute", "lifecycle.job.override_close"
+# Without it an Operator sees only the jobs assigned to them and the unassigned ones they may take.
+VIEW_ALL = "lifecycle.job.view_all"
 
 
 def _fmt(iso: str | None) -> str:
@@ -703,6 +705,7 @@ ONBOARD = WorkflowDefinition(
     key="lifecycle.onboard",
     title="Onboard nhân sự",
     view_permission=VIEW,
+    view_all_permission=VIEW_ALL,
     execute_permission=EXECUTE,
     override_permission=OVERRIDE,
     required_for_close=("handover_doc",),
@@ -762,6 +765,7 @@ OFFBOARD = WorkflowDefinition(
     key="lifecycle.offboard",
     title="Offboard nhân sự",
     view_permission=VIEW,
+    view_all_permission=VIEW_ALL,
     execute_permission=EXECUTE,
     override_permission=OVERRIDE,
     required_for_close=("return_doc",),
@@ -833,6 +837,7 @@ TRANSFER = WorkflowDefinition(
     key="lifecycle.transfer",
     title="Thuyên chuyển / đổi cấp trên",
     view_permission=VIEW,
+    view_all_permission=VIEW_ALL,
     execute_permission=EXECUTE,
     override_permission=OVERRIDE,
     required_for_close=("groups_add",),

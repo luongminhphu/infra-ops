@@ -74,7 +74,7 @@ CORE_MANIFEST = ModuleManifest(
             "core.connections",
             "Trạng thái kết nối",
             "connections",
-            CONNECTIONS_VIEW,
+            CONNECTIONS_MANAGE,  # connection health is the administrators' concern
             _connections_widget,
             order=10,
         ),
@@ -82,7 +82,7 @@ CORE_MANIFEST = ModuleManifest(
             "core.expiring_secrets",
             "Mật khẩu / chứng chỉ sắp hết hạn",
             "expiring_secrets",
-            CONNECTIONS_VIEW,
+            CONNECTIONS_MANAGE,
             _expiring_widget,
             order=20,
         ),

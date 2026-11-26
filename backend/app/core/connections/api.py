@@ -27,7 +27,7 @@ from app.core.connections.service import (
 from app.core.connectors.base import Purpose, TestReport
 from app.core.connectors.registry import all_connectors
 from app.core.db import get_session
-from app.core.errors import AppError, Conflict, NotFound
+from app.core.errors import AppError, Conflict, NotFound, PermissionDenied
 from app.core.logging import get_logger
 from app.core.modules.registry import get_registry
 from app.core.permissions import CONNECTIONS_MANAGE, CONNECTIONS_TEST, CONNECTIONS_VIEW
@@ -83,6 +83,18 @@ def _status(profile: ConnectionProfile, creds: dict[str, dict[str, Any] | None])
     return "ok", "Hoạt động bình thường"
 
 
+def _for(user: CurrentUser, out: ProfileOut) -> ProfileOut:
+    """Least privilege: who may only view a connection sees whether it works, not the account names (public
+    fields) or the secret's last characters, and nothing of the shared Write credential."""
+    if user.has(CONNECTIONS_MANAGE):
+        return out
+    creds = {
+        purpose: None if purpose == "write" or c is None else {**c, "public": {}, "hint": None}
+        for purpose, c in out.credentials.items()
+    }
+    return out.model_copy(update={"credentials": creds})
+
+
 def _out(profile: ConnectionProfile) -> ProfileOut:
     warn = get_settings().secret_expiry_warn_days
     connector = connector_or_404(profile.system_type)
@@ -119,12 +131,12 @@ async def _get(session: AsyncSession, profile_id: uuid.UUID) -> ConnectionProfil
 
 @router.get("/connections", response_model=list[ProfileOut])
 async def list_profiles(
-    _: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
+    user: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
 ) -> list[ProfileOut]:
     profiles = (await session.scalars(select(ConnectionProfile).order_by(ConnectionProfile.name))).all()
     known = {c.system_type for c in all_connectors()}
     # Profiles of connector types no longer installed are hidden rather than breaking the list.
-    return [_out(p) for p in profiles if p.system_type in known]
+    return [_for(user, _out(p)) for p in profiles if p.system_type in known]
 
 
 class ProfileIn(BaseModel):
@@ -331,9 +343,9 @@ async def import_profiles(
 
 @router.get("/connections/{profile_id}", response_model=ProfileOut)
 async def get_profile(
-    profile_id: uuid.UUID, _: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
+    profile_id: uuid.UUID, user: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
 ) -> ProfileOut:
-    return _out(await _get(session, profile_id))
+    return _for(user, _out(await _get(session, profile_id)))
 
 
 @router.patch("/connections/{profile_id}", response_model=ProfileOut)
@@ -497,6 +509,8 @@ async def test_profile(
     user: CurrentUser = Depends(test_perm),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
+    if purpose == Purpose.WRITE and not user.has(CONNECTIONS_MANAGE):
+        raise PermissionDenied("Chỉ Quản trị kiểm tra được credential Write.")
     profile = await _get(session, profile_id)
     connector = connector_or_404(profile.system_type)
     cred = next((c for c in profile.credentials if c.purpose == purpose.value), None)

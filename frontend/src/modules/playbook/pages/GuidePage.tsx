@@ -49,7 +49,7 @@ export function GuidePage() {
         }
         actions={can("playbook.guides.edit") && <Link to={`/playbook/${id}/edit`} className={buttonVariants({})}><Pencil className="size-4" aria-hidden="true" />Soạn</Link>}
       />
-      {(history.data?.length ?? 0) > 1 && (
+      {can("playbook.guides.edit") && (history.data?.length ?? 0) > 1 && (
         <Field label="Phiên bản" className="mb-3 w-64">
           <Select value={version === "published" ? String(g.version) : version} onChange={(e) => setParams(e.target.value === String(g.published_version) ? {} : { v: e.target.value }, { replace: true })}>
             {history.data!.map((v) => <option key={v.version} value={v.version}>{`Phiên bản ${v.version} – ${formatDate(v.published_at)}${v.version === g.published_version ? " (đang dùng)" : ""}`}</option>)}
