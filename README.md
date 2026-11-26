@@ -44,6 +44,9 @@ Tài liệu: [cài đặt Ubuntu + Docker](docs/install-ubuntu-docker.md) · [ki
   một nhánh có thể trỏ về bước đã có.
 - Manager / Supervisor **soạn bản nháp**; chỉ **Manager xuất bản** (mỗi lần là một phiên bản, có ghi chú thay đổi,
   xem lại được bản cũ) và xoá. IT Support xem bản đã xuất bản. Mọi thay đổi ghi nhật ký.
+- **Mẫu dựng sẵn**: “Onboard nhân viên mới” (RTR → đối soát → AD → mailbox → license M365 theo band → Office Tools →
+  thiết bị theo tiêu chuẩn → BioStar → biên bản → bàn giao → đóng request). Tạo hướng dẫn → *Bắt đầu từ* mẫu, chỉnh
+  các mục “Điều chỉnh theo quy định công ty” rồi xuất bản.
 
 ### Module Vòng đời nhân sự
 - Đồng bộ request **RTR** (nhân viên mới / nghỉ việc), user và tài sản SDP, user BioStar; **đối soát theo Mã NV**
