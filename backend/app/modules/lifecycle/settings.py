@@ -86,6 +86,8 @@ class LifecycleSettings(BaseModel):
     # BioStar user groups that mean "left the company" (users are moved there instead of deleted): treated as
     # offboarded and not reconciled against SDP.
     biostar_retired_groups: list[str] = Field(default_factory=list, max_length=20)
+    # BioStar user groups left out of reconciliation entirely (vendors, contractors, guests…).
+    biostar_excluded_groups: list[str] = Field(default_factory=list, max_length=20)
 
     # RTR requests in ServiceDesk Plus
     rtr_requester_name: str = Field("RTR", min_length=1, max_length=200)
