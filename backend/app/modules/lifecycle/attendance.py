@@ -13,6 +13,7 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
+from app.core.branding.service import xlsx_logo
 from app.core.timeutil import TZ
 from app.modules.lifecycle.attendance_input import extract, rows_from_text
 from app.modules.lifecycle.normalize import id_key
@@ -144,7 +145,7 @@ def _sheet(ws: Worksheet, headers: list[str], rows: list[list[Any]], widths: lis
     ws.auto_filter.ref = ws.dimensions
 
 
-def to_xlsx(report: Report) -> bytes:
+def to_xlsx(report: Report, logo: bytes | None = None) -> bytes:
     wb = Workbook()
     ws = wb.active
     assert ws is not None
@@ -155,6 +156,7 @@ def to_xlsx(report: Report) -> bytes:
         daily_rows(report),
         [10, 28, 12, 10, 9, 9, 9, 11, 22],
     )
+    xlsx_logo(ws, logo)
     log = wb.create_sheet("Log chi tiết")
     _sheet(
         log,

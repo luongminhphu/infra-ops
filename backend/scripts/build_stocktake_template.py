@@ -76,6 +76,7 @@ def build(path: str) -> None:
     style.font.name = "Aptos"
     style.font.size = Pt(11)
 
+    para(doc, "{{ logo }}", space_after=6)  # company logo (Hệ thống › Logo báo cáo); empty when none is set
     para(
         doc,
         "BIÊN BẢN KIỂM KÊ TÀI SẢN CÔNG NGHỆ THÔNG TIN",
@@ -155,7 +156,10 @@ def build(path: str) -> None:
 
     para(doc, "V. KẾT LUẬN", bold=True)
     para(doc, "{{ conclusion }}", space_after=10)
-    para(doc, "Biên bản được lập thành 02 bản, mỗi bên giữ 01 bản, có giá trị như nhau.", space_after=14)
+    closing = para(
+        doc, "Biên bản được lập thành 02 bản, mỗi bên giữ 01 bản, có giá trị như nhau.", space_after=14
+    )
+    closing.paragraph_format.keep_with_next = True
 
     sig = doc.add_table(rows=3, cols=2)
     sig.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -165,6 +169,49 @@ def build(path: str) -> None:
         set_cell(sig.rows[0].cells[i], head, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
         set_cell(sig.rows[1].cells[i], "(Ký, ghi rõ họ tên)\n\n\n\n", align=WD_ALIGN_PARAGRAPH.CENTER)
         set_cell(sig.rows[2].cells[i], name, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+    # The signature block never splits across pages: rows cannot break and each row keeps with the next.
+    for n, row in enumerate(sig.rows):
+        tr_pr = row._tr.get_or_add_trPr()
+        cant = OxmlElement("w:cantSplit")
+        tr_pr.append(cant)
+        for cell in row.cells:
+            for p in cell.paragraphs:
+                p.paragraph_format.keep_with_next = n < len(sig.rows) - 1
+                p.paragraph_format.keep_together = True
+
+    # Phụ lục: every asset of the stocktake, on its own page(s).
+    doc.add_page_break()
+    para(doc, "PHỤ LỤC: DANH SÁCH TÀI SẢN CHI TIẾT", bold=True, size=12, align=WD_ALIGN_PARAGRAPH.CENTER)
+    para(
+        doc, "Kèm theo biên bản số {{ number }} – {{ title }}", align=WD_ALIGN_PARAGRAPH.CENTER, space_after=8
+    )
+    loop_table(
+        doc,
+        [
+            "STT",
+            "Khu",
+            "Tài sản",
+            "Loại",
+            "Asset tag / Serial",
+            "Mã TSCĐ",
+            "Người dùng",
+            "Kết quả",
+            "Tình trạng",
+        ],
+        "for a in assets",
+        [
+            "{{ a.no }}",
+            "{{ a.zone }}",
+            "{{ a.name }}",
+            "{{ a.type }}",
+            "{{ a.codes }}",
+            "{{ a.fa_code }}",
+            "{{ a.user }}",
+            "{{ a.result }}",
+            "{{ a.condition }}",
+        ],
+        [1, 1.8, 2.8, 1.6, 2.8, 1.8, 2.6, 1.8, 1.6],
+    )
     doc.save(path)
 
 

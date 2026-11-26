@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit.service import record
 from app.core.auth.deps import CurrentUser, require
+from app.core.branding.service import logo_bytes
 from app.core.db import get_session
 from app.core.errors import AppError
 from app.modules.lifecycle.offboard_review import build_eml, last_month, month_range, review_rows, to_xlsx
@@ -72,7 +73,7 @@ async def export_offboard_review(
     name = f"ra-soat-nghi-viec-{m:%Y-%m}"
     if format == "xlsx":
         return Response(
-            to_xlsx(rows, m),
+            to_xlsx(rows, m, await logo_bytes(session)),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={"Content-Disposition": f'attachment; filename="{name}.xlsx"'},
         )

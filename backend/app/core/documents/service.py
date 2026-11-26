@@ -11,6 +11,7 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit.service import Actor, diff, record
+from app.core.branding.service import logo_bytes
 from app.core.documents.engine import docx_to_pdf, render_docx, template_variables
 from app.core.documents.models import Document, TemplateVersion
 from app.core.errors import AppError, Conflict, NotFound
@@ -66,7 +67,7 @@ async def ensure_default_templates(session: AsyncSession, registry: ModuleRegist
 
 
 def _unknown(kind: DocumentKind, found: set[str]) -> list[str]:
-    known = {p.name.split(".")[0].split("[")[0] for p in kind.placeholders}
+    known = {p.name.split(".")[0].split("[")[0] for p in kind.placeholders} | {"logo"}  # logo: added by core
     return sorted(found - known)
 
 
@@ -154,7 +155,7 @@ async def render(
     session: AsyncSession, kind: DocumentKind, template: TemplateVersion, data: BaseModel, number: str
 ) -> tuple[bytes, bytes]:
     _, tpl = await read_file(session, template.file_id)
-    docx = render_docx(tpl, kind.build_context(data, number))
+    docx = render_docx(tpl, kind.build_context(data, number), await logo_bytes(session))
     return docx, await docx_to_pdf(docx)
 
 

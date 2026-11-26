@@ -9,6 +9,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from app.core.branding.service import xlsx_logo
+
 Count = Literal["pending", "found", "missing", "extra"]
 Condition = Literal["good", "damaged", "broken"]
 Resolution = Literal["update_sdp", "add_to_books", "repair", "dispose", "investigate", "no_action"]
@@ -158,7 +160,10 @@ def zone_progress(zones: list[dict[str, Any]], items: list[dict[str, Any]]) -> l
 
 
 def to_xlsx(
-    stocktake: dict[str, Any], items: list[dict[str, Any]], zones: list[dict[str, Any]] | None = None
+    stocktake: dict[str, Any],
+    items: list[dict[str, Any]],
+    zones: list[dict[str, Any]] | None = None,
+    logo: bytes | None = None,
 ) -> bytes:
     """Tổng hợp · Theo khu · Sổ SDP (for Hành chánh / Kế toán to compare with their books) · Chênh lệch · Ngoài sổ."""
     s = summary(items)
@@ -185,6 +190,7 @@ def to_xlsx(
     ws.column_dimensions["B"].width = 40
     for r in ws.iter_rows(max_col=1):
         r[0].font = Font(bold=True)
+    xlsx_logo(ws, logo)  # company logo above the summary
     if zones:
         zs = wb.create_sheet("Theo khu")
         zs.append(

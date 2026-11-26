@@ -24,6 +24,7 @@ import {
   Route,
   UserCheck,
   ShoppingCart,
+  Image,
   FileChartColumn,
   ClipboardCheck,
 } from "lucide-react";
@@ -51,6 +52,7 @@ const ICONS: Record<string, LucideIcon> = {
   route: Route,
   "user-check": UserCheck,
   "shopping-cart": ShoppingCart,
+  image: Image,
   package: Package,
   archive: Archive,
   "file-chart-column": FileChartColumn,

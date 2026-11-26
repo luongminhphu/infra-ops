@@ -1317,3 +1317,15 @@ Quyết định:
   khu, chênh lệch và hướng xử lý; hai bên ký: IT và Kế toán (họ tên, chức danh nhập khi lập). Bản nháp cập nhật lại
   được; chốt → PDF in ký → tải bản đã ký lên. Mẫu mặc định `ITD-FRM-AST-003-stocktake.docx`
   (`scripts/build_stocktake_template.py`); Admin sửa trong Word và tải lên ở Mẫu biên bản.
+
+## 53. Logo báo cáo; phụ lục tài sản trong biên bản kiểm kê (26/11/2026)
+
+- **Hệ thống › Logo báo cáo** (`core.branding.manage`, mặc định chỉ Administrator): tải PNG/JPG ≤ 1 MB (kiểm magic bytes,
+  Pillow đọc được, 16–4000 px), lưu qua `core.storage`, id file trong core settings `branding` (audit).
+  - Excel: logo ở đầu sheet đầu của Báo cáo chấm công, Rà soát nghỉ việc (ISO), Kiểm kê (helper lõi `xlsx_logo`,
+    dời dòng tiêu đề cố định và bộ lọc theo).
+  - DOCX/PDF: lõi luôn có biến `{{ logo }}` (ảnh hoặc rỗng) cho mọi mẫu; mẫu biên bản kiểm kê có sẵn. Mẫu bàn giao /
+    thu hồi (form công ty) thêm `{{ logo }}` trong Word nếu muốn.
+  - Phụ thuộc mới: Pillow (openpyxl cần để chèn ảnh; dùng luôn để kiểm tra file ảnh).
+- **Biên bản kiểm kê** thêm *Phụ lục: danh sách tài sản chi tiết* (trang riêng): khu, tài sản, loại, asset tag/serial,
+  Mã TSCĐ, người dùng, kết quả, tình trạng. Khối chữ ký không bị tách trang.

@@ -16,6 +16,7 @@ import { ConnectionsPage } from "@/core/pages/connections/ConnectionsPage";
 import { ConnectionDetailPage } from "@/core/pages/connections/ConnectionDetailPage";
 import { AuditPage } from "@/core/pages/AuditPage";
 import { AccessPage } from "@/core/pages/access/AccessPage";
+import { BrandingPage } from "@/core/pages/BrandingPage";
 import { NotFoundPage } from "@/core/pages/NotFoundPage";
 import { ModulesContext } from "@/core/modules";
 import { modules } from "@/modules";
@@ -55,6 +56,7 @@ const coreRoutes: RouteObject[] = [
   { path: "settings/connections/:id", element: <RequirePermission permission="core.connections.view"><ConnectionDetailPage /></RequirePermission> },
   { path: "settings/audit", element: <RequirePermission permission="core.audit.view"><AuditPage /></RequirePermission> },
   { path: "settings/access", element: <RequirePermission permission="core.rbac.manage"><AccessPage /></RequirePermission> },
+  { path: "settings/branding", element: <RequirePermission permission="core.branding.manage"><BrandingPage /></RequirePermission> },
 ];
 
 const router = createBrowserRouter([

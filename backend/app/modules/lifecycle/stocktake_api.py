@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit.service import record
 from app.core.auth.deps import CurrentUser, require
+from app.core.branding.service import logo_bytes
 from app.core.db import get_session
 from app.core.documents import service as documents
 from app.core.documents.models import Document
@@ -24,6 +25,8 @@ from app.modules.lifecycle.queries import latest_run
 from app.modules.lifecycle.settings import MODULE_ID
 from app.modules.lifecycle.settings import load as load_settings
 from app.modules.lifecycle.stocktake import (
+    CONDITION_LABEL,
+    COUNT_LABEL,
     RESOLUTION_LABEL,
     Condition,
     Resolution,
@@ -589,7 +592,7 @@ async def export_stocktake(
     if part:
         head["name"] = f"{s.name} – {part}"
     return Response(
-        to_xlsx(head, items, zones),
+        to_xlsx(head, items, zones, await logo_bytes(session)),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
             "Content-Disposition": f'attachment; filename="kiem-ke-{s.cutoff:%Y%m%d}{"-" + _slug(part) if part else ""}.xlsx"'
@@ -684,6 +687,24 @@ def _record_data(
             for z in zone_progress(zones, items)
         ],
         "differences": diffs,
+        "assets": [
+            {
+                "zone": names.get(i.get("zone_id") or "", "Chưa phân khu"),
+                "name": i["name"],
+                "type": i.get("product_type") or "",
+                "codes": " / ".join(c for c in (i.get("asset_tag"), i.get("serial")) if c),
+                "fa_code": i.get("fa_code") or "",
+                "user": f"{i['user_name']} ({i['employee_id']})"
+                if i.get("user_name") and i.get("employee_id")
+                else i.get("user_name") or "",
+                "result": COUNT_LABEL[i["count"]],
+                "condition": CONDITION_LABEL.get(i.get("condition") or "", ""),
+            }
+            for i in sorted(
+                items,
+                key=lambda x: (names.get(x.get("zone_id") or "", "~"), x.get("user_name") or "", x["id"]),
+            )
+        ],
         **body.model_dump(),
     }
 

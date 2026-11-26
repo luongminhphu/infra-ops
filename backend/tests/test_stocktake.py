@@ -109,6 +109,7 @@ async def test_stocktake_end_to_end(admin, client, configured, respx_mock) -> No
     assert doc["kind"] == "lifecycle.stocktake" and doc["status"] == "draft" and doc["external_ref"] == sid
     assert doc["data"]["totals"]["extra"] == 1 and len(doc["data"]["differences"]) == len(needs)
     assert doc["data"]["differences"][0]["resolution"] == "Cập nhật SDP – ok"
+    assert len(doc["data"]["assets"]) == len(st["items"])  # phụ lục: every asset
     again = await admin.post(f"{base}/record", json={**who, "finance_title": "Kế toán TSCĐ"})
     assert (
         again.json()["id"] == doc_id
@@ -235,6 +236,6 @@ def test_stocktake_record_template_uses_documented_placeholders() -> None:
     from app.modules.lifecycle.stocktake_record import STOCKTAKE_RECORD
 
     assert template_variables(STOCKTAKE_RECORD.default_template.read_bytes()) == {
-        "number", "title", "cutoff", "date", "synced_at", "totals", "zones", "differences",
+        "assets", "logo", "number", "title", "cutoff", "date", "synced_at", "totals", "zones", "differences",
         "it_rep", "it_title", "finance_rep", "finance_title", "conclusion",
     }  # fmt: skip

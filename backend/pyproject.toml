@@ -23,6 +23,7 @@ dependencies = [
   "docxtpl>=0.20.2",
   "python-docx>=1.2.0",
   "pypdf>=5.1",
+  "pillow>=11",
 ]
 
 [dependency-groups]

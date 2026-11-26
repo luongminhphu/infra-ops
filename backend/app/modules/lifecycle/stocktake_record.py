@@ -42,6 +42,17 @@ class DifferenceLine(BaseModel):
     resolution: str = Field("", max_length=1100)
 
 
+class AssetLine(BaseModel):
+    zone: str = Field("", max_length=100)
+    name: str = Field(max_length=256)
+    type: str = Field("", max_length=128)
+    codes: str = Field("", max_length=300)
+    fa_code: str = Field("", max_length=128)
+    user: str = Field("", max_length=300)
+    result: str = Field(max_length=40)
+    condition: str = Field("", max_length=40)
+
+
 class StocktakeRecordData(BaseModel):
     stocktake_id: str = Field(min_length=1, max_length=64)
     title: str = Field(min_length=1, max_length=200)
@@ -51,6 +62,8 @@ class StocktakeRecordData(BaseModel):
     totals: Totals
     zones: list[ZoneLine] = Field(default_factory=list, max_length=200)
     differences: list[DifferenceLine] = Field(default_factory=list, max_length=5000)
+    # Phụ lục: every asset of the stocktake.
+    assets: list[AssetLine] = Field(default_factory=list, max_length=20000)
     it_rep: str = Field(min_length=1, max_length=200)
     it_title: str = Field("", max_length=200)
     finance_rep: str = Field(min_length=1, max_length=200)
@@ -68,6 +81,7 @@ def stocktake_context(data: StocktakeRecordData, number: str) -> dict[str, Any]:
         "totals": data.totals.model_dump(),
         "zones": [z.model_dump() for z in data.zones],
         "differences": [{"no": n, **d.model_dump()} for n, d in enumerate(data.differences, 1)],
+        "assets": [{"no": n, **a.model_dump()} for n, a in enumerate(data.assets, 1)],
         "it_rep": data.it_rep,
         "it_title": data.it_title,
         "finance_rep": data.finance_rep,
@@ -115,6 +129,11 @@ STOCKTAKE_RECORD = DocumentKind(
             "finance_rep / finance_title", "Đại diện Kế toán và chức danh", "Phạm Thu Hà – Kế toán TSCĐ"
         ),
         PlaceholderDoc("conclusion", "Kết luận (tự điền nếu để trống)", "Số liệu thực tế khớp với sổ sách."),
+        PlaceholderDoc(
+            "assets[i].no / zone / name / type / codes / fa_code / user / result / condition",
+            "Phụ lục: từng tài sản của kỳ kiểm kê",
+            "Tầng 5 · HSC-LT-0123 · Có · Tốt",
+        ),
     ],
     sample_data={
         "stocktake_id": "sample",
@@ -142,6 +161,28 @@ STOCKTAKE_RECORD = DocumentKind(
         "finance_rep": "Phạm Thu Hà",
         "finance_title": "Kế toán TSCĐ",
         "conclusion": "",
+        "assets": [
+            {
+                "zone": "Tầng 5",
+                "name": "HSC-LT-0123",
+                "type": "Laptop",
+                "codes": "LT0123 / 5CG2301XYZ",
+                "fa_code": "TSCD-24-01",
+                "user": "Nguyễn Văn An (003551)",
+                "result": "Không tìm thấy",
+                "condition": "",
+            },
+            {
+                "zone": "Kho IT",
+                "name": "HSC-MN-0001",
+                "type": "Monitor",
+                "codes": "MN0001",
+                "fa_code": "",
+                "user": "",
+                "result": "Có",
+                "condition": "Tốt",
+            },
+        ],
     },
     view_permission="lifecycle.stocktake.view",
     create_permission="lifecycle.stocktake.manage",
