@@ -17,7 +17,7 @@ from app.core.branding.service import logo_bytes
 from app.core.db import get_session
 from app.core.documents import service as documents
 from app.core.documents.models import Document
-from app.core.errors import AppError, Conflict, NotFound
+from app.core.errors import AppError, Conflict, NotFound, PermissionDenied
 from app.core.timeutil import fmt_date
 from app.modules.lifecycle.attendance_input import HEADER_ID, _norm_id
 from app.modules.lifecycle.models import Snapshot, Stocktake, StocktakeArea, StocktakeItem, StocktakeZone
@@ -45,6 +45,8 @@ view_perm = require("lifecycle.stocktake.view")
 count_perm = require("lifecycle.stocktake.count")
 manage_perm = require("lifecycle.stocktake.manage")
 assign_perm = require("lifecycle.stocktake.assign")
+# The whole picture (every zone, differences, areas, Excel files). Operators only walk their floors.
+view_all_perm = require("lifecycle.stocktake.view_all")
 
 STATUS_LABEL = {"counting": "Đang kiểm", "reviewing": "Đang xử lý chênh lệch", "closed": "Đã đóng"}
 
@@ -559,9 +561,13 @@ async def export_stocktake(
     zone_id: str | None = None,
 ) -> Response:
     """The whole stocktake (file tổng: every zone together), or one zone's part (file thành phần, ?zone_id=;
-    "none" = assets in no zone)."""
+    "none" = assets in no zone). Without lifecycle.stocktake.view_all only the zones handed to me."""
     s = await _get(session, stocktake_id)
     zones = await _zones(session, stocktake_id)
+    if not user.has("lifecycle.stocktake.view_all") and not any(
+        z["id"] == zone_id and z["assignee_user_id"] == str(user.id) for z in zones
+    ):
+        raise PermissionDenied("Chỉ tải được file của khu bạn được giao kiểm.")
     names = {z["id"]: z["name"] for z in zones}
     items = [
         {**(o := _item_out(i)), "zone": names.get(o["zone_id"] or "")}
@@ -868,7 +874,7 @@ def _area_out(a: StocktakeArea) -> dict[str, Any]:
 
 @router.get("/stocktake-areas")
 async def list_areas(
-    _: CurrentUser = Depends(view_perm), session: AsyncSession = Depends(get_session)
+    _: CurrentUser = Depends(view_all_perm), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
     """The areas, the departments of the latest SDP sync, and the people holding assets who are in no area."""
     areas = (
@@ -1025,3 +1031,46 @@ async def delete_area(
     await session.delete(a)
     await session.commit()
     return Response(status_code=204)
+
+
+# ---------------------------------------------------------------- "Việc tiếp theo": the zones handed to me
+
+
+async def next_action(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
+    """One item per open stocktake where I count zones that still have assets to check."""
+    zones = (
+        await session.execute(
+            select(StocktakeZone, Stocktake)
+            .join(Stocktake, Stocktake.id == StocktakeZone.stocktake_id)
+            .where(StocktakeZone.assignee_user_id == user.id, Stocktake.status == "counting")
+            .order_by(StocktakeZone.position)
+        )
+    ).all()
+    items: list[dict[str, Any]] = []
+    for st in {s for _, s in zones}:
+        mine = [z for z, s in zones if s.id == st.id]
+        left = dict(
+            (
+                await session.execute(
+                    select(StocktakeItem.zone_id, func.count())
+                    .where(StocktakeItem.zone_id.in_([z.id for z in mine]), StocktakeItem.count == "pending")
+                    .group_by(StocktakeItem.zone_id)
+                )
+            ).all()
+        )
+        if not (total := sum(left.values())):
+            continue
+        names = ", ".join(z.name for z in mine if left.get(z.id))
+        items.append(
+            {
+                "key": f"lifecycle.stocktake.{st.id}",
+                "kind": "stocktake",
+                "priority": 2,
+                "title": f"Kiểm kê {names} – còn {total} tài sản",
+                "detail": st.name,
+                "due": st.cutoff.isoformat(),
+                "href": f"/lifecycle/stocktake/{st.id}",
+                "action": "Đi kiểm",
+            }
+        )
+    return items

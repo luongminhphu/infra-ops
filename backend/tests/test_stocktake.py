@@ -201,6 +201,30 @@ async def test_areas_split_the_count_between_counters(admin, client, configured,
     assert (
         await admin.put(f"{base}/zones/{zones['Tầng 5']['id']}", json={"user_id": str(uuid.uuid4())})
     ).json()["error"]["code"] == "not_a_counter"
+    # The counter sees the zone in "Việc tiếp theo" while assets are left to check.
+    nxt = (await admin.get("/api/core/me/next")).json()["items"]
+    mine = [i for i in nxt if i["kind"] == "stocktake"]
+    assert (
+        mine
+        and mine[0]["title"].startswith("Kiểm kê Tầng 5")
+        and mine[0]["href"] == f"/lifecycle/stocktake/{st['id']}"
+    )
+    # Operators walk their floors only: no Excel files, no area catalogue (the manager's picture).
+    await _user(admin, "operator", "st-op@test.local")
+    await client.login("st-op@test.local")
+    assert (await client.get(base)).status_code == 200
+    assert (await client.get(f"{base}/export")).status_code == 403
+    assert (await client.get("/api/lifecycle/stocktake-areas")).status_code == 403
+    # …but an Operator downloads the file of a zone handed to them, and only that one.
+    op_id = next(
+        c["id"]
+        for c in (await admin.get("/api/lifecycle/stocktake-counters")).json()
+        if c["upn"] == "st-op@test.local"
+    )
+    await admin.put(f"{base}/zones/{zones['Tầng 6']['id']}", json={"user_id": op_id})
+    own = await client.get(f"{base}/export", params={"zone_id": zones["Tầng 6"]["id"]})
+    assert own.status_code == 200 and "tang-6" in own.headers["content-disposition"]
+    assert (await client.get(f"{base}/export", params={"zone_id": zones["Kho IT"]["id"]})).status_code == 403
     # Only Administrator / Manager hand out zones: a Supervisor (who otherwise runs the stocktake) may not.
     await _user(admin, "supervisor", "st-sup@test.local")
     await client.login("st-sup@test.local")

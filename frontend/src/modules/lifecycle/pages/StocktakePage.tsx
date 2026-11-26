@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, ClipboardCheck, Download, FileSignature, PackagePlus, ScanLine, Upload } from "lucide-react";
+import { ChevronRight, ClipboardCheck, Download, FileSignature, PackagePlus, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
@@ -15,6 +15,7 @@ import { HelpTip } from "@/core/ui/help-tip";
 import { StatusBadge, type Status } from "@/core/ui/status";
 import { Tabs } from "@/core/ui/tabs";
 import { AreasPanel } from "./StocktakeAreas";
+import { StocktakeWalk } from "./StocktakeWalk";
 
 export type Count = "pending" | "found" | "missing" | "extra";
 type Condition = "good" | "damaged" | "broken";
@@ -92,6 +93,11 @@ const COUNT: Record<Count, { label: string; status: Status }> = {
 const CONDITION: Record<Condition, string> = { good: "Tốt", damaged: "Hư hỏng nhẹ", broken: "Hỏng, không dùng được" };
 const STATUS: Record<Head["status"], Status> = { counting: "in_progress", reviewing: "waiting", closed: "done" };
 const SHOWN = 200;
+/** The two ways into an open stocktake: walking a floor, or the whole picture to follow up and finish. */
+const MODES = [
+  ["walk", "Đi kiểm", "Quét tem hoặc bấm Có từng máy ở khu bạn được giao, theo từng bàn."],
+  ["manage", "Tổng hợp & xử lý", "Tiến độ các khu, giao khu, danh sách đầy đủ, chênh lệch và hướng xử lý, kết thúc kiểm, xuất file."],
+] as const;
 
 export type View = "all" | "pending" | "missing" | "found" | "differences" | "extra";
 
@@ -145,7 +151,7 @@ export function StocktakesPage() {
           {q.data.items.map((s) => (
             <li key={s.id}>
               <Link to={`/lifecycle/stocktake/${s.id}`} className="flex min-h-14 flex-wrap items-center gap-x-4 gap-y-1 px-1 py-2 hover:text-primary">
-                <span className="min-w-0 flex-1 font-medium">{s.name}</span>
+                <span className="min-w-0 basis-full font-medium sm:basis-auto sm:flex-1">{s.name}</span>
                 <span className="text-sm text-muted tabular">Chốt sổ {formatDate(s.cutoff)} · {s.book} tài sản</span>
                 <StatusBadge status={STATUS[s.status]} label={s.status_label} />
                 <ChevronRight className="size-4 text-muted" aria-hidden="true" />
@@ -154,7 +160,7 @@ export function StocktakesPage() {
           ))}
         </ul>
       )}
-      <AreasPanel />
+      {can("lifecycle.stocktake.view_all") && <AreasPanel />}
       <CreateDialog open={open} onClose={() => setOpen(false)} lastSync={q.data?.last_sync ?? null} onCreated={(id) => navigate(`/lifecycle/stocktake/${id}`)} />
     </>
   );
@@ -211,8 +217,10 @@ export function StocktakePage() {
   const [view, setView] = useState<View>("differences");
   const [touchedView, setTouchedView] = useState(false);
   const [query, setQuery] = useState("");
-  const [extra, setExtra] = useState<{ code: string } | null>(null);
+  const [extra, setExtra] = useState<{ code: string; seenAt?: string } | null>(null);
   const [zone, setZone] = useState<ZoneFilter | null>(null);
+  const [params, setParams] = useSearchParams();
+  const [confirmFinish, setConfirmFinish] = useState(false);
   const refresh = () => qc.invalidateQueries({ queryKey: key });
 
   const step = useMutation({
@@ -220,6 +228,7 @@ export function StocktakePage() {
     onSuccess: async (_r, path) => {
       toast.success(path === "close" ? "Đã đóng kỳ kiểm kê." : "Đã kết thúc kiểm – xử lý các chênh lệch.");
       setView("differences");
+      setConfirmFinish(false);
       await refresh();
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -240,15 +249,22 @@ export function StocktakePage() {
   const zoneNow = zone ?? (mine.length ? "mine" : "");
   const shown = viewItems(s.items, current, query, zoneNow, mine);
   const zoneName = new Map(s.zones.map((z) => [z.id ?? "", z.name]));
+  // Tab counts follow the zone and search the list is showing.
+  const n = (v: View) => viewItems(s.items, v, query, zoneNow, mine).length;
   const tabs: { key: View; label: string; n: number }[] = [
-    s.status === "counting"
-      ? { key: "pending", label: "Chưa kiểm", n: s.summary.pending }
-      : { key: "missing", label: "Không tìm thấy", n: s.summary.missing },
-    { key: "found", label: "Đã thấy", n: s.summary.found },
-    { key: "differences", label: "Chênh lệch", n: s.summary.differences },
-    { key: "extra", label: "Ngoài sổ SDP", n: s.summary.extra },
-    { key: "all", label: "Tất cả", n: s.items.length },
+    s.status === "counting" ? { key: "pending", label: "Chưa kiểm", n: n("pending") } : { key: "missing", label: "Không tìm thấy", n: n("missing") },
+    { key: "found", label: "Đã kiểm", n: n("found") },
+    { key: "differences", label: "Chênh lệch", n: n("differences") },
+    { key: "extra", label: "Ngoài sổ SDP", n: n("extra") },
+    { key: "all", label: "Tất cả", n: n("all") },
   ];
+  // Đi kiểm (walking a floor) for whoever counts while the count is on; Tổng hợp & xử lý for the rest of the job.
+  const canWalk = counting && s.status === "counting" && s.zones.length > 0;
+  // The whole picture (every zone, differences, Excel files) is for lifecycle.stocktake.view_all; an Operator only walks.
+  const overview = can("lifecycle.stocktake.view_all");
+  const mode = canWalk && (!overview || (params.get("mode") ?? (mine.length || !manage ? "walk" : "manage")) === "walk") ? "walk" : "manage";
+  const setMode = (m: "walk" | "manage") => setParams((p) => { p.set("mode", m); return p; }, { replace: true });
+  const unfinished = s.zones.filter((z) => z.pending > 0);
 
   return (
     <>
@@ -257,8 +273,8 @@ export function StocktakePage() {
         description={<>Chốt sổ {formatDate(s.cutoff)} · dữ liệu SDP lúc {formatDateTime(s.source_synced_at)} · mở bởi {s.created_by}</>}
         actions={
           <>
-            <a href={`/api/lifecycle/stocktakes/${id}/export`} className={buttonVariants({ variant: "secondary" })}><Download className="size-4" aria-hidden="true" />File tổng (Excel)</a>
-            {manage && s.status === "counting" && <Button variant="primary" loading={step.isPending} onClick={() => step.mutate("finish-count")}>Kết thúc kiểm</Button>}
+            {mode === "manage" && overview && <a href={`/api/lifecycle/stocktakes/${id}/export`} className={buttonVariants({ variant: "secondary" })}><Download className="size-4" aria-hidden="true" />File tổng (Excel)</a>}
+            {manage && s.status === "counting" && mode === "manage" && <Button variant="primary" loading={step.isPending} onClick={() => setConfirmFinish(true)}>Kết thúc kiểm</Button>}
             {manage && s.status === "reviewing" && (
               <Button variant="primary" loading={step.isPending} disabled={s.summary.unresolved > 0} onClick={() => step.mutate("close")}>
                 Đóng kỳ{s.summary.unresolved > 0 ? ` (còn ${s.summary.unresolved} chênh lệch)` : ""}
@@ -267,20 +283,40 @@ export function StocktakePage() {
           </>
         }
       />
+      {canWalk && overview && (
+        <div className="mb-4 grid gap-1.5">
+          <div role="tablist" aria-label="Chế độ" className="inline-flex w-fit rounded-md border border-line-strong bg-surface p-0.5">
+            {MODES.map(([m, label]) => (
+              <button key={m} type="button" role="tab" aria-selected={mode === m} onClick={() => setMode(m)} className={`min-h-10 rounded-sm px-4 text-base transition-colors duration-150 ${mode === m ? "bg-primary text-on-primary" : "text-ink hover:bg-surface-2"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="text-sm text-muted text-pretty">{mode === "manage" && !manage ? "Xem tiến độ các khu và danh sách đầy đủ tài sản của kỳ kiểm kê." : MODES.find(([m]) => m === mode)![2]}</p>
+        </div>
+      )}
+      {mode === "walk" ? (
+        <StocktakeWalk stocktakeId={id} items={s.items} zones={s.zones} mine={mine} canSeeAll={overview} onSaved={refresh} onExtra={(code, seenAt) => setExtra({ code, seenAt })} />
+      ) : !overview ? (
+        <div role="status" className="flex flex-wrap items-center gap-3 rounded-md border border-line bg-surface-2 px-4 py-3">
+          <StatusBadge status={STATUS[s.status]} label={s.status_label} />
+          <p className="text-sm text-pretty">Phần kiểm thực tế đã kết thúc. Tổng hợp, xử lý chênh lệch và biên bản do Supervisor/Manager thực hiện.</p>
+        </div>
+      ) : (
+      <>
       <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
         <StatusBadge status={STATUS[s.status]} label={s.status_label} />
         <span className="tabular"><b className="font-semibold">{s.summary.found}</b> / {s.summary.book} tài sản trên sổ đã thấy</span>
         {s.summary.extra > 0 && <span className="tabular">{s.summary.extra} ngoài sổ SDP</span>}
-        <span className="tabular">{s.summary.differences} chênh lệch · {s.summary.unresolved} chưa có hướng xử lý</span>
+        {s.status !== "counting" && <span className="tabular">{s.summary.differences} chênh lệch · {s.summary.unresolved} chưa có hướng xử lý</span>}
         <HelpTip title="Các bước kiểm kê">
-          <span className="block">1. Đang kiểm: quét hoặc gõ serial / asset tag / Mã TSCĐ của từng máy (hoặc bấm Có trong danh sách). Máy không có trên SDP: Thêm tài sản ngoài sổ.</span>
+          <span className="block">1. Đang kiểm: Manager giao khu; Helpdesk mở “Đi kiểm”, quét tem hoặc bấm Có từng máy theo bàn.</span>
           <span className="block">2. Kết thúc kiểm (Supervisor/Manager): máy chưa thấy thành “Không tìm thấy”. Vẫn sửa được nếu tìm ra sau.</span>
           <span className="block">3. Chọn hướng xử lý cho mọi chênh lệch (đã thống nhất với Hành chánh / Kế toán), rồi Đóng kỳ. File Excel có sheet Sổ SDP để HC/KT đối chiếu với sổ của mình.</span>
         </HelpTip>
       </div>
       {s.status === "closed" && <RecordPanel stocktakeId={id} record={s.record ?? null} canMake={manage} onSaved={refresh} />}
       {s.zones.length > 0 && <ZonesPanel stocktakeId={id} zones={s.zones} canAssign={assign && open} onSaved={refresh} />}
-      {counting && <ScanBox stocktakeId={id} onCounted={refresh} onUnknown={(code) => setExtra({ code })} />}
       <Panel
         title="Tài sản"
         actions={counting && <Button size="sm" onClick={() => setExtra({ code: "" })}><PackagePlus className="size-4" aria-hidden="true" />Thêm tài sản ngoài sổ</Button>}
@@ -322,7 +358,29 @@ export function StocktakePage() {
         )}
         {shown.length > SHOWN && <p className="px-4 py-3 text-sm text-muted">Đang hiện {SHOWN} / {shown.length} – tìm để thu hẹp.</p>}
       </Panel>
-      {extra && <ExtraDialog stocktakeId={id} code={extra.code} onClose={() => setExtra(null)} onSaved={refresh} />}
+      </>
+      )}
+      {extra && <ExtraDialog stocktakeId={id} code={extra.code} seenAt={extra.seenAt ?? ""} onClose={() => setExtra(null)} onSaved={refresh} />}
+      <Dialog
+        open={confirmFinish}
+        onClose={() => setConfirmFinish(false)}
+        title="Kết thúc kiểm?"
+        description="Mọi tài sản chưa kiểm sẽ chuyển thành “Không tìm thấy” để xử lý chênh lệch. Vẫn sửa được nếu tìm ra sau."
+        footer={
+          <>
+            <Button onClick={() => setConfirmFinish(false)}>Chưa, kiểm tiếp</Button>
+            <Button variant="danger" loading={step.isPending} onClick={() => step.mutate("finish-count")}>Kết thúc: {s.summary.pending} thành Không tìm thấy</Button>
+          </>
+        }
+      >
+        {unfinished.length > 0 ? (
+          <ul className="grid gap-1 text-sm">
+            {unfinished.map((z) => <li key={z.id ?? "none"} className="flex justify-between gap-4"><span>{z.name}{z.assignee_name ? ` – ${z.assignee_name}` : " – chưa giao"}</span><span className="tabular">còn {z.pending}</span></li>)}
+          </ul>
+        ) : (
+          <p className="text-sm">Mọi khu đã kiểm xong.</p>
+        )}
+      </Dialog>
     </>
   );
 }
@@ -455,51 +513,6 @@ function RecordPanel({ stocktakeId, record, canMake, onSaved }: { stocktakeId: s
   );
 }
 
-function ScanBox({ stocktakeId, onCounted, onUnknown }: { stocktakeId: string; onCounted: () => void; onUnknown: (code: string) => void }) {
-  const [code, setCode] = useState("");
-  const [seenAt, setSeenAt] = useState("");
-  const [last, setLast] = useState<{ tone: Status; text: string; code?: string } | null>(null);
-  const ref = useRef<HTMLInputElement>(null);
-  const scan = useMutation({
-    mutationFn: (c: string) => api<{ matched: boolean; already: boolean; item: Item | null }>(`/api/lifecycle/stocktakes/${stocktakeId}/scan`, { method: "POST", json: { code: c, seen_at: seenAt } }),
-    onSuccess: (r, c) => {
-      if (!r.matched) setLast({ tone: "warning", text: `“${c}” không có trong sổ SDP của kỳ này.`, code: c });
-      else if (r.already) setLast({ tone: "skipped", text: `${r.item!.name} – đã kiểm trước đó (${r.item!.counted_by ?? "—"}).` });
-      else setLast({ tone: "done", text: `${r.item!.name} – đã ghi nhận Có.` });
-      setCode("");
-      onCounted();
-      ref.current?.focus();
-    },
-    onError: (e) => setLast({ tone: "failed", text: errorMessage(e) }),
-  });
-  return (
-    <Panel title="Quét tài sản" className="mb-4">
-      <form
-        className="flex flex-wrap items-end gap-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (code.trim()) scan.mutate(code.trim());
-        }}
-      >
-        <Field label="Serial / asset tag / Mã TSCĐ" hint="Máy quét mã vạch gõ mã rồi Enter; gõ tay cũng được." className="min-w-64 flex-1">
-          <Input ref={ref} value={code} onChange={(e) => setCode(e.target.value)} autoComplete="off" autoFocus className="font-mono max-sm:h-11" />
-        </Field>
-        <Field label="Nơi kiểm" hint="Giữ nguyên cho các máy tiếp theo." className="w-56">
-          <Input value={seenAt} onChange={(e) => setSeenAt(e.target.value)} placeholder="vd. Tầng 3 – P.Kế toán" className="max-sm:h-11" />
-        </Field>
-        <Button type="submit" variant="primary" loading={scan.isPending} className="max-sm:h-11">{!scan.isPending && <ScanLine className="size-4" aria-hidden="true" />}Ghi nhận</Button>
-      </form>
-      {last && (
-        <p role="status" className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-          <StatusBadge status={last.tone} label={last.tone === "done" ? "Có" : last.tone === "warning" ? "Không có trong sổ" : last.tone === "failed" ? "Lỗi" : "Đã kiểm"} />
-          <span>{last.text}</span>
-          {last.code && <Button size="sm" variant="link" onClick={() => onUnknown(last.code!)}>Thêm tài sản ngoài sổ</Button>}
-        </p>
-      )}
-    </Panel>
-  );
-}
-
 function ItemRow({ item: i, heading, zoneName, zones, stocktakeId, status, canCount, canResolve, onSaved }: { item: Item; heading: string | null; zoneName: string; zones: ZoneRow[] | null; stocktakeId: string; status: Head["status"]; canCount: boolean; canResolve: boolean; onSaved: () => void }) {
   const move = useMutation({
     mutationFn: (zoneId: string) => api(`/api/lifecycle/stocktakes/${stocktakeId}/items/${i.id}/zone`, { method: "PUT", json: { zone_id: zoneId || null } }),
@@ -525,6 +538,7 @@ function ItemRow({ item: i, heading, zoneName, zones, stocktakeId, status, canCo
     onError: (e) => toast.error(errorMessage(e)),
   });
   const book = i.count !== "extra";
+  const [armed, setArmed] = useState(false);
   return (
     <li className="grid gap-2 px-4 py-3">
       {heading && <p className="-mx-4 -mt-3 mb-1 bg-surface-2 px-4 py-1.5 text-sm font-semibold">{heading}</p>}
@@ -560,7 +574,11 @@ function ItemRow({ item: i, heading, zoneName, zones, stocktakeId, status, canCo
             {i.count === "found" && status === "counting" && <Button size="sm" variant="ghost" className="max-sm:h-11" onClick={() => save.mutate({ count: "pending" })}>Bỏ đánh dấu</Button>}
           </>
         )}
-        {canCount && !book && <Button size="sm" variant="ghost" className="max-sm:h-11" loading={remove.isPending} onClick={() => remove.mutate()}>Xoá dòng</Button>}
+        {canCount && !book && (
+          <Button size="sm" variant={armed ? "danger" : "ghost"} className="max-sm:h-11" loading={remove.isPending} onClick={() => (armed ? remove.mutate() : setArmed(true))} onBlur={() => setArmed(false)}>
+            {armed ? "Bấm lần nữa để xoá" : "Xoá dòng"}
+          </Button>
+        )}
         {zones && (
           <Select aria-label={`Chuyển khu ${i.name}`} value={i.zone_id ?? ""} onChange={(e) => move.mutate(e.target.value)} className="h-7 w-auto max-sm:h-11">
             <option value="">Chưa phân khu</option>
@@ -581,8 +599,8 @@ function ItemRow({ item: i, heading, zoneName, zones, stocktakeId, status, canCo
   );
 }
 
-function ExtraDialog({ stocktakeId, code, onClose, onSaved }: { stocktakeId: string; code: string; onClose: () => void; onSaved: () => void }) {
-  const [f, setF] = useState({ name: "", product_type: "", serial: code, asset_tag: "", fa_code: "", condition: "good" as Condition, seen_at: "", note: "" });
+function ExtraDialog({ stocktakeId, code, seenAt, onClose, onSaved }: { stocktakeId: string; code: string; seenAt: string; onClose: () => void; onSaved: () => void }) {
+  const [f, setF] = useState({ name: "", product_type: "", serial: code, asset_tag: "", fa_code: "", condition: "good" as Condition, seen_at: seenAt, note: "" });
   const [touched, setTouched] = useState(false);
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const nameError = f.name.trim() ? "" : "Nhập tên tài sản.";

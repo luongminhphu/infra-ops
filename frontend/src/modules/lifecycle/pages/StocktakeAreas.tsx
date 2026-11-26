@@ -118,6 +118,7 @@ function AreaDialog({ area, data, onClose }: { area: Area | null; data: Areas; o
   const [position, setPosition] = useState(area?.position ?? data.areas.length + 1);
   const [filter, setFilter] = useState("");
   const [touched, setTouched] = useState(false);
+  const [armed, setArmed] = useState(false);
   const taken = takenDepartments(data.areas, area?.id ?? null);
   const list = parseIds(ids);
   const done = async (msg: string) => {
@@ -150,7 +151,11 @@ function AreaDialog({ area, data, onClose }: { area: Area | null; data: Areas; o
       title={area ? `Sửa khu “${area.name}”` : "Thêm khu kiểm kê"}
       footer={
         <>
-          {area && <Button variant="ghost" className="mr-auto" loading={remove.isPending} onClick={() => remove.mutate()}>Xoá khu</Button>}
+          {area && (
+            <Button variant={armed ? "danger" : "ghost"} className="mr-auto" loading={remove.isPending} onClick={() => (armed ? remove.mutate() : setArmed(true))} onBlur={() => setArmed(false)}>
+              {armed ? "Bấm lần nữa để xoá khu" : "Xoá khu"}
+            </Button>
+          )}
           <Button onClick={onClose}>Huỷ</Button>
           <Button variant="primary" loading={save.isPending} onClick={() => { setTouched(true); if (name.trim()) save.mutate(); }}>Lưu</Button>
         </>
