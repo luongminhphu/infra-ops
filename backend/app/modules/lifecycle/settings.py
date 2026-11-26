@@ -117,6 +117,8 @@ class LifecycleSettings(BaseModel):
     # Stock management: SDP asset states for "waiting for disposal" and "disposed" (must exist on SDP).
     asset_state_pending_disposal: str = Field("Chờ thanh lý", min_length=1, max_length=64)
     asset_state_disposed: str = Field("Disposed", min_length=1, max_length=64)
+    # SDP asset custom field (udf_fields key, e.g. "udf_char1") holding the accounting fixed-asset code (Mã TSCĐ).
+    asset_fa_code_field: str = Field("", max_length=100, pattern=r"^[A-Za-z0-9_]*$")
 
     # Reconciliation thresholds
     onboard_grace_days: int = Field(3, ge=0, le=60)

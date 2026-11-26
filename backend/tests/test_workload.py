@@ -697,7 +697,7 @@ async def test_receive_creates_in_store_assets_on_sdp(client, sdp) -> None:  # t
     assert [(a["serial"], a["id"]) for a in got["received_assets"]] == [("SN-NEW", "1000"), ("SN-OLD", "900")]
     assert sdp.asset_posts == [
         {"name": "LT-0999", "product": {"name": "Dell Latitude 5440"}, "asset_tag": "LT-0999",
-         "serial_number": "SN-NEW", "state": {"name": "In Store"}}
+         "org_serial_number": "SN-NEW", "serial_number": "SN-NEW", "state": {"name": "In Store"}}
     ]  # fmt: skip
     job = (await client.get(f"/api/core/jobs/{r.json()['receive_job']['id']}")).json()
     assert job["status"] == "completed" and job["steps"][0]["before_state"]["existing"] == {"SN-OLD": "900"}

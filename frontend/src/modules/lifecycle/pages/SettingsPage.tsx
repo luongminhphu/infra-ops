@@ -28,6 +28,7 @@ interface Values {
   asset_state_in_store: string;
   asset_state_pending_disposal: string;
   asset_state_disposed: string;
+  asset_fa_code_field: string;
   onboard_grace_days: number;
   offboard_grace_days: number;
   snapshot_retention_days: number;
@@ -302,6 +303,9 @@ export function SettingsPage() {
             </Field>
             <Field label="Trạng thái “đã thanh lý”" hint="Thường là Disposed trên SDP.">
               <Input value={v.asset_state_disposed} onChange={(e) => set("asset_state_disposed", e.target.value)} />
+            </Field>
+            <Field label="Trường SDP chứa Mã TSCĐ" hint="Khoá của trường tuỳ chỉnh trên tài sản SDP (vd. udf_char1) – dùng khi Kiểm kê để khớp với sổ Kế toán. Để trống nếu chưa có.">
+              <Input value={v.asset_fa_code_field} onChange={(e) => set("asset_fa_code_field", e.target.value.trim())} className="font-mono" />
             </Field>
           </div>
           <div className="mt-4">

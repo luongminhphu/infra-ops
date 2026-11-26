@@ -56,8 +56,11 @@ def sdp_asset(raw: dict[str, Any]) -> dict[str, Any]:
         "id": str(raw.get("id", "")),
         "name": raw.get("name") or "",
         "asset_tag": raw.get("asset_tag"),
-        # Workstations keep the serial under computer_system.service_tag.
-        "serial": raw.get("serial_number") or ((raw.get("computer_system") or {}).get("service_tag") or None),
+        # The app's serial is SDP's "Org Serial Number" for every asset type; older assets may only have the
+        # serial number field (workstations keep it under computer_system.service_tag).
+        "serial": raw.get("org_serial_number")
+        or raw.get("serial_number")
+        or ((raw.get("computer_system") or {}).get("service_tag") or None),
         "product": _name(product),
         "product_type": _name(product.get("product_type") if isinstance(product, dict) else None)
         or _name(raw.get("product_type")),
@@ -66,6 +69,9 @@ def sdp_asset(raw: dict[str, Any]) -> dict[str, Any]:
         "user_name": user.get("name") if isinstance(user, dict) else None,
         "user_email": user.get("email_id") if isinstance(user, dict) else None,
         "updated_at": _sdp_time(raw.get("last_updated_time")),
+        "site": _name(raw.get("site")),
+        # Custom fields (e.g. the accounting fixed-asset code, chosen in settings), when SDP returns them.
+        "udf": {k: v for k, v in (raw.get("udf_fields") or {}).items() if isinstance(v, (str, int, float))},
     }
 
 

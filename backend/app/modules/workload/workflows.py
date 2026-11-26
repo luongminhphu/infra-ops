@@ -110,7 +110,11 @@ async def _receive(ctx: StepContext) -> StepOutcome:
     async with SdpClient(conn) as client:
         for u in p["units"]:
             try:
-                found = await client.find_assets("serial_number", u["serial"])
+                # The app's serial is SDP's Org Serial Number; assets created before that rule only carry it
+                # in the serial number field.
+                found = await client.find_assets(
+                    "org_serial_number", u["serial"]
+                ) or await client.find_assets("serial_number", u["serial"])
                 if found:
                     existing.setdefault(u["serial"], str(found[0].get("id")))
                     asset = found[0]
@@ -120,6 +124,7 @@ async def _receive(ctx: StepContext) -> StepOutcome:
                             "name": u.get("asset_tag") or u["serial"],
                             "product": {"name": p["product"]},
                             "asset_tag": u.get("asset_tag") or None,
+                            "org_serial_number": u["serial"],
                             "serial_number": u["serial"],
                             "state": {"name": p["state"]},
                         }

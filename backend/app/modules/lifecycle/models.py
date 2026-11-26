@@ -124,6 +124,63 @@ class IssueAck(Base):
     acked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Stocktake(UUIDPk, Base):
+    """A year-end IT asset count (kiểm kê): the SDP book closed at creation, then counted on site.
+
+    counting → reviewing (count finished: what was not seen is missing) → closed (every difference handled).
+    """
+
+    __tablename__ = "lifecycle_stocktake"
+
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    cutoff: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="counting")
+    source_run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    source_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(String(320), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    closed_by: Mapped[str | None] = mapped_column(String(320))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class StocktakeItem(Base):
+    """One asset of a stocktake: from the SDP book (asset_id set) or found on site but not in SDP (extra)."""
+
+    __tablename__ = "lifecycle_stocktake_item"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    stocktake_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("lifecycle_stocktake.id", ondelete="CASCADE"), nullable=False
+    )
+    asset_id: Mapped[str | None] = mapped_column(String(64))
+    name: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    product_type: Mapped[str | None] = mapped_column(String(128))
+    asset_tag: Mapped[str | None] = mapped_column(String(128))
+    serial: Mapped[str | None] = mapped_column(String(128))
+    fa_code: Mapped[str | None] = mapped_column(String(128))
+    state: Mapped[str | None] = mapped_column(String(64))
+    user_name: Mapped[str | None] = mapped_column(String(256))
+    user_email: Mapped[str | None] = mapped_column(String(320))
+    site: Mapped[str | None] = mapped_column(String(128))
+    count: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending"
+    )  # pending|found|missing|extra
+    condition: Mapped[str | None] = mapped_column(String(16))  # good|damaged|broken
+    seen_at: Mapped[str] = mapped_column(String(256), nullable=False, default="")  # where it was seen
+    note: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    counted_by: Mapped[str | None] = mapped_column(String(320))
+    counted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolution: Mapped[str | None] = mapped_column(String(32))
+    resolution_note: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    resolved_by: Mapped[str | None] = mapped_column(String(320))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("stocktake_id", "asset_id", name="uq_lifecycle_stocktake_item_asset"),
+        Index("ix_lifecycle_stocktake_item_stocktake", "stocktake_id"),
+    )
+
+
 class AssetReturn(Base):
     """An In Store asset that came back from someone (thu hồi), as opposed to new stock.
 

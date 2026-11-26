@@ -1276,3 +1276,21 @@ Quyết định:
     Tools → *kiểm tra* laptop đủ tiêu chuẩn band (kho / đề xuất mua) → BioStar → biên bản → bàn giao → đóng request.
   - AD / Exchange / M365 vẫn là hướng dẫn thủ công (tích hợp Microsoft tạm hoãn). Quy ước đặt tên, OU, gói license,
     danh mục phần mềm và ngưỡng band là ví dụ đánh dấu “Điều chỉnh theo quy định công ty” – Manager sửa trước khi xuất bản.
+
+## 50. Menu Báo cáo, Kiểm kê tài sản IT cuối năm, Org Serial Number (26/11/2026)
+
+- **Menu.** Thanh trái có mục **Báo cáo** (Thống kê; Báo cáo rà soát). Công cụ gom theo việc, không theo module. Lõi
+  định nghĩa tiêu đề nhóm (`NAV_*`) và thứ tự; module chỉ gán `NavItem.group`.
+- **Kiểm kê tài sản IT** (`/lifecycle/stocktake`, trong Báo cáo rà soát) – đối chiếu cuối năm với Hành chánh và Kế toán:
+  - *Mở kỳ* (Supervisor/Manager): chốt sổ = tài sản IT của lần đồng bộ SDP gần nhất (trừ trạng thái đã thanh lý).
+  - *Kiểm thực tế* (Operator trở lên): quét/gõ serial, asset tag hoặc Mã TSCĐ, hoặc bấm “Có” trong danh sách; ghi
+    tình trạng và nơi thấy. Máy không có trên SDP → *Thêm tài sản ngoài sổ*.
+  - *Kết thúc kiểm*: máy chưa thấy thành “Không tìm thấy” (vẫn sửa được). Chênh lệch = không tìm thấy, ngoài sổ, hoặc
+    có nhưng hỏng. *Đóng kỳ* chỉ khi mọi chênh lệch có hướng xử lý (cập nhật SDP, ghi tăng, sửa, đề nghị thanh lý,
+    tiếp tục tìm – bắt buộc ghi chú, không cần xử lý). Mọi thay đổi có audit.
+  - *Xuất Excel*: Tổng hợp · Sổ SDP (HC/KT tự đối chiếu với sổ của mình) · Chênh lệch · Ngoài sổ SDP.
+  - Mã TSCĐ lấy từ trường tuỳ chỉnh SDP chọn ở Cấu hình module (`asset_fa_code_field`, vd. `udf_char1`).
+  - Chưa làm (phase sau): biên bản kiểm kê DOCX/PDF có chữ ký IT – Hành chánh – Kế toán (DocumentKind).
+- **Org Serial Number.** Serial trong app là trường *Org Serial Number* của SDP cho mọi loại tài sản (tài sản cũ chưa có
+  thì dùng Serial Number / service tag). Nhận hàng tìm theo Org Serial Number rồi Serial Number, và ghi cả hai khi tạo.
+  Giả định tên trường API là `org_serial_number` – cần xác nhận trên SDP thật.

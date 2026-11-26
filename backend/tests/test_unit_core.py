@@ -72,7 +72,12 @@ def test_module_pages_are_filed_under_shared_menu_headings() -> None:
         i["label"] for i in items if i["group"] not in NAV_GROUPS
     ]
     reports = {i["path"] for i in items if i["section"] == "reports"}
-    assert reports == {"/lifecycle/attendance", "/lifecycle/offboard-review", "/workload/stats"}
+    assert reports == {
+        "/lifecycle/attendance",
+        "/lifecycle/offboard-review",
+        "/lifecycle/stocktake",
+        "/workload/stats",
+    }
 
 
 @pytest.mark.parametrize("bad", ["../etc", "not-a-module"])
