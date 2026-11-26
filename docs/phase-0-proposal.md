@@ -1360,3 +1360,13 @@ Nguyên tắc (product owner): user quyền nào chỉ thấy nội dung và ch�
   tra được credential Write. Widget trạng thái kết nối / secret sắp hết hạn chỉ cho `core.connections.manage`.
 - UI: nút “Thử lại” chuyển Job, nhãn “Xem Job của mọi người”, liên kết PO tổng, gợi ý cấu hình kết nối, mô tả trang
   Đề xuất mua, bảng “Theo Operator”, chọn phiên bản Playbook cũ – chỉ hiện với đúng quyền.
+
+## 56. Không lập trùng đề xuất mua cho người mới (26/11/2026)
+
+- Trước: trang Kho và Job wizard chỉ đọc đề xuất **của chính Operator** (phạm vi dòng), nên Operator B không biết A đã
+  đề xuất cùng thiết bị cho cùng request → lập trùng.
+- `GET /api/workload/purchases/onboard-proposed` (`workload.tickets.view`): mọi đề xuất onboard chưa bị từ chối, chỉ
+  gồm (request, thiết bị, trạng thái) – không giá, không người lập, không lý do. Trang Kho và Job wizard dùng endpoint
+  này để hiện “Đã đề xuất”.
+- API chặn tạo trùng: đề xuất onboard cùng request + cùng thiết bị (không phân biệt hoa thường) khi bản cũ chưa bị từ
+  chối → 409 `purchase_duplicate`, báo người lập bản cũ. Bị từ chối thì lập lại được.
