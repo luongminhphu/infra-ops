@@ -42,8 +42,13 @@ class WorkloadSettings(BaseModel):
     # Only requests of these SDP support groups (empty = every group).
     group_names: list[str] = Field(default_factory=list)
     # SDP status names (case-insensitive) that mean the task is finished / dropped.
-    done_statuses: list[str] = Field(default_factory=lambda: ["Resolved", "Closed", "Completed"])
-    cancelled_statuses: list[str] = Field(default_factory=lambda: ["Canceled", "Cancelled", "Rejected"])
+    # SDP's standard names (also in Vietnamese) always count – see rules.BUILTIN_*; add custom ones here.
+    done_statuses: list[str] = Field(
+        default_factory=lambda: ["Resolved", "Closed", "Completed", "Đã xử lý", "Đã đóng"]
+    )
+    cancelled_statuses: list[str] = Field(
+        default_factory=lambda: ["Canceled", "Cancelled", "Rejected", "Đã hủy"]
+    )
     # Open tasks split by SDP status: being worked on / paused; any other open status is "pending".
     in_progress_statuses: list[str] = Field(default_factory=lambda: ["In Progress", "Đang xử lý"])
     on_hold_statuses: list[str] = Field(default_factory=lambda: ["On Hold", "Onhold", "Pending", "Tạm dừng"])

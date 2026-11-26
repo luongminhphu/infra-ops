@@ -17,11 +17,17 @@ def _name(value: Any) -> str | None:
     return (value or {}).get("name") if isinstance(value, dict) else None
 
 
+# SDP's own status names (English and the Vietnamese UI): always finished / dropped, even when a saved
+# configuration predates them – a closed case must never show as overdue.
+BUILTIN_DONE = {"resolved", "closed", "completed", "đã xử lý", "đã đóng", "hoàn thành", "đã hoàn thành"}
+BUILTIN_CANCELLED = {"canceled", "cancelled", "rejected", "đã hủy", "đã huỷ", "từ chối"}
+
+
 def ticket_state(status: str, settings: WorkloadSettings) -> str:
     s = status.strip().casefold()
-    if s in {x.casefold() for x in settings.done_statuses}:
+    if s in BUILTIN_DONE or s in {x.casefold() for x in settings.done_statuses}:
         return "done"
-    if s in {x.casefold() for x in settings.cancelled_statuses}:
+    if s in BUILTIN_CANCELLED or s in {x.casefold() for x in settings.cancelled_statuses}:
         return "cancelled"
     return "open"
 

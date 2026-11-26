@@ -109,8 +109,8 @@ async def reclassify(session: AsyncSession, settings: WorkloadSettings, only_mis
     """Recompute state/phase/device need from stored status and subject (after a settings change or
     an upgrade): the incremental sync only re-reads tickets that changed on SDP."""
     stmt = select(Ticket)
-    if only_missing:
-        stmt = stmt.where(Ticket.state == "open", Ticket.phase.is_(None))
+    if only_missing:  # open tickets only: a rule change (e.g. a new "done" status name) closes them
+        stmt = stmt.where(Ticket.state == "open")
     n = 0
     for t in (await session.scalars(stmt)).all():
         t.state = ticket_state(t.status, settings)
