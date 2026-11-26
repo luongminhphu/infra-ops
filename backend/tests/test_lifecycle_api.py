@@ -154,7 +154,7 @@ async def test_end_to_end_sync_and_reconciliation(admin, configured, respx_mock)
     ]
     assert criteria[0] == {"field": "requester.name", "condition": "is", "value": "RTR"}
 
-    # Groups to pick as excluded: those BioStar holds, with user counts; excluded ones are never read.
+    # Groups to pick as excluded: those BioStar holds, with user counts (excluded users are read, then left out).
     # Read live from BioStar (the vendor group too, with no synced users) plus the latest sync's counts.
     respx_mock.get(f"{BS}/api/user_groups").mock(
         return_value=httpx.Response(
@@ -168,7 +168,7 @@ async def test_end_to_end_sync_and_reconciliation(admin, configured, respx_mock)
     )
     got = (await admin.get("/api/lifecycle/biostar/user-groups")).json()
     groups = {g["name"]: g["users"] for g in got["items"]}
-    assert groups == {"Kế Toán": 1, "3. VENDOR": None} and got["errors"] == []
+    assert groups == {"Kế Toán": 1, "3. VENDOR": 1} and got["errors"] == []
 
     data = (await admin.get("/api/lifecycle/reconciliation")).json()
     by_emp = {r["employee_id"]: r for r in data["items"]}
@@ -435,7 +435,7 @@ async def test_second_biostar_matched_on_last_six_digits(admin, configured, resp
     )
     values = (await admin.get("/api/lifecycle/settings")).json()["values"]
     values["biostar_sources"] = [{"profile_id": prof["id"]}]
-    values["biostar_retired_groups"] = ["kế toán"]  # 002100 is in group "Kế Toán" (case-insensitive)
+    values["biostar_excluded_groups"] = ["kế toán"]  # 002100 is in group "Kế Toán" (case-insensitive)
     assert (await admin.put("/api/lifecycle/settings", json=values)).status_code == 200
 
     summary = await _sync()
@@ -444,7 +444,7 @@ async def test_second_biostar_matched_on_last_six_digits(admin, configured, resp
     assert "1003551" not in rows  # consolidated under the SDP employee ID
     assert rows["003551"]["cells"]["biostar"]["label"] == "Hoạt động"
     assert "BS Office (user 1003551)" in rows["003551"]["cells"]["biostar"]["detail"]
-    assert rows["002100"]["cells"]["biostar"]["label"] == "Nghỉ việc"
+    assert rows["002100"]["cells"]["biostar"]["label"] == "Nhóm loại trừ"
 
     # "Tự động" main must skip a connection listed as an extra source: here BS E2E (created first) is the extra
     # source, so the automatic main is BS Office and both systems are still read.
