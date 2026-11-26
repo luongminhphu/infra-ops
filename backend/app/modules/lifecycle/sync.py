@@ -230,7 +230,9 @@ async def _workstations(client: SdpClient, seen: set[str]) -> list[dict[str, Any
     """Computers (laptops, PCs) SDP keeps as workstations, which its asset list may leave out. Optional: an SDP
     without that endpoint (or a key without access to it) just adds nothing."""
     try:
-        rows = await client.list_all("/api/v3/workstations", "workstations")
+        rows = await client.list_all(
+            "/api/v3/workstations", "workstations", sort_field="id", sort_order="asc"
+        )
     except Exception as exc:
         log.warning("lifecycle_sdp_workstations_unreadable", error=_err(exc))
         return []
@@ -309,13 +311,15 @@ async def _sync(
             except Exception as exc:
                 errors["requests"] = _err(exc)
             try:
-                raw_users = await client.list_all("/api/v3/users", "users")
+                raw_users = await client.list_all("/api/v3/users", "users", sort_field="id", sort_order="asc")
                 sdp_users = [normalize.sdp_user(u, settings.sdp_user_employee_id_field) for u in raw_users]
                 sources["sdp"] = "requests" not in errors
             except Exception as exc:
                 errors["sdp_users"] = _err(exc)
             try:
-                raw_assets = await client.list_all("/api/v3/assets", "assets")
+                raw_assets = await client.list_all(
+                    "/api/v3/assets", "assets", sort_field="id", sort_order="asc"
+                )
                 raw_assets += await _workstations(client, {str(a.get("id")) for a in raw_assets})
                 types = asset_types(settings)
                 assets = [

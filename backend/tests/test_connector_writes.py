@@ -121,3 +121,25 @@ async def test_sdp_list_all_drops_records_repeated_across_pages() -> None:
     async with sdp() as c:
         rows = await c.list_all("/api/v3/users", "users", page_size=2)
     assert [r["id"] for r in rows] == ["1", "2", "3"]
+
+
+@respx.mock
+async def test_sdp_list_all_sorts_by_id_and_falls_back_when_refused() -> None:
+    """Paging needs a stable order (else SDP skips records); an SDP refusing the sort is read unsorted."""
+    seen: list[dict] = []  # type: ignore[type-arg]
+
+    def users(request: httpx.Request) -> httpx.Response:
+        info = json.loads(request.url.params["input_data"])["list_info"]
+        seen.append(info)
+        if info.get("sort_field"):
+            return httpx.Response(
+                400, json={"response_status": {"status": "failed", "messages": [{"message": "Invalid sort"}]}}
+            )
+        return httpx.Response(200, json={"users": [{"id": "1"}], "list_info": {"has_more_rows": False}})
+
+    respx.get(f"{SDP}/api/v3/users").mock(side_effect=users)
+    async with sdp() as c:
+        rows = await c.list_all("/api/v3/users", "users", sort_field="id", sort_order="asc")
+    assert [r["id"] for r in rows] == ["1"]
+    assert seen[0]["sort_field"] == "id" and seen[0]["sort_order"] == "asc" and seen[0]["get_total_count"]
+    assert "sort_field" not in seen[1]
