@@ -54,6 +54,10 @@ async def _jobs(session: AsyncSession) -> dict[str, Any]:
     return {"counts": [{"workflow": w, "status": s, "count": n} for w, s, n in rows]}
 
 
+async def _empty(session: AsyncSession) -> dict[str, Any]:
+    return {}
+
+
 async def _summary(session: AsyncSession) -> dict[str, Any]:
     from app.modules.lifecycle.widgets import reconciliation_summary
 
@@ -174,8 +178,18 @@ manifest = ModuleManifest(
         ),
     ],
     dashboard_widgets=[
+        # The team's RTR queue on the main page: technicians take requests themselves (no automatic split);
+        # the browser loads the jobs itself so a claim refreshes it at once.
         DashboardWidget(
-            "lifecycle.jobs", "Job onboard / offboard", "lifecycle_jobs", "lifecycle.job.view", _jobs, order=2
+            "lifecycle.team_queue",
+            "Hàng đợi request RTR của team",
+            "lifecycle_team_queue",
+            "lifecycle.job.execute",
+            _empty,
+            order=2,  # after the person's own next actions
+        ),
+        DashboardWidget(
+            "lifecycle.jobs", "Job onboard / offboard", "lifecycle_jobs", "lifecycle.job.view", _jobs, order=3
         ),
         DashboardWidget(
             "lifecycle.reconciliation",

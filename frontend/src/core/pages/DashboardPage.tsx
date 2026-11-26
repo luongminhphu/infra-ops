@@ -219,7 +219,7 @@ export function DashboardPage() {
       {!firstRun && <NextActions />}
       <div className="grid gap-4 xl:grid-cols-2 [&>*]:min-w-0">
         {q.data?.filter((w) => !((firstRun || !admin) && ["connections", "expiring_secrets"].includes(w.kind))).map((w) => (
-          <Panel key={w.key} title={w.title} bodyClassName="py-1" className={["lifecycle_reconciliation", "lifecycle_jobs", "workload_next"].includes(w.kind) ? "xl:col-span-2" : undefined}>
+          <Panel key={w.key} title={w.title} bodyClassName="py-1" className={["lifecycle_team_queue", "lifecycle_reconciliation", "lifecycle_jobs", "workload_next"].includes(w.kind) ? "xl:col-span-2" : undefined}>
             {w.error ? (
               <ErrorState error={new Error(w.error)} />
             ) : w.kind === "connections" ? (

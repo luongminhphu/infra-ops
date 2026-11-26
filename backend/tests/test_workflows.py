@@ -893,6 +893,10 @@ async def test_job_assignee_follows_sdp_and_reassign_writes_back(admin, client, 
     assert r.status_code == 201, r.text
     claim = (await admin.get(f"/api/core/jobs/{r.json()['id']}")).json()
     assert claim["workflow_key"] == "lifecycle.assign" and claim["params"]["reason"] == "Nhận Job"
+    # A second person pressing "Nhận" before the SDP write-back finished is refused.
+    await client.login("op-assign1@test.local")
+    r = await client.post(f"/api/lifecycle/jobs/{j['id']}/claim")
+    assert r.status_code == 409 and r.json()["error"]["code"] == "job_being_assigned", r.text
 
 
 async def test_pump_is_not_starved_by_jobs_waiting_on_people(admin) -> None:  # type: ignore[no-untyped-def]

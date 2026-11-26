@@ -1191,3 +1191,14 @@ Quyết định:
   - Lỗi: Đồng bộ hiện một dòng mỗi nguồn lỗi (chi tiết khi mở), gợi ý worker chỉ cho admin; Request RTR hiện lý do lỗi
     đầu tiên ngay trên dòng.
   - `DataTable.card` (core): dưới 640px mỗi dòng là một thẻ (Đối soát, Job).
+
+## 43. Hàng đợi request RTR của team (26/11/2026)
+
+- Yêu cầu: chia request RTR công bằng cho 3 Technician; ai nghỉ thì Supervisor/Manager điều phối.
+- Quyết định (chủ sản phẩm): **không tự chia**. Widget *Hàng đợi request RTR của team* trên trang Tổng quan
+  (`lifecycle_team_queue`, quyền `lifecycle.job.execute`): *Chờ nhận* (Job onboard/offboard/thuyên chuyển chưa có
+  người phụ trách; offboard quá hạn xếp đầu, nhãn *Trễ N ngày*) với nút **Nhận**, và *Đang xử lý* theo từng người (ít
+  việc trước) kèm bước hiện tại. Nhận = `POST /api/lifecycle/jobs/{id}/claim`: khoá dòng Job, từ chối khi đã có người
+  phụ trách hoặc đang có lệnh giao chưa xong (`job_being_assigned`), rồi ghi Technician lên SDP bằng khoá API của người
+  nhận (job `lifecycle.assign`, như *Chuyển Job*). Job đã nhận hiện ở *Việc của tôi*. Điều phối khi có người nghỉ:
+  *Chuyển Job* (quyền `lifecycle.job.assign`).

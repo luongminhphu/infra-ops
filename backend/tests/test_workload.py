@@ -321,6 +321,9 @@ async def test_operator_sees_only_own_tasks_supervisor_coordinates(admin, client
     assert [t["id"] for t in techs["items"]] == ["11"] and not techs["view_all"]
     kinds = [w["kind"] for w in (await client.get("/api/core/dashboard")).json()]
     assert kinds[0] == "workload_next"  # next action first on the dashboard
+    assert (
+        "lifecycle_team_queue" in kinds
+    )  # the team's RTR queue on the main page (operators take requests there)
     assert techs["unassigned"] == {"open": 0, "overdue": 0}
     st = (await client.get("/api/workload/stats?from=2026-11-01&to=2026-11-30&technician_id=12")).json()
     assert [t["technician_id"] for t in st["technicians"]] == ["11"]
