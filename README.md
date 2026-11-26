@@ -31,6 +31,13 @@ Tài liệu: [cài đặt Ubuntu + Docker](docs/install-ubuntu-docker.md) · [ki
   toàn, lưu trạng thái trước thay đổi để khôi phục thủ công).
 - Giao diện sáng/tối, dùng được trên điện thoại, đạt kiểm tra trợ năng (axe).
 
+### Infra Handbook
+- Quy định và hướng dẫn xử lý cho IT Support, mỗi hướng dẫn là một **sơ đồ mindmap rẽ nhánh**: mỗi bước có tiêu đề,
+  ghi chú (chữ đậm, danh sách, liên kết, ảnh chụp màn hình dán Ctrl+V) và các nhánh theo lựa chọn (Có / Không…);
+  một nhánh có thể trỏ về bước đã có.
+- Manager / Supervisor **soạn bản nháp**; chỉ **Manager xuất bản** (mỗi lần là một phiên bản, có ghi chú thay đổi,
+  xem lại được bản cũ) và xoá. IT Support xem bản đã xuất bản. Mọi thay đổi ghi nhật ký.
+
 ### Module Vòng đời nhân sự
 - Đồng bộ request **RTR** (nhân viên mới / nghỉ việc), user và tài sản SDP, user BioStar; **đối soát theo Mã NV**
   giữa các hệ thống; xuất Excel.
@@ -98,7 +105,7 @@ echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)"
 | `INFRAOPS_PUBLIC_BASE_URL` | Địa chỉ người dùng mở, có `https`, vd. `https://infraops.congty.local` |
 | `INFRAOPS_MASTER_KEYS` / `INFRAOPS_SIGNING_SECRET` / `POSTGRES_PASSWORD` | Các dòng vừa sinh |
 | `INFRAOPS_AUTH_MODE` | `local` (tài khoản trong app); `oidc` khi bật SSO Entra |
-| `INFRAOPS_ENABLED_MODULES` | `lifecycle,workload` |
+| `INFRAOPS_ENABLED_MODULES` | `lifecycle,workload,handbook` |
 | `INFRAOPS_HTTP_BIND` / `INFRAOPS_HTTPS_BIND` | Mặc định `80` / `443`. Chỉ đổi khi máy chủ đã có reverse proxy khác chiếm 80/443 (vd. `127.0.0.1:8080` / `127.0.0.1:8443`) |
 
 > Cất `INFRAOPS_MASTER_KEYS` ở nơi an toàn ngoài máy chủ: mất key là mất mọi credential SDP/BioStar đã nhập.

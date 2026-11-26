@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Archive,
+  BookOpen,
   Clock,
   Box,
   Package,
@@ -40,6 +41,7 @@ const ICONS: Record<string, LucideIcon> = {
   settings: Settings,
   "file-cog": FileCog,
   clock: Clock,
+  "book-open": BookOpen,
   "list-checks": ListChecks,
   "chart-column": ChartColumn,
   route: Route,
