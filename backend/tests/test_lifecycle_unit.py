@@ -89,6 +89,17 @@ def test_normalize_biostar_states() -> None:
     assert expired["expired"] and not expired["active"]
 
 
+def test_asset_serial_is_the_org_serial_number() -> None:
+    base = {"id": "1", "name": "LT", "serial_number": "SN-OLD", "computer_system": {"service_tag": "ST"}}
+    assert normalize.sdp_asset({**base, "org_serial_number": "ORG-1"})["serial"] == "ORG-1"
+    assert normalize.sdp_asset(base)["serial"] == "SN-OLD"  # assets without it keep the serial number
+    assert normalize.sdp_asset({"id": "2", "computer_system": {"service_tag": "ST"}})["serial"] == "ST"
+    a = normalize.sdp_asset(
+        {**base, "site": {"name": "HCM"}, "udf_fields": {"udf_char1": "TSCD-01", "x": None}}
+    )
+    assert (a["site"], a["udf"]) == ("HCM", {"udf_char1": "TSCD-01"})
+
+
 def test_normalize_sdp_nested_employee_field() -> None:
     u = normalize.sdp_user(
         {"id": 5, "name": "X", "udf_fields": {"udf_char1": "000123"}}, "udf_fields.udf_char1"
