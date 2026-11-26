@@ -12,7 +12,9 @@ import httpx
 import pytest
 import respx
 from docx import Document as DocxDocument
+from sqlalchemy import select
 
+from app.core.audit.models import AuditLog
 from app.core.db import get_sessionmaker
 from app.core.documents.engine import render_docx, template_variables
 from app.core.documents.service import next_number
@@ -193,6 +195,23 @@ async def test_validation_and_permissions(admin, client) -> None:  # type: ignor
         json={"kind": "lifecycle.handover", "data": {**handover_payload(), "assets": []}},
     )
     assert bad.json()["error"]["code"] == "invalid_document"
+
+    doc = (
+        await admin.post(
+            "/api/core/documents", json={"kind": "lifecycle.handover", "data": handover_payload()}
+        )
+    ).json()
+    upd = await admin.put(
+        f"/api/core/documents/{doc['id']}",
+        json={"data": {**handover_payload(), "it_rep": "Người Khác"}, "version": doc["version"]},
+    )
+    assert upd.status_code == 200, upd.text
+    async with get_sessionmaker()() as s:
+        entry = await s.scalar(
+            select(AuditLog).where(AuditLog.action == "documents.updated", AuditLog.target_id == doc["id"])
+        )
+    assert entry is not None and entry.after == {"it_rep": "Người Khác"} and "it_rep" in entry.before
+
     await client.login("doc-viewer@test.local")
     assert (
         await client.post(

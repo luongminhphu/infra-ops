@@ -10,7 +10,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.audit.service import Actor, record
+from app.core.audit.service import Actor, diff, record
 from app.core.documents.engine import docx_to_pdf, render_docx, template_variables
 from app.core.documents.models import Document, TemplateVersion
 from app.core.errors import AppError, Conflict, NotFound
@@ -233,11 +233,24 @@ async def update_draft(
     if version != doc.version:
         raise Conflict("Biên bản vừa được người khác cập nhật. Tải lại trang.", code="stale_version")
     model = validate_data(kind, data)
+    before = {"subject_key": doc.subject_key, "external_ref": doc.external_ref, **doc.data}
     doc.data = model.model_dump(mode="json")
     doc.subject_key, label, doc.external_ref = kind.subject(model)
     doc.subject_label = label[:256]
     doc.version += 1
     await session.flush()
+    b, a = diff(before, {"subject_key": doc.subject_key, "external_ref": doc.external_ref, **doc.data})
+    await record(
+        session,
+        actor=actor,
+        module_id=doc.module_id,
+        action="documents.updated",
+        target_type="document",
+        target_id=str(doc.id),
+        target_label=f"{kind.title} – {doc.subject_label}",
+        before=b,
+        after=a,
+    )
     return doc
 
 
