@@ -65,7 +65,7 @@ def test_custom_labels_and_mapping() -> None:
         ("Thực tập sinh/CTV", "onboard"),
         ("Tân tuyển - TV", "onboard"),
         ("Chính thức", "probation_to_official"),
-        ("Thay đổi cấp trên trực tiếp", "ignore"),
+        ("Thay đổi cấp trên trực tiếp", "transfer"),
         ("Thôi việc", "offboard"),
         ("Khác", None),
     ],

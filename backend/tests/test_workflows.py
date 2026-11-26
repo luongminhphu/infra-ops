@@ -651,10 +651,49 @@ async def test_auto_create_jobs_and_list(admin) -> None:  # type: ignore[no-unty
     assert (await admin.get("/api/core/jobs", params={"q": "004445"})).json()["total"] == 0
 
 
+async def test_transfer_request_gets_a_manual_group_job(admin) -> None:  # type: ignore[no-untyped-def]
+    """RTR "Thay đổi cấp trên trực tiếp" / "Thuyên chuyển": a job with verified manual AD group steps."""
+    from app.modules.lifecycle.jobs_api import auto_create_jobs
+
+    async with get_sessionmaker()() as s:
+        s.add(
+            LifecycleRequest(
+                id="9197",
+                display_id="7997",
+                subject="x",
+                employee_id="003516",
+                full_name="Nguyễn Lê Cẩm Ly",
+                change_type_raw="Thay đổi cấp trên trực tiếp",
+                kind="transfer",
+                effective_date=date(2026, 11, 1),
+                fields={"department": "Nghiên Cứu Cổ Phiếu"},
+                parse_errors=[],
+                description_text="",
+            )
+        )
+        await s.commit()
+        assert await auto_create_jobs(s) >= 1
+        await s.commit()
+    [item] = (await admin.get("/api/core/jobs", params={"q": "003516"})).json()["items"]
+    j = (await admin.get(f"/api/core/jobs/{item['id']}")).json()
+    assert j["workflow_key"] == "lifecycle.transfer" and j["status"] == "draft"
+    steps = {x["key"]: x for x in j["steps"]}
+    assert list(steps) == ["check_request", "find_sdp_user", "groups_remove", "groups_add", "close_request"]
+    assert steps["groups_remove"]["kind"] == steps["groups_add"]["kind"] == "manual"
+    # Operators confirm both group steps with evidence.
+    from app.modules.lifecycle.workflows import TRANSFER
+
+    assert all(x.evidence_required for x in TRANSFER.steps if x.key.startswith("groups_"))
+
+
 async def test_checklist_versions_and_snapshot(admin, client) -> None:  # type: ignore[no-untyped-def]
     flows = {w["key"]: w for w in (await admin.get("/api/core/workflows?module=lifecycle")).json()}
     # Processes with operator checklists (the reassignment workflow has none and is not drawn).
-    assert {k for k, w in flows.items() if w["verify_steps"]} == {"lifecycle.onboard", "lifecycle.offboard"}
+    assert {k for k, w in flows.items() if w["verify_steps"]} == {
+        "lifecycle.onboard",
+        "lifecycle.offboard",
+        "lifecycle.transfer",
+    }
     onboard = flows["lifecycle.onboard"]
     assert onboard["verify_steps"] and onboard["checklist_version"] == 0
     steps = {s["key"]: s["checklist"] for s in onboard["steps"]}

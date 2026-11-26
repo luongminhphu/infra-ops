@@ -14,7 +14,7 @@ import { formatDate, formatDateTime } from "@/core/lib/format";
 import { useDebounced } from "@/core/lib/useDebounced";
 import type { RtrRequest } from "../api";
 import { KIND_LABEL } from "../labels";
-import { JOB_STATUS, type Job } from "../jobs";
+import { JOB_KIND_LABEL, JOB_STATUS, type Job } from "../jobs";
 
 function JobLink({ r }: { r: RtrRequest }) {
   const { can } = useAuth();
@@ -32,11 +32,11 @@ function JobLink({ r }: { r: RtrRequest }) {
       navigate(`/lifecycle/jobs/${j.id}`);
     },
   });
-  if (!can("lifecycle.job.view") || !r.kind || !["onboard", "offboard"].includes(r.kind)) return null;
+  if (!can("lifecycle.job.view") || !r.kind || !(r.kind in JOB_KIND_LABEL)) return null;
   const job = jobs.data?.items.find((j) => j.external_ref === r.id);
   return (
     <div className="rounded-sm border border-line p-3">
-      <h3 className="mb-1.5 text-base font-semibold">Job {r.kind === "onboard" ? "onboard" : "offboard"}</h3>
+      <h3 className="mb-1.5 text-base font-semibold">Job {JOB_KIND_LABEL[r.kind]}</h3>
       {job ? (
         <p className="flex flex-wrap items-center gap-2 text-sm">
           <StatusBadge status={JOB_STATUS[job.status].status} label={JOB_STATUS[job.status].label} />

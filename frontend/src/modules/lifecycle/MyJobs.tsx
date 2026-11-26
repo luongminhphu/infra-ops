@@ -19,6 +19,11 @@ export function prepItems(j: Job): { text: string; done: boolean }[] {
       { text: "Tạo tài khoản AD / email trước ngày hiệu lực (thủ công)", done: !!j.params.sdp_user_id },
       { text: "Bắt đầu hoặc lên lịch Job theo ngày hiệu lực", done: scheduled },
     ];
+  if (j.params.kind === "transfer")
+    return [
+      { text: "Xác định nhóm AD cũ và mới (thư mục share, nhóm email) theo phòng/bộ phận mới", done: false },
+      { text: "Bắt đầu hoặc lên lịch Job theo ngày hiệu lực", done: scheduled },
+    ];
   return [
     { text: "Báo nhân viên mang trả thiết bị vào ngày nghỉ", done: false },
     { text: "Lên lịch Job theo ngày nghỉ việc", done: scheduled },

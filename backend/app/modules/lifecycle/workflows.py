@@ -302,9 +302,12 @@ async def close_request(ctx: StepContext) -> StepOutcome:
     return StepOutcome("done", "Đã cập nhật request SDP: " + ", ".join(p for p in parts if p) + ".", done)
 
 
+KIND_TITLE = {"onboard": "Onboard", "offboard": "Offboard", "transfer": "Thuyên chuyển"}
+
+
 def _summary_html(ctx: StepContext) -> str:
     lines = [
-        f"<p><b>infra-ops</b> – {'Onboard' if ctx.params.get('kind') == 'onboard' else 'Offboard'} "
+        f"<p><b>infra-ops</b> – {KIND_TITLE.get(ctx.params.get('kind') or '', 'Offboard')} "
         f"{_emp(ctx).get('full_name')} ({_emp(ctx).get('id')})</p><ul>"
     ]
     for s in sorted(ctx.job.steps, key=lambda s: s.seq):
@@ -656,6 +659,14 @@ async def preview_biostar_offboard(ctx: StepContext) -> list[str]:
     return lines
 
 
+# ------------------------------------------------------------------ transfer
+async def prepare_groups(ctx: StepContext) -> StepOutcome:
+    """Show where the person moves from (SDP user) and to (RTR request) for the manual group changes."""
+    old = (ctx.outputs.get("find_sdp_user") or {}).get("department") or "chưa rõ (xem user SDP / AD)"
+    new = _emp(ctx).get("department") or "chưa rõ (xem request RTR)"
+    return StepOutcome("waiting", f"Từ: {old} → Đến: {new}.", {"from": old, "to": new})
+
+
 CHECK = StepDefinition(
     "check_request",
     "Kiểm tra request SDP",
@@ -814,4 +825,47 @@ OFFBOARD = WorkflowDefinition(
     ],
 )
 
-WORKFLOW_BY_KIND = {"onboard": ONBOARD, "offboard": OFFBOARD}
+# Change of department or direct manager: IT moves the person between AD groups by hand (shared folders, mail
+# groups); the Microsoft integration is deferred, so these are verified manual steps.
+TRANSFER = WorkflowDefinition(
+    key="lifecycle.transfer",
+    title="Thuyên chuyển / đổi cấp trên",
+    view_permission=VIEW,
+    execute_permission=EXECUTE,
+    override_permission=OVERRIDE,
+    required_for_close=("groups_add",),
+    verify_steps=True,
+    steps=[
+        CHECK,
+        FIND_USER,
+        StepDefinition(
+            "groups_remove",
+            "Gỡ khỏi nhóm cũ",
+            "manual",
+            "Gỡ user khỏi nhóm AD của phòng/bộ phận cũ: quyền thư mục share và nhóm email.",
+            prepare=prepare_groups,
+            checklist=(
+                "Đã gỡ quyền thư mục share của phòng/bộ phận cũ",
+                "Đã gỡ khỏi nhóm email của phòng/bộ phận cũ",
+            ),
+            evidence_required=True,
+        ),
+        StepDefinition(
+            "groups_add",
+            "Thêm vào nhóm mới",
+            "manual",
+            "Thêm user vào nhóm AD theo phòng/bộ phận mới trong request RTR: quyền thư mục share và nhóm email.",
+            prepare=prepare_groups,
+            skippable=False,
+            checklist=(
+                "Đã cấp quyền thư mục share của phòng/bộ phận mới",
+                "Đã thêm vào nhóm email của phòng/bộ phận mới",
+                "Nhân viên truy cập được thư mục share mới",
+            ),
+            evidence_required=True,
+        ),
+        CLOSE,
+    ],
+)
+
+WORKFLOW_BY_KIND = {"onboard": ONBOARD, "offboard": OFFBOARD, "transfer": TRANSFER}

@@ -372,7 +372,9 @@ Lưu ý:
 3. **Đồng bộ dữ liệu → Đồng bộ ngay** (worker phải đang chạy), sau đó gán các giá trị "Loại biến động" chưa
    phân loại ở Cấu hình module. 5 loại của hệ thống RTR được tự nhận ra: *Thực tập sinh/CTV* và *Tân tuyển - TV*
    → Nhân viên mới, *Chính thức* → Thử việc sang chính thức, *Thôi việc* → Nghỉ việc, *Thay đổi cấp trên trực tiếp*
-   → Bỏ qua (IT không cần làm gì); gán tay ở Cấu hình module để đổi.
+   → Thuyên chuyển; gán tay ở Cấu hình module để đổi. Request Thuyên chuyển / đổi cấp trên có **Job thuyên chuyển**:
+   các bước làm tay có checklist và bằng chứng – *Gỡ khỏi nhóm cũ* và *Thêm vào nhóm mới* (quyền thư mục share, nhóm
+   email theo phòng/bộ phận mới trong RTR); app không tự sửa AD (tích hợp Microsoft đang hoãn).
 4. Xem **Đối soát theo Mã NV**. Worker tự đồng bộ mỗi 30 phút.
 5. **Nhiều hệ thống BioStar** (vd. *BioStar 2 - Office* là hệ thống chính, *BioStar 2 - Server* là nguồn phụ): ở **Cấu hình
    module → Kết nối sử dụng**, chọn hệ thống chính ở ô *BioStar* (Job tạo/khoá user ở đây), rồi **Thêm hệ thống

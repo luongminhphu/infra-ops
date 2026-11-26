@@ -20,7 +20,11 @@ from app.core.workflow.models import Job
 from app.modules.lifecycle.assignment import JOB_WORKFLOWS
 from app.modules.lifecycle.settings import load as load_module_settings
 
-KIND = {"lifecycle.onboard": "Onboard", "lifecycle.offboard": "Offboard"}
+KIND = {
+    "lifecycle.onboard": "Onboard",
+    "lifecycle.offboard": "Offboard",
+    "lifecycle.transfer": "Thuyên chuyển",
+}
 
 
 def job_item(job: Job, today: Any) -> dict[str, Any] | None:

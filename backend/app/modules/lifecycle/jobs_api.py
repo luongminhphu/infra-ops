@@ -77,7 +77,7 @@ async def create_job_for_request(
 ) -> tuple[Job, bool]:
     if req.kind not in WORKFLOW_BY_KIND:
         raise AppError(
-            "Chỉ tạo Job cho request Nhân viên mới (onboard) hoặc Nghỉ việc (offboard). "
+            "Chỉ tạo Job cho request Nhân viên mới, Nghỉ việc hoặc Thuyên chuyển. "
             "Phân loại request ở Cấu hình module nếu cần.",
             code="unsupported_kind",
         )
