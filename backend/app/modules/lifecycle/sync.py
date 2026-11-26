@@ -214,6 +214,55 @@ async def run_sync(
         raise
 
 
+# shortcut: at most this many SDP searches per sync; raise if many active staff are missing from the user list.
+MAX_SDP_LOOKUPS = 100
+
+
+async def _find_missing_sdp_users(
+    session: AsyncSession,
+    settings: LifecycleSettings,
+    sdp_users: list[dict[str, Any]],
+    biostar_users: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """SDP users the full list did not return (offset paging over a shifting list can skip records): for each
+    active BioStar user whose last 5 digits match no listed SDP employee ID, search SDP by employee ID."""
+    known = {normalize.id_key(u["employee_id"]) for u in sdp_users if u.get("employee_id")}
+    missing = sorted(
+        {
+            normalize.id_key(b["user_id"])
+            for b in biostar_users
+            if not b.get("retired") and b.get("user_id", "").isdigit()
+        }
+        - known
+    )[:MAX_SDP_LOOKUPS]
+    if not missing:
+        return []
+    seen = {u["id"] for u in sdp_users}
+    found: list[dict[str, Any]] = []
+    field = settings.sdp_user_employee_id_field
+    try:
+        _, ctx = await open_connection(session, "sdp", Purpose.READ, profile_id=settings.sdp_profile_id)
+        async with SdpClient(ctx) as client:
+            for key in missing:
+                data = await client.get(
+                    "/api/v3/users",
+                    {
+                        "row_count": 20,
+                        "search_criteria": {"field": field, "condition": "contains", "value": key},
+                    },
+                )
+                for raw in data.get("users") or []:
+                    u = normalize.sdp_user(raw, field)
+                    if u["id"] not in seen and u["employee_id"] and normalize.id_key(u["employee_id"]) == key:
+                        seen.add(u["id"])
+                        found.append(u)
+    except Exception as exc:  # the lookup only adds matches: never fail the sync over it
+        log.warning("lifecycle_sdp_user_lookup_failed", error=_err(exc), found=len(found))
+    if found:
+        log.info("lifecycle_sdp_users_missing_from_list", count=len(found))
+    return found
+
+
 async def _sync(
     session: AsyncSession,
     run: SyncRun,
@@ -267,17 +316,15 @@ async def _sync(
     ]
     read_users: list[dict[str, Any]] = []
     retired_groups = {g.strip().lower() for g in settings.biostar_retired_groups if g.strip()}
-    # SDP is the reference: BioStar and SDP employee IDs are matched on their last 5 digits.
-    sdp_ids = normalize.sdp_id_index(sdp_users)
+    excluded_groups = {g.strip().lower() for g in settings.biostar_excluded_groups if g.strip()}
     for err_key, which in reads:
         try:
             profile, ctx = await open_connection(session, "biostar", Purpose.READ, **which)
             async with BioStarClient(ctx) as client:
                 for u in await client.list_users():
                     n = normalize.biostar_user(u)
-                    n["employee_id"] = normalize.resolve_employee_id(
-                        n["user_id"], n.get("name") or "", sdp_ids
-                    )
+                    if (n.get("group") or "").strip().lower() in excluded_groups:
+                        continue  # vendors, contractors…: not reconciled at all
                     if (n.get("group") or "").strip().lower() in retired_groups:
                         n["retired"], n["active"] = True, False  # moved to the "left" group = offboarded
                     n["source"] = profile.name
@@ -289,6 +336,12 @@ async def _sync(
         except Exception as exc:
             errors[err_key] = _err(exc)
     sources["biostar"] = not any(k.startswith("biostar") for k in errors)
+    # SDP is the reference: BioStar and SDP employee IDs are matched on their last 5 digits.
+    if sources["sdp"] and sdp_users:
+        sdp_users += await _find_missing_sdp_users(session, settings, sdp_users, read_users)
+    sdp_ids = normalize.sdp_id_index(sdp_users)
+    for n in read_users:
+        n["employee_id"] = normalize.resolve_employee_id(n["user_id"], n.get("name") or "", sdp_ids)
     bs_users = normalize.merge_biostar_users(read_users)
     if sources["assets"]:
         stats["assets_returned"] = await track_returns(session, assets, settings)

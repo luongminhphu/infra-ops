@@ -17,6 +17,7 @@ interface Values {
   biostar_profile_id: string | null;
   biostar_sources: BioStarSource[];
   biostar_retired_groups: string[];
+  biostar_excluded_groups: string[];
   rtr_requester_name: string;
   rtr_lookback_days: number;
   field_labels: Record<string, string>;
@@ -81,6 +82,7 @@ export function SettingsPage() {
   const [serverError, setServerError] = useState("");
   const [closedStatuses, setClosedStatuses] = useState("");
   const [retiredGroups, setRetiredGroups] = useState("");
+  const [excludedGroups, setExcludedGroups] = useState("");
   const [std, setStd] = useState<StdRow[]>([]);
   const [loadGroups, setLoadGroups] = useState(false);
   const groups = useQuery({
@@ -95,6 +97,7 @@ export function SettingsPage() {
       setProductTypes(q.data.values.asset_product_types.join(", "));
       setClosedStatuses(q.data.values.sdp_closed_statuses.join(", "));
       setRetiredGroups(q.data.values.biostar_retired_groups.join(", "));
+      setExcludedGroups(q.data.values.biostar_excluded_groups.join(", "));
       setStd(toRows(q.data.values.allocation_standard));
     }
   }, [q.data]);
@@ -125,6 +128,7 @@ export function SettingsPage() {
       asset_product_types: list(productTypes),
       sdp_closed_statuses: list(closedStatuses),
       biostar_retired_groups: list(retiredGroups),
+      biostar_excluded_groups: list(excludedGroups),
       allocation_standard: std
         .filter((r) => r.label.trim())
         .map((r) => ({ ...r, label: r.label.trim(), bands: list(r.bands), product_types: list(r.product_types), quantity: Math.max(1, r.quantity || 1) })),
@@ -203,6 +207,13 @@ export function SettingsPage() {
             hint="Tên nhóm người dùng, cách nhau dấu phẩy (vd. 0.NGHIVIEC). User trong nhóm này coi như đã nghỉ việc: không đối soát với SDP, không báo “còn hoạt động”."
           >
             <Input value={retiredGroups} onChange={(e) => setRetiredGroups(e.target.value)} placeholder="0.NGHIVIEC" />
+          </Field>
+          <Field
+            label="Nhóm loại trừ khỏi đối soát"
+            className="mt-4 max-w-xl"
+            hint="Tên nhóm người dùng, cách nhau dấu phẩy (vd. 3. VENDOR). User trong nhóm này không xuất hiện trong đối soát (nhà cung cấp, khách, nhà thầu…)."
+          >
+            <Input value={excludedGroups} onChange={(e) => setExcludedGroups(e.target.value)} placeholder="3. VENDOR" />
           </Field>
         </Panel>
 
@@ -437,7 +448,7 @@ export function SettingsPage() {
 
         {serverError && <p role="alert" className="rounded-sm bg-failed-soft px-3 py-2 text-sm text-failed">{serverError}</p>}
         <div className="sticky bottom-0 -mx-5 flex justify-end gap-2 border-t border-line bg-paper/95 px-5 py-3 backdrop-blur">
-          <Button onClick={() => { setV(d.values); setProductTypes(d.values.asset_product_types.join(", ")); setClosedStatuses(d.values.sdp_closed_statuses.join(", ")); setRetiredGroups(d.values.biostar_retired_groups.join(", ")); setStd(toRows(d.values.allocation_standard)); }}>Hoàn tác thay đổi</Button>
+          <Button onClick={() => { setV(d.values); setProductTypes(d.values.asset_product_types.join(", ")); setClosedStatuses(d.values.sdp_closed_statuses.join(", ")); setRetiredGroups(d.values.biostar_retired_groups.join(", ")); setExcludedGroups(d.values.biostar_excluded_groups.join(", ")); setStd(toRows(d.values.allocation_standard)); }}>Hoàn tác thay đổi</Button>
           <Button type="submit" variant="primary" loading={save.isPending}>Lưu cấu hình</Button>
         </div>
       </form>

@@ -88,6 +88,9 @@ SDP_USERS = [
     {"id": "u3", "name": "Đỗ Minh Châu", "employee_id": "001500"},
 ]
 
+# SDP users the paged list does not return (found only by searching their employee ID).
+HIDDEN_SDP_USERS = [{"id": "u9", "name": "Hung. Ta Quoc", "employee_id": "003261"}]
+
 ASSETS = [
     {
         "id": "a1",
@@ -140,4 +143,18 @@ BIOSTAR_USERS = [
         "expiry_datetime": "2030-12-31T23:59:00.00Z",
     },
     {"user_id": "001500", "name": "Đỗ Minh Châu", "disabled": "true"},
+    # Office ID 103261 = SDP 003261, a user the SDP list skipped.
+    {
+        "user_id": "103261",
+        "name": "TA QUOC HUNG",
+        "disabled": "false",
+        "expiry_datetime": "2030-12-31T23:59:00.00Z",
+    },
+    {
+        "user_id": "880001",
+        "name": "Vendor Guard",
+        "disabled": "false",
+        "expiry_datetime": "2030-12-31T23:59:00.00Z",
+        "user_group_id": {"name": "3. VENDOR"},
+    },
 ]

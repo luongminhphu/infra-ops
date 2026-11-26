@@ -13,7 +13,15 @@ import respx
 from openpyxl import load_workbook
 
 from app.core.db import get_sessionmaker
-from tests.lifecycle_fixtures import ASSETS, BIOSTAR_USERS, DETAILS, REQUESTS, SDP_USERS, sdp_ok
+from tests.lifecycle_fixtures import (
+    ASSETS,
+    BIOSTAR_USERS,
+    DETAILS,
+    HIDDEN_SDP_USERS,
+    REQUESTS,
+    SDP_USERS,
+    sdp_ok,
+)
 
 SDP = "https://sdp-e2e.test.local:8080"
 BS = "https://bs-e2e.test.local"
@@ -31,14 +39,19 @@ def mock_systems(router: respx.MockRouter) -> dict[str, respx.Route]:
     routes["detail"] = router.get(url__regex=rf"{re.escape(SDP)}/api/v3/requests/(?P<rid>\d+)$").mock(
         side_effect=detail
     )
-    # Users come back in two pages to exercise pagination.
-    routes["users"] = router.get(f"{SDP}/api/v3/users").mock(
-        side_effect=[
-            httpx.Response(200, json=sdp_ok("users", SDP_USERS[:2], has_more=True)),
-            httpx.Response(200, json=sdp_ok("users", SDP_USERS[2:])),
-        ]
-        * 10
-    )
+
+    # Users come back in two pages to exercise pagination; a search by employee ID also finds users
+    # the list skipped (HIDDEN_SDP_USERS).
+    def users(request: httpx.Request) -> httpx.Response:
+        info = json.loads(request.url.params.get("input_data", "{}")).get("list_info", {})
+        if crit := info.get("search_criteria"):
+            hits = [u for u in SDP_USERS + HIDDEN_SDP_USERS if crit["value"] in (u.get("employee_id") or "")]
+            return httpx.Response(200, json=sdp_ok("users", hits))
+        first = info.get("start_index", 1) == 1
+        page = SDP_USERS[:2] if first else SDP_USERS[2:]
+        return httpx.Response(200, json=sdp_ok("users", page, has_more=first))
+
+    routes["users"] = router.get(f"{SDP}/api/v3/users").mock(side_effect=users)
     routes["assets"] = router.get(f"{SDP}/api/v3/assets").mock(
         return_value=httpx.Response(200, json=sdp_ok("assets", ASSETS))
     )
@@ -115,9 +128,14 @@ async def _sync() -> dict:  # type: ignore[type-arg]
 @respx.mock(assert_all_mocked=True, assert_all_called=False)
 async def test_end_to_end_sync_and_reconciliation(admin, configured, respx_mock) -> None:  # type: ignore[no-untyped-def]
     routes = mock_systems(respx_mock)
+    values = (await admin.get("/api/lifecycle/settings")).json()["values"]
+    r = await admin.put("/api/lifecycle/settings", json={**values, "biostar_excluded_groups": ["3. vendor"]})
+    assert r.status_code == 200, r.text
     summary = await _sync()
     assert summary["status"] == "success", summary
-    assert summary["requests_fetched"] == 3 and summary["sdp_users"] == 3 and summary["biostar_users"] == 3
+    # SDP 003261 is missing from the paged list but found by searching the employee ID of BioStar 103261;
+    # the vendor group is not reconciled at all.
+    assert summary["requests_fetched"] == 3 and summary["sdp_users"] == 4 and summary["biostar_users"] == 4
     assert summary["assets"] == 3  # printer filtered out by product types
     assert summary["jobs_created"] == 2  # onboard 003551 + offboard 002100 (1003 has parse errors)
     jobs = (await admin.get("/api/core/jobs", params={"status": "draft"})).json()["items"]
@@ -133,7 +151,10 @@ async def test_end_to_end_sync_and_reconciliation(admin, configured, respx_mock)
 
     data = (await admin.get("/api/lifecycle/reconciliation")).json()
     by_emp = {r["employee_id"]: r for r in data["items"]}
-    assert set(by_emp) == {"003551", "002100", "001500", "009999"}
+    assert set(by_emp) == {"003551", "002100", "001500", "009999", "003261"}
+    # Office 103261 = SDP 003261: matched, so no "BioStar user without SDP user" issue.
+    assert not by_emp["003261"]["issues"], by_emp["003261"]
+    assert HIDDEN_SDP_USERS[0]["employee_id"] == "003261"
     assert data["items"][0]["max_severity"] == "high"  # sorted by severity
     assert {i["rule"] for i in by_emp["002100"]["issues"]} >= {
         "offboard_biostar_active",
@@ -175,7 +196,7 @@ async def test_end_to_end_sync_and_reconciliation(admin, configured, respx_mock)
     assert "002100" in text and "001500" not in text
     xlsx = await admin.get("/api/lifecycle/reconciliation/export", params={"format": "xlsx"})
     ws = load_workbook(io.BytesIO(xlsx.content)).active
-    assert ws["A1"].value == "Mã NV" and ws.max_row == 5
+    assert ws["A1"].value == "Mã NV" and ws.max_row == 6
 
     # Requests list and mapping-driven parsing
     reqs = (await admin.get("/api/lifecycle/requests")).json()
