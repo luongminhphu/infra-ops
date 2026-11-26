@@ -1277,7 +1277,9 @@ async def test_onboard_line_is_proposed_once_whoever_proposes(admin, client) -> 
 
     # Once rejected, the line can be proposed again.
     await client.login("wl-mgr@test.local")
-    r = await client.patch(f"/api/workload/purchases/{first.json()['id']}", json={"status": "rejected", "note": "trùng"})
+    r = await client.patch(
+        f"/api/workload/purchases/{first.json()['id']}", json={"status": "rejected", "note": "trùng"}
+    )
     assert r.status_code == 200, r.text
     await client.login("dup-op2@test.local")
     assert (await client.post("/api/workload/purchases", json=body)).status_code == 201
