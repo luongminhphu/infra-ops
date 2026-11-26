@@ -47,7 +47,7 @@ export function DocumentsPage() {
   return (
     <>
       <PageHeader
-        title="Biên bản bàn giao / thu hồi"
+        title="Biên bản"
         description="Lập biên bản từ dữ liệu SDP, xem trước, chốt để cấp số, in cho các bên ký rồi tải bản đã ký lên."
         actions={
           canCreate && (

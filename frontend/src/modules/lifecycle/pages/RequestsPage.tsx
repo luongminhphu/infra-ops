@@ -152,7 +152,11 @@ export function RequestsPage() {
         header: "Đọc nội dung",
         cell: (c) =>
           c.row.original.parse_errors.length ? (
-            <StatusBadge status="failed" label={`${c.row.original.parse_errors.length} lỗi`} />
+            // The first reason in the row (the rest in the detail panel), so nobody has to open each one.
+            <span className="block max-w-72">
+              <StatusBadge status="failed" label={`${c.row.original.parse_errors.length} lỗi`} />
+              <span className="mt-0.5 block truncate text-xs text-muted" title={c.row.original.parse_errors.join("\n")}>{c.row.original.parse_errors[0]}</span>
+            </span>
           ) : (
             <StatusBadge status="done" label="Đầy đủ" />
           ),

@@ -491,10 +491,10 @@ async def test_offboard_schedule_confirm_and_override(admin, client, systems) ->
     j = resp.json()
     assert [s["key"] for s in j["steps"]] == [
         "check_request",
+        "biostar_offboard",  # access revoked first, not after the devices are back
         "find_sdp_user",
         "collect_assets",
         "return_assets",
-        "biostar_offboard",
         "return_doc",
         "close_request",
     ]
@@ -515,19 +515,6 @@ async def test_offboard_schedule_confirm_and_override(admin, client, systems) ->
         )
     ).json()
     j = await settle(admin, j["id"])
-    collect = step(j, "collect_assets")
-    assert collect["status"] == "waiting" and [a["id"] for a in collect["output"]["assets"]] == ["5002"]
-
-    incomplete = await admin.post(
-        f"/api/core/jobs/{j['id']}/steps/collect_assets/complete", json={"data": {"assets": []}}
-    )
-    assert incomplete.json()["error"]["code"] == "manual_incomplete"
-    await admin.post(
-        f"/api/core/jobs/{j['id']}/steps/collect_assets/complete",
-        json={"data": {"assets": [{"id": "5002", "condition": "missing_accessory", "note": "Thiếu sạc"}]}},
-    )
-    j = await settle(admin, j["id"])
-    assert systems.assets["5002"]["state"]["name"] == "In Store" and systems.assets["5002"]["user"] is None
     bs_step = step(j, "biostar_offboard")
     assert bs_step["status"] == "waiting" and bs_step["requires_confirm"]
     assert systems.bs_users["002100"]["disabled"] == "false"  # not touched before confirmation
@@ -548,6 +535,19 @@ async def test_offboard_schedule_confirm_and_override(admin, client, systems) ->
     assert (
         systems.bs_users["002100"]["disabled"] == "true" and systems.bs_users["002100"]["access_groups"] == []
     )
+    collect = step(j, "collect_assets")
+    assert collect["status"] == "waiting" and [a["id"] for a in collect["output"]["assets"]] == ["5002"]
+
+    incomplete = await admin.post(
+        f"/api/core/jobs/{j['id']}/steps/collect_assets/complete", json={"data": {"assets": []}}
+    )
+    assert incomplete.json()["error"]["code"] == "manual_incomplete"
+    await admin.post(
+        f"/api/core/jobs/{j['id']}/steps/collect_assets/complete",
+        json={"data": {"assets": [{"id": "5002", "condition": "missing_accessory", "note": "Thiếu sạc"}]}},
+    )
+    j = await settle(admin, j["id"])
+    assert systems.assets["5002"]["state"]["name"] == "In Store" and systems.assets["5002"]["user"] is None
     assert step(j, "biostar_offboard")["before_state"]["user"]["access_groups"] == [
         {"id": "1", "name": "HCM"}
     ]
@@ -880,6 +880,19 @@ async def test_job_assignee_follows_sdp_and_reassign_writes_back(admin, client, 
         await admin.get("/api/core/jobs?workflows=lifecycle.onboard,lifecycle.offboard&limit=500")
     ).json()
     assert all(x["workflow_key"] != "lifecycle.assign" for x in listed["items"])
+
+    # "Nhận Job": an operator may take only an unassigned job (same SDP write-back path, to themselves).
+    await client.login("op-assign2@test.local")
+    r = await client.post(f"/api/lifecycle/jobs/{j['id']}/claim")
+    assert r.status_code == 409 and r.json()["error"]["code"] == "job_assigned"
+    async with get_sessionmaker()() as s:
+        jb = await s.get(Job, j["id"])
+        jb.assignee_user_id, jb.assignee_name = None, None
+        await s.commit()
+    r = await client.post(f"/api/lifecycle/jobs/{j['id']}/claim")
+    assert r.status_code == 201, r.text
+    claim = (await admin.get(f"/api/core/jobs/{r.json()['id']}")).json()
+    assert claim["workflow_key"] == "lifecycle.assign" and claim["params"]["reason"] == "Nhận Job"
 
 
 async def test_pump_is_not_starved_by_jobs_waiting_on_people(admin) -> None:  # type: ignore[no-untyped-def]

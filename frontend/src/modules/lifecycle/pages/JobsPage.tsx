@@ -10,7 +10,6 @@ import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui
 import { Field, Input, Select } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
 import { formatDate, formatRelative, isoDateVn } from "@/core/lib/format";
-import { cn } from "@/core/lib/cn";
 import { useDebounced } from "@/core/lib/useDebounced";
 import { JOB_STATUS, JOB_WORKFLOWS, WORKFLOW_LABEL, jobStatusLabel, type Job, type JobStatus } from "../jobs";
 
@@ -72,7 +71,7 @@ export function JobsPage() {
             <button type="button" onClick={() => navigate(`/lifecycle/jobs/${c.row.original.id}`)} className="cursor-pointer text-left font-medium whitespace-nowrap hover:text-primary hover:underline">
               {c.row.original.subject_label}
             </button>
-            <span className="block text-xs text-muted">{c.row.original.assignee ? `Phụ trách: ${c.row.original.assignee.name}` : "Chưa có người phụ trách"}</span>
+            <span className="block text-xs text-muted">{c.row.original.assignee ? `Phụ trách: ${c.row.original.assignee.name}` : "Chưa giao"}</span>
           </span>
         ),
       },
@@ -132,6 +131,8 @@ export function JobsPage() {
         {CHIPS.map((c) => {
           const n = countOf(c.value);
           const on = status === c.value;
+          // A status with no job is noise: hidden unless selected ("Đang mở" / "Tất cả" always stay).
+          if (n === 0 && !on && c.value !== "open" && c.value !== "") return null;
           return (
             <Button
               key={c.value || "all"}
@@ -139,7 +140,6 @@ export function JobsPage() {
               variant={on ? "primary" : "secondary"}
               aria-pressed={on}
               onClick={() => set("status", c.value)}
-              className={cn(!on && n === 0 && "text-muted")}
             >
               {c.label}{n !== null && <> <span className="tabular">{n}</span></>}
             </Button>
@@ -169,6 +169,18 @@ export function JobsPage() {
           caption="Job onboard / offboard"
           getRowId={(j) => j.id}
           onRowClick={(j) => navigate(`/lifecycle/jobs/${j.id}`)}
+          card={(j) => (
+            <>
+              <span className="flex items-start justify-between gap-2">
+                <span className="min-w-0">
+                  <span className="block font-medium">{WORKFLOW_LABEL[j.workflow_key] ?? j.workflow_title} {j.subject_label}</span>
+                  <span className="block text-sm text-muted">Hiệu lực {formatDate(j.params.effective_date)} · {j.assignee ? j.assignee.name : "Chưa giao"}</span>
+                </span>
+                <StatusBadge status={j.stalled_minutes ? "warning" : JOB_STATUS[j.status as JobStatus].status} label={jobStatusLabel(j)} />
+              </span>
+              <span className="mt-1 block text-sm text-muted tabular">Xong {j.progress.done}/{j.progress.total} bước · cập nhật {formatRelative(j.updated_at).toLowerCase()}</span>
+            </>
+          )}
           empty={
             <EmptyState icon={Workflow} title="Không có Job phù hợp">
               Job được tạo từ request RTR loại Nhân viên mới hoặc Nghỉ việc sau khi đồng bộ, hoặc từ trang Request RTR.

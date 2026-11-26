@@ -22,7 +22,7 @@ export function SyncPage() {
     <>
       <PageHeader
         title="Đồng bộ dữ liệu"
-        description="infra-ops đọc ServiceDesk Plus và BioStar bằng credential Read theo chu kỳ, lưu lại mỗi lần đọc để đối soát và xem lịch sử."
+        description="infra-ops đọc ServiceDesk Plus và BioStar bằng tài khoản chỉ đọc theo chu kỳ, lưu lại mỗi lần đọc để đối soát và xem lịch sử."
         actions={
           can("lifecycle.reconciliation.sync") && (
             <Button variant="primary" onClick={() => syncNow.mutate()} loading={syncNow.isPending || task?.running}>
@@ -42,7 +42,7 @@ export function SyncPage() {
             <dt className="text-muted">Lần tới</dt>
             <dd>{task.running ? "Đang chạy" : formatDateTime(task.next_run_at)}</dd>
             <dt className="text-muted">Lần gần nhất</dt>
-            <dd>{formatRelative(task.last_finished_at)}</dd>
+            <dd>{formatRelative(task.last_finished_at ?? runs.find((r) => r.finished_at)?.finished_at)}</dd>
             <dt className="text-muted">Kết quả</dt>
             <dd>
               {task.last_status === "failure" ? (
@@ -56,11 +56,23 @@ export function SyncPage() {
               )}
             </dd>
           </dl>
-          {task.last_error && <p className="mt-3 rounded-sm bg-failed-soft p-2 text-sm text-failed">{task.last_error}</p>}
+          {task.last_error && (
+            <details className="mt-3 rounded-sm bg-failed-soft p-2 text-sm">
+              <summary className="cursor-pointer font-medium text-failed">Lần chạy gần nhất bị lỗi – xem chi tiết</summary>
+              <p className="mt-1 break-words text-ink">{task.last_error}</p>
+            </details>
+          )}
           {stuck && (
             <p className="mt-3 flex items-start gap-2 rounded-sm bg-waiting-soft p-2.5 text-sm">
               <TriangleAlert className="mt-0.5 size-4 shrink-0 text-waiting" aria-hidden="true" />
-              Đã quá giờ chạy nhưng đồng bộ chưa bắt đầu. Kiểm tra tiến trình worker (<code className="font-mono">python -m app.worker</code>) đang chạy.
+              <span>
+                Đã quá giờ chạy nhưng đồng bộ chưa bắt đầu: tiến trình chạy nền của infra-ops có thể đang dừng.{" "}
+                {can("core.rbac.manage") ? (
+                  <>Kiểm tra dịch vụ <code className="font-mono">worker</code> (lệnh <code className="font-mono">python -m app.worker</code>).</>
+                ) : (
+                  "Báo quản trị hệ thống để khởi động lại."
+                )}
+              </span>
             </p>
           )}
         </Panel>
@@ -98,9 +110,13 @@ export function SyncPage() {
                     <td className="px-3 py-2 text-right tabular">{r.stats.assets ?? "—"}</td>
                     <td className="px-3 py-2 text-right tabular">{r.stats.biostar_users ?? "—"}</td>
                     <td className="px-3 py-2 text-right tabular">{r.stats.issues ?? "—"}</td>
-                    <td className="max-w-md px-3 py-2 text-sm text-failed">
+                    <td className="max-w-md px-3 py-2 text-sm">
+                      {/* One line per failed source; the full message (often long) on demand. */}
                       {Object.entries(r.errors ?? {}).map(([k, v]) => (
-                        <p key={k}><span className="font-medium">{SOURCE_LABEL[k] ?? k}:</span> {v}</p>
+                        <details key={k}>
+                          <summary className="inline-flex min-h-6 cursor-pointer items-center py-0.5 text-failed"><span className="font-medium">{SOURCE_LABEL[k] ?? k}</span>: không đọc được</summary>
+                          <p className="mt-1 break-words text-ink">{v}</p>
+                        </details>
                       ))}
                     </td>
                   </tr>

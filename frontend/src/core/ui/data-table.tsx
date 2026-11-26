@@ -24,6 +24,8 @@ interface DataTableProps<T> {
   maxHeight?: string;
   /** Row ids in the order shown (after the user's sort), e.g. for previous/next navigation. */
   onOrderChange?: (ids: string[]) => void;
+  /** Phones (< 640px): one card per row instead of a wide table whose deciding columns scroll out of view. */
+  card?: (row: T) => ReactNode;
 }
 
 /**
@@ -42,6 +44,7 @@ export function DataTable<T>({
   empty,
   maxHeight = "calc(100dvh - 230px)",
   onOrderChange,
+  card,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const table = useReactTable({
@@ -59,9 +62,27 @@ export function DataTable<T>({
     onOrderChange?.(order ? order.split("\n") : []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order]);
+  const cards = card && (
+    <ul aria-label={caption} className="divide-y divide-line overflow-hidden rounded-md border border-line bg-surface shadow-card sm:hidden">
+      {rows.map((row) => (
+        <li key={row.id} className={cn(row.id === selectedId && "bg-primary-soft")}>
+          {onRowClick ? (
+            <button type="button" onClick={() => onRowClick(row.original)} aria-current={row.id === selectedId || undefined} className="block w-full cursor-pointer px-3 py-2.5 text-left hover:bg-surface-2">
+              {card(row.original)}
+            </button>
+          ) : (
+            <div className="px-3 py-2.5">{card(row.original)}</div>
+          )}
+        </li>
+      ))}
+      {rows.length === 0 && <li>{empty}</li>}
+    </ul>
+  );
   // relative: sr-only (absolute) cell text must be clipped by this scroller, not widen the page.
   return (
-    <div className="relative overflow-auto rounded-md border border-line bg-surface shadow-card" style={{ maxHeight }}>
+    <>
+    {cards}
+    <div className={cn("relative overflow-auto rounded-md border border-line bg-surface shadow-card", card && "hidden sm:block")} style={{ maxHeight }}>
       <table className="w-full border-collapse text-left">
         <caption className="sr-only">{caption}</caption>
         <thead className="sticky top-0 z-10 bg-surface-2">
@@ -127,5 +148,6 @@ export function DataTable<T>({
       </table>
       {rows.length === 0 && empty}
     </div>
+    </>
   );
 }

@@ -15,7 +15,7 @@ from app.modules.lifecycle.offboard_review import ReviewRow, last_month, next_ac
 
 def test_conclusion_and_email_text() -> None:
     base = dict(full_name="Phạm Thị Bình", department="Kế Toán", effective_date=date(2026, 10, 5),
-                request="#7902", request_status="Resolved")  # fmt: skip
+                request="#7902", request_status="Đã xử lý", job_id=None)  # fmt: skip
     done = ReviewRow(
         "002100", **base, job_status="completed", assets_in_use=0, biostar="Không có", biostar_active=False
     )  # type: ignore[arg-type]
@@ -48,6 +48,7 @@ async def test_review_lists_month_offboards_and_drafts_the_email(admin) -> None:
     got = (await admin.get("/api/lifecycle/offboard-review")).json()  # default: last month
     assert got["month"] == f"{m:%Y-%m}" and [r["employee_id"] for r in got["items"]] == ["777001"]
     assert got["items"][0]["job_status"] is None and got["pending"] == 1
+    assert got["items"][0]["request_status"] == "Đang mở"  # SDP status in Vietnamese for HR
 
     async with get_sessionmaker()() as s:
         assert await next_action(s, None)  # reminder until the draft is downloaded

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { JobWizard } from "./JobWizard";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CalendarClock, ListChecks, LoaderCircle, ChevronLeft, Eye, Play, RotateCcw, ShieldAlert, SkipForward, Workflow, XCircle } from "lucide-react";
+import { AlertTriangle, CalendarClock, Hand, ListChecks, MoreHorizontal, LoaderCircle, ChevronLeft, Eye, Play, RotateCcw, ShieldAlert, SkipForward, Workflow, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
@@ -10,6 +10,7 @@ import { Button } from "@/core/ui/button";
 import { ConfirmDangerDialog } from "@/core/ui/confirm-danger-dialog";
 import { DateInput } from "@/core/ui/date-input";
 import { Dialog } from "@/core/ui/dialog";
+import { Menu, MenuItem } from "@/core/ui/menu";
 import { ErrorState, LoadingRows, Mono, PageHeader, Panel } from "@/core/ui/feedback";
 import { Field, Textarea } from "@/core/ui/field";
 import { announce } from "@/core/ui/live-region";
@@ -237,6 +238,16 @@ export function JobPage() {
   const q = useJob(id);
   const job = q.data;
   const act = useJobActions(job);
+  const qc = useQueryClient();
+  const claim = useMutation({
+    mutationFn: () => api(`/api/lifecycle/jobs/${id}/claim`, { method: "POST" }),
+    onSuccess: () => {
+      toast.success("Đã nhận Job: infra-ops đổi Technician của request trên SDP sang bạn trong ít giây.");
+      void qc.invalidateQueries({ queryKey: ["jobs", "assign", id] });
+      void qc.invalidateQueries({ queryKey: ["job", id] });
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
   const [search, setSearch] = useSearchParams();
   // Operators work step by step by default; coordinators (who can reassign) get the full view.
   const view = search.get("view") ?? (can("lifecycle.job.assign") ? "full" : "wizard");
@@ -245,6 +256,7 @@ export function JobPage() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [flowOpen, setFlowOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [startOpen, setStartOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState("");
   const [closeMode, setCloseMode] = useState<"cancel" | "override" | "reopen" | null>(null);
   const [reason, setReason] = useState("");
@@ -296,23 +308,59 @@ export function JobPage() {
           </span>
         }
         actions={
-          <>
-            {canRun && !finished && <Button onClick={() => setView("wizard")}><ListChecks className="size-4" aria-hidden="true" />Làm từng bước</Button>}
-            <Button onClick={() => setFlowOpen(true)}><Workflow className="size-4" aria-hidden="true" />Lưu đồ</Button>
-            <Button onClick={() => setPreviewOpen(true)}><Eye className="size-4" aria-hidden="true" />Xem trước các bước</Button>
-            {can("lifecycle.job.assign") && !finished && <AssignJobButton job={job} />}
-            {canRun && ["draft", "scheduled"].includes(job.status) && (
-              <>
-                {job.status === "draft" && (
-                  <Button onClick={() => { setScheduleDate(eff ?? ""); setScheduleOpen(true); }}>
-                    <CalendarClock className="size-4" aria-hidden="true" />Lên lịch
-                  </Button>
-                )}
-                <Button variant="primary" loading={act.start.isPending} onClick={() => act.start.mutate(null)}>
-                  <Play className="size-4" aria-hidden="true" />Bắt đầu ngay
-                </Button>
-              </>
+          <span className="inline-flex flex-wrap gap-2">
+            {/* One primary action: take an unassigned job first, otherwise work it step by step. */}
+            {canRun && !finished && !job.assignee && (
+              <Button variant="primary" loading={claim.isPending} onClick={() => claim.mutate()}>
+                <Hand className="size-4" aria-hidden="true" />Nhận Job
+              </Button>
             )}
+            {canRun && !finished && (
+              <Button variant={job.assignee ? "primary" : "secondary"} onClick={() => setView("wizard")}>
+                <ListChecks className="size-4" aria-hidden="true" />Làm từng bước
+              </Button>
+            )}
+            {can("lifecycle.job.assign") && !finished && <AssignJobButton job={job} />}
+            <Menu
+              label="Thao tác khác"
+              trigger={(p) => (
+                <Button {...p} aria-label="Thao tác khác">
+                  <MoreHorizontal className="size-4" aria-hidden="true" />Thêm
+                </Button>
+              )}
+            >
+              <MenuItem onSelect={() => setFlowOpen(true)}><Workflow className="size-4" aria-hidden="true" />Lưu đồ</MenuItem>
+              <MenuItem onSelect={() => setPreviewOpen(true)}><Eye className="size-4" aria-hidden="true" />Xem trước các bước</MenuItem>
+              {canRun && job.status === "draft" && (
+                <MenuItem onSelect={() => { setScheduleDate(eff ?? ""); setScheduleOpen(true); }}>
+                  <CalendarClock className="size-4" aria-hidden="true" />Lên lịch chạy
+                </MenuItem>
+              )}
+              {canRun && ["draft", "scheduled"].includes(job.status) && (
+                <MenuItem onSelect={() => setStartOpen(true)}><Play className="size-4" aria-hidden="true" />Bắt đầu ngay…</MenuItem>
+              )}
+            </Menu>
+          </span>
+        }
+      />
+
+      <Dialog
+        open={startOpen}
+        onClose={() => setStartOpen(false)}
+        title="Bắt đầu Job ngay?"
+        size="sm"
+        description={
+          <>
+            <span className="block">Các bước tự động chạy ngay trên ServiceDesk Plus{job.workflow_key === "lifecycle.offboard" ? " và BioStar" : ""}, không chờ ngày hiệu lực {formatDate(eff)}.</span>
+            {!job.assignee && <span className="mt-1 block">Job chưa có người phụ trách – nên bấm “Nhận Job” trước.</span>}
+          </>
+        }
+        footer={
+          <>
+            <Button onClick={() => setStartOpen(false)}>Để sau</Button>
+            <Button variant="primary" loading={act.start.isPending} onClick={() => act.start.mutate(null, { onSuccess: () => setStartOpen(false) })}>
+              <Play className="size-4" aria-hidden="true" />Bắt đầu ngay
+            </Button>
           </>
         }
       />
@@ -336,7 +384,7 @@ export function JobPage() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-        {/* On phones the current step (what to do now) comes before the list of steps. */}
+        {/* Phones: current step, then the steps, then the log (the right column dissolves into the grid). */}
         <Panel title={`Các bước · xong ${job.progress.done}/${job.progress.total}`} bodyClassName="p-2" className="order-2 lg:order-none">
           <Stepper
             label="Các bước của Job"
@@ -351,9 +399,9 @@ export function JobPage() {
             }))}
           />
         </Panel>
-        <div className="order-1 min-w-0 space-y-4 lg:order-none">
-          <StepDetail job={job} step={step} act={act} />
-          <Panel title="Nhật ký Job" bodyClassName="p-0">
+        <div className="contents lg:order-none lg:block lg:min-w-0 lg:space-y-4">
+          <div className="order-1 min-w-0"><StepDetail job={job} step={step} act={act} /></div>
+          <Panel title="Nhật ký Job" bodyClassName="p-0" className="order-3 min-w-0">
             {/* Scrollable region must be keyboard-focusable (WCAG 2.1.1). */}
             <ol className="max-h-80 divide-y divide-line overflow-y-auto" tabIndex={0} aria-label="Nhật ký Job">
               {(job.events ?? []).map((e, i) => (
@@ -366,7 +414,7 @@ export function JobPage() {
             </ol>
           </Panel>
           {canRun && !finished && (
-            <details className="rounded-md border border-line bg-surface px-4 py-2.5 text-sm">
+            <details className="order-4 rounded-md border border-line bg-surface px-4 py-2.5 text-sm">
               <summary className="cursor-pointer font-medium">Kết thúc Job sớm</summary>
               <dl className="mt-3 grid gap-3 sm:grid-cols-2">
                 {can("lifecycle.job.override_close") && job.status !== "draft" && (

@@ -66,7 +66,13 @@ class ModuleRegistry:
                         "module": manifest.id,
                         "label": manifest.name,
                         "items": [
-                            {"label": i.label, "path": i.path, "icon": i.icon, "permission": i.permission}
+                            {
+                                "label": i.label,
+                                "path": i.path,
+                                "icon": i.icon,
+                                "permission": i.permission,
+                                "group": i.group,
+                            }
                             for i in items
                         ],
                     }
