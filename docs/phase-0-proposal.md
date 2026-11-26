@@ -1212,3 +1212,16 @@ Quyết định:
   4–8 chữ số (STT, ngày, số điện thoại không bị nhầm); mã số ngắn hơn 6 chữ số được bù 0 đầu; đọc mọi sheet. File `.xls`
   cũ: báo lưu lại dạng .xlsx. Xuất báo cáo dùng cùng bộ nhận diện cho nội dung ô nhập. Giao diện: dán bảng (có tab /
   chữ) được gửi nhận diện ngay, ô chỉ còn danh sách mã, kèm bản xem trước Mã NV · họ tên.
+
+## 45. Infra Handbook (26/11/2026)
+
+- Yêu cầu: sổ tay quy định và hướng dẫn cho IT Support, dạng lưu đồ rẽ nhánh mindmap, mỗi bước có mô tả/ghi chú,
+  để Manager tự xây dựng. Tên hiển thị *Infra Handbook* (rail: *Handbook*).
+- Quyết định (chủ sản phẩm): chỉ sơ đồ mindmap (không có chế độ đi từng bước); ghi chú = văn bản + liên kết + ảnh;
+  Manager xuất bản, có phiên bản; cấu trúc cây + nhánh nhảy tới bước có sẵn.
+- Module mới `handbook` (nhánh Alembic riêng): `handbook_guide` (bản nháp JSONB), `handbook_guide_version` (bản xuất
+  bản bất biến), `handbook_image` (ảnh trong core storage, PNG/JPEG kiểm tra magic bytes). Quyền: `handbook.guides.view`
+  (mọi vai trò), `.edit` (Manager, Supervisor), `.publish` (Manager: xuất bản, xoá). Lưu nháp có kiểm tra xung đột
+  (`stale_draft`); xuất bản từ chối khi có bước không nối với gốc. Ghi chú là markdown nhẹ, hiển thị bằng React (không
+  HTML thô; liên kết chỉ http(s), mailto, đường dẫn trong app; ảnh chỉ từ kho Handbook hoặc https).
+- Sơ đồ: bố cục trái → phải, mỗi bước vẽ một lần dưới nhánh tới nó sớm nhất (BFS), nhánh khác là ô “Đi tới …”.
