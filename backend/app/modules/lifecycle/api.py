@@ -14,6 +14,9 @@ from sqlalchemy.orm import defer
 from app.core.audit.service import record
 from app.core.auth.deps import CurrentUser, require
 from app.core.connections.models import ConnectionProfile
+from app.core.connections.service import open_connection
+from app.core.connectors.base import Purpose
+from app.core.connectors.biostar import BioStarClient
 from app.core.db import get_session
 from app.core.errors import NotFound
 from app.core.scheduler.service import get_task, request_run, task_out
@@ -29,6 +32,7 @@ from app.modules.lifecycle.settings import (
     MODULE_ID,
     SETTINGS_KEY,
     LifecycleSettings,
+    main_biostar,
 )
 from app.modules.lifecycle.settings import load as load_module_settings
 from app.modules.lifecycle.sync import SYNC_TASK_KEY, reparse_all
@@ -390,6 +394,40 @@ async def sync_now(
 
 
 # ---------------------------------------------------------------- settings
+@router.get("/biostar/user-groups")
+async def biostar_groups(
+    _: CurrentUser = Depends(manage), session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """User groups read live from every BioStar system (to pick excluded / retired groups), with the user
+    count of the latest sync. A system that cannot be read falls back to the groups that sync saw."""
+    settings = await load_module_settings(session)
+    counts: dict[str, int] = {}
+    run = await latest_run(session)
+    if run is not None:
+        for data in (
+            await session.scalars(
+                select(Snapshot.data).where(Snapshot.run_id == run.id, Snapshot.system == "biostar_user")
+            )
+        ).all():
+            if group := (data.get("group") or "").strip():
+                counts[group] = counts.get(group, 0) + 1
+    names: set[str] = set()
+    errors: list[str] = []
+    reads = [main_biostar(settings)] + [{"profile_id": s.profile_id} for s in settings.biostar_sources]
+    for which in reads:
+        try:
+            _, ctx = await open_connection(session, "biostar", Purpose.READ, **which)
+            async with BioStarClient(ctx) as client:
+                names |= {str(g.get("name")).strip() for g in await client.user_groups() if g.get("name")}
+        except Exception as exc:
+            errors.append(getattr(exc, "message", None) or str(exc))
+    names |= set(counts)
+    return {
+        "items": [{"name": n, "users": counts.get(n)} for n in sorted(names, key=str.lower)],
+        "errors": errors,
+    }
+
+
 @router.get("/settings")
 async def get_module_settings(
     _: CurrentUser = Depends(manage), session: AsyncSession = Depends(get_session)

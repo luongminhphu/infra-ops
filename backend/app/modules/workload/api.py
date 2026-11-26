@@ -27,7 +27,7 @@ from app.modules.workload.po import repack
 from app.modules.workload.rules import pick_bucket
 from app.modules.workload.settings import MODULE_ID, SETTINGS_KEY, WorkloadSettings
 from app.modules.workload.settings import load as load_module_settings
-from app.modules.workload.sync import SYNC_TASK_KEY, auto_link, reclassify
+from app.modules.workload.sync import SYNC_TASK_KEY, auto_link, create_account, reclassify
 
 router = APIRouter(tags=["workload"])
 view = require("workload.tickets.view")
@@ -176,6 +176,25 @@ async def link_user(
     )
     await session.commit()
     return {"id": tech.id, "user_id": str(tech.user_id) if tech.user_id else None}
+
+
+@router.post("/technicians/{technician_id}/account", status_code=201)
+async def confirm_account(
+    technician_id: str, user: CurrentUser = Depends(manage), session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """An administrator confirms an SDP technician as an infra-ops user (Operator, SSO by e-mail)."""
+    tech = await session.get(Technician, technician_id)
+    if tech is None:
+        raise NotFound("Không tìm thấy technician.")
+    if not tech.email:
+        raise AppError(
+            "Technician chưa có e-mail trên SDP nên không tạo được tài khoản SSO.", code="no_email"
+        )
+    if tech.user_id:
+        raise AppError("Technician đã có tài khoản infra-ops.", code="already_linked")
+    account = await create_account(session, tech, user.actor)
+    await session.commit()
+    return {"id": tech.id, "user_id": str(account.id), "upn": account.upn}
 
 
 @router.delete("/technicians/{technician_id}/user", status_code=204)

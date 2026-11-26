@@ -300,3 +300,19 @@ async def test_sso_recycled_upn_does_not_take_over_account(client, settings, mon
             select(AuditLog).where(AuditLog.actor_upn == "recycled@test.local", AuditLog.result == "denied")
         )
         assert denied is not None
+
+
+async def test_admin_deletes_an_account(admin, client) -> None:  # type: ignore[no-untyped-def]
+    me = (await admin.get("/api/core/me")).json()
+    assert (await admin.delete(f"/api/core/users/{me['id']}")).json()["error"]["code"] == "self_delete"
+    made = await admin.post(
+        "/api/core/users", json={"upn": "to-delete@test.local", "display_name": "X", "role_ids": []}
+    )
+    assert made.status_code == 201, made.text
+    uid = made.json()["id"]
+    await client.login("to-delete@test.local")
+    assert (await client.delete(f"/api/core/users/{uid}")).status_code == 403  # needs user management
+    assert (await admin.delete(f"/api/core/users/{uid}")).status_code == 204
+    assert "to-delete@test.local" not in {u["upn"] for u in (await admin.get("/api/core/users")).json()}
+    logs = (await admin.get("/api/core/audit", params={"action": "rbac.user_deleted"})).json()
+    assert any(e["target_label"] == "to-delete@test.local" for e in logs["items"])

@@ -52,8 +52,6 @@ class WorkloadSettings(BaseModel):
     # Open tasks split by SDP status: being worked on / paused; any other open status is "pending".
     in_progress_statuses: list[str] = Field(default_factory=lambda: ["In Progress", "Đang xử lý"])
     on_hold_statuses: list[str] = Field(default_factory=lambda: ["On Hold", "Onhold", "Pending", "Tạm dừng"])
-    # Create an infra-ops account (role Operator, SSO login) for active technicians that have none.
-    auto_create_users: bool = True
     # Words in the subject/category that mark a device request (suggest a purchase request).
     device_keywords: dict[str, list[str]] = Field(
         default_factory=lambda: {

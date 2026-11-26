@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Lock, Plus, ShieldCheck, Users } from "lucide-react";
+import { Lock, Plus, ShieldCheck, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/core/api/client";
 import type { AppUser, PermissionGroup, Role } from "@/core/api/types";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { Button } from "@/core/ui/button";
+import { ConfirmDangerDialog } from "@/core/ui/confirm-danger-dialog";
 import { EmptyState, ErrorState, LoadingRows, PageHeader, Panel } from "@/core/ui/feedback";
 import { StatusBadge } from "@/core/ui/status";
 import { Tabs } from "@/core/ui/tabs";
@@ -23,6 +24,16 @@ export function useAccessData() {
 function UsersTab({ users, roles }: { users: AppUser[]; roles: Role[] }) {
   const { me } = useAuth();
   const [editing, setEditing] = useState<AppUser | null | "new">(null);
+  const [deleting, setDeleting] = useState<AppUser | null>(null);
+  const qc = useQueryClient();
+  const remove = useMutation({
+    mutationFn: (u: AppUser) => api(`/api/core/users/${u.id}`, { method: "DELETE" }),
+    onSuccess: async (_r, u) => {
+      toast.success(`Đã xoá tài khoản ${u.upn}.`);
+      setDeleting(null);
+      await qc.invalidateQueries({ queryKey: ["users"] });
+    },
+  });
   const roleName = useMemo(() => Object.fromEntries(roles.map((r) => [r.id, r.name])), [roles]);
   return (
     <>
@@ -35,7 +46,7 @@ function UsersTab({ users, roles }: { users: AppUser[]; roles: Role[] }) {
       {users.length === 0 ? (
         <EmptyState icon={Users} title="Chưa có người dùng" />
       ) : (
-        <div className="overflow-x-auto rounded-md border border-line bg-surface">
+        <div className="relative overflow-x-auto rounded-md border border-line bg-surface">
           <table className="w-full text-left">
             <caption className="sr-only">Người dùng infra-ops</caption>
             <thead className="bg-surface-2 text-sm text-muted">
@@ -60,7 +71,15 @@ function UsersTab({ users, roles }: { users: AppUser[]; roles: Role[] }) {
                     {!u.is_active ? <StatusBadge status="disabled" label="Đã vô hiệu hoá" /> : u.locked ? <StatusBadge status="warning" label="Tạm khoá" /> : <StatusBadge status="done" label="Hoạt động" />}
                   </td>
                   <td className="px-3 py-1.5 text-right">
-                    <Button size="sm" onClick={() => setEditing(u)} aria-label={`Sửa ${u.display_name}`}>Sửa</Button>
+                    <span className="inline-flex gap-1.5">
+                      <Button size="sm" onClick={() => setEditing(u)} aria-label={`Sửa ${u.display_name}`}>Sửa</Button>
+                      {u.id !== me?.id && (
+                        <Button size="sm" variant="ghost" onClick={() => setDeleting(u)} aria-label={`Xoá ${u.display_name}`}>
+                          <Trash2 className="size-4" aria-hidden="true" />
+                          Xoá
+                        </Button>
+                      )}
+                    </span>
                   </td>
                 </tr>
               ))}
@@ -68,6 +87,22 @@ function UsersTab({ users, roles }: { users: AppUser[]; roles: Role[] }) {
           </table>
         </div>
       )}
+      <ConfirmDangerDialog
+        open={deleting !== null}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => deleting && remove.mutate(deleting)}
+        loading={remove.isPending}
+        title={`Xoá tài khoản ${deleting?.display_name ?? ""}`}
+        consequences={
+          <>
+            <span className="block">Người này không đăng nhập infra-ops được nữa; vai trò, phiên đăng nhập và API key cá nhân bị xoá theo.</span>
+            <span className="block">Job, biên bản và nhật ký vẫn giữ tên người này. Cần dùng lại thì thêm người dùng mới.</span>
+          </>
+        }
+        confirmText={deleting?.upn ?? ""}
+        inputLabel={<>Nhập <strong className="font-mono">{deleting?.upn}</strong> để xác nhận</>}
+        confirmLabel="Xoá tài khoản"
+      />
       <UserDialog open={editing !== null} onClose={() => setEditing(null)} user={editing === "new" ? null : editing} roles={roles} />
     </>
   );
