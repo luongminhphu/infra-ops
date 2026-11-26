@@ -1025,3 +1025,46 @@ async def delete_area(
     await session.delete(a)
     await session.commit()
     return Response(status_code=204)
+
+
+# ---------------------------------------------------------------- "Việc tiếp theo": the zones handed to me
+
+
+async def next_action(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
+    """One item per open stocktake where I count zones that still have assets to check."""
+    zones = (
+        await session.execute(
+            select(StocktakeZone, Stocktake)
+            .join(Stocktake, Stocktake.id == StocktakeZone.stocktake_id)
+            .where(StocktakeZone.assignee_user_id == user.id, Stocktake.status == "counting")
+            .order_by(StocktakeZone.position)
+        )
+    ).all()
+    items: list[dict[str, Any]] = []
+    for st in {s for _, s in zones}:
+        mine = [z for z, s in zones if s.id == st.id]
+        left = dict(
+            (
+                await session.execute(
+                    select(StocktakeItem.zone_id, func.count())
+                    .where(StocktakeItem.zone_id.in_([z.id for z in mine]), StocktakeItem.count == "pending")
+                    .group_by(StocktakeItem.zone_id)
+                )
+            ).all()
+        )
+        if not (total := sum(left.values())):
+            continue
+        names = ", ".join(z.name for z in mine if left.get(z.id))
+        items.append(
+            {
+                "key": f"lifecycle.stocktake.{st.id}",
+                "kind": "stocktake",
+                "priority": 2,
+                "title": f"Kiểm kê {names} – còn {total} tài sản",
+                "detail": st.name,
+                "due": st.cutoff.isoformat(),
+                "href": f"/lifecycle/stocktake/{st.id}",
+                "action": "Đi kiểm",
+            }
+        )
+    return items

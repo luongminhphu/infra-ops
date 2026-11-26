@@ -36,6 +36,7 @@ from app.modules.lifecycle.offboard_review import next_action as offboard_review
 from app.modules.lifecycle.offboard_review_api import router as offboard_review_router
 from app.modules.lifecycle.stock import ASSET_DISPOSE, ASSET_STATE
 from app.modules.lifecycle.stock import router as stock_router
+from app.modules.lifecycle.stocktake_api import next_action as stocktake_action
 from app.modules.lifecycle.stocktake_api import router as stocktake_router
 from app.modules.lifecycle.stocktake_record import STOCKTAKE_RECORD
 from app.modules.lifecycle.workflows import OFFBOARD, ONBOARD, TRANSFER
@@ -213,6 +214,7 @@ manifest = ModuleManifest(
         NextActionSource(
             "lifecycle.offboard_review", "lifecycle.offboard_review.export", offboard_review_action
         ),
+        NextActionSource("lifecycle.stocktake", "lifecycle.stocktake.count", stocktake_action),
     ],
     dashboard_widgets=[
         # The team's RTR queue on the main page: technicians take requests themselves (no automatic split);

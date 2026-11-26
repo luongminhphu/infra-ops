@@ -201,6 +201,14 @@ async def test_areas_split_the_count_between_counters(admin, client, configured,
     assert (
         await admin.put(f"{base}/zones/{zones['Tầng 5']['id']}", json={"user_id": str(uuid.uuid4())})
     ).json()["error"]["code"] == "not_a_counter"
+    # The counter sees the zone in "Việc tiếp theo" while assets are left to check.
+    nxt = (await admin.get("/api/core/me/next")).json()["items"]
+    mine = [i for i in nxt if i["kind"] == "stocktake"]
+    assert (
+        mine
+        and mine[0]["title"].startswith("Kiểm kê Tầng 5")
+        and mine[0]["href"] == f"/lifecycle/stocktake/{st['id']}"
+    )
     # Only Administrator / Manager hand out zones: a Supervisor (who otherwise runs the stocktake) may not.
     await _user(admin, "supervisor", "st-sup@test.local")
     await client.login("st-sup@test.local")

@@ -1329,3 +1329,17 @@ Quyết định:
   - Phụ thuộc mới: Pillow (openpyxl cần để chèn ảnh; dùng luôn để kiểm tra file ảnh).
 - **Biên bản kiểm kê** thêm *Phụ lục: danh sách tài sản chi tiết* (trang riêng): khu, tài sản, loại, asset tag/serial,
   Mã TSCĐ, người dùng, kết quả, tình trạng. Khối chữ ký không bị tách trang.
+
+## 54. Kiểm kê: chế độ “Đi kiểm” cho Helpdesk (26/11/2026)
+
+Sau `/impeccable critique` (23/40: màn hình quản lý dùng chung cho cả người đi kiểm):
+- Trang kỳ đang kiểm có hai chế độ: **Đi kiểm** (mặc định cho người được giao khu / Operator) và **Quản lý kỳ**
+  (Manager/Supervisor: chia khu, tiến độ, danh sách đầy đủ, xuất file, kết thúc / đóng kỳ, biên bản).
+- Đi kiểm: một khu một lúc (nút chọn khu của tôi + “Khu khác…”), **thanh quét dính** dưới thanh trên cùng với kết quả
+  ngay dưới (máy của người khác / khu khác được nói rõ; mã quét thiếu → gợi ý máy khớp thay vì “ngoài sổ”), danh sách
+  **theo bàn** (người chưa xong lên trước), mỗi thiết bị “Loại · tem” với nút **Có** lớn, **Hỏng…** mở tình trạng + mô tả,
+  **Có đủ N máy** cho cả bàn, hoàn tác ngay. Nơi thấy tự ghi là khu đang kiểm; máy ngoài sổ điền sẵn khu.
+  Hết máy ở khu → “Tầng 5 xong”.
+- **Việc tiếp theo**: người được giao khu thấy “Kiểm kê Tầng 5, Tầng 7 – còn N tài sản”.
+- Quản lý: đếm ở các tab theo khu / tìm kiếm đang lọc; **Kết thúc kiểm** hỏi xác nhận, nêu khu chưa xong; xoá dòng ngoài
+  sổ / xoá khu bấm hai lần.

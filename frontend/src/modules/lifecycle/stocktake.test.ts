@@ -49,3 +49,26 @@ describe("stocktake areas", () => {
     expect([...takenDepartments(areas, "a")]).toEqual([["it", "Tầng 6"]]);
   });
 });
+
+import { desks, deviceTitle, nearMatches } from "./pages/StocktakeWalk";
+
+describe("stocktake walking mode", () => {
+  const items = [
+    item(1, { user_name: "Trần B", employee_id: "002", count: "found" }),
+    item(2, { user_name: "Lê A", employee_id: "001", product_type: "Monitor", asset_tag: "MN01" }),
+    item(3, { user_name: "Lê A", employee_id: "001", count: "found" }),
+    item(4, { user_name: null, employee_id: null }),
+  ];
+  it("lists desks to check first, one per person, then the done ones", () => {
+    expect(desks(items).map((d) => [d.person, d.left])).toEqual([["Không có người dùng (kho, dùng chung)", 1], ["Lê A", 1], ["Trần B", 0]]);
+  });
+  it("names a device by its type and sticker code", () => {
+    expect(deviceTitle(items[1]!)).toBe("Monitor · MN01");
+    expect(deviceTitle(item(9, { product_type: null, asset_tag: null, serial: "SN9" }))).toBe("Thiết bị · SN9");
+  });
+  it("suggests the device a partial or mis-read code may be", () => {
+    expect(nearMatches(items, "mn0").map((i) => i.id)).toEqual([2]);
+    expect(nearMatches(items, "sn3").map((i) => i.id)).toEqual([3]);
+    expect(nearMatches(items, "ab")).toEqual([]); // too short to guess
+  });
+});
