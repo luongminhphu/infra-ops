@@ -1126,3 +1126,12 @@ Quyết định:
 - Kèm theo: tra thêm user SDP theo Mã NV khi danh sách bỏ sót, phân trang SDP theo id (§ trước), nhóm BioStar loại trừ
   khỏi đối soát (vendor…).
 
+## 38. Job thuyên chuyển / đổi cấp trên (26/11/2026)
+
+- Yêu cầu: đổi cấp trên trực tiếp hoặc thuyên chuyển bộ phận thì IT gỡ user khỏi nhóm AD cũ và thêm vào nhóm mới
+  (quyền thư mục share của phòng ban, nhóm email).
+- Quyết định (chủ sản phẩm): Job thủ công `lifecycle.transfer` – kiểm tra request, xác định user SDP, *Gỡ khỏi nhóm
+  cũ*, *Thêm vào nhóm mới* (manual, checklist + bằng chứng, hiện "Từ: phòng cũ (SDP) → Đến: phòng mới (RTR)"), đóng
+  request SDP. Không tự động sửa AD/Exchange (tích hợp Microsoft vẫn hoãn). RTR "Thay đổi cấp trên trực tiếp" phân
+  loại là Thuyên chuyển; Job nháp được tạo tự động như onboard/offboard.
+

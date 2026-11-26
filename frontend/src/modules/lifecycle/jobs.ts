@@ -52,8 +52,8 @@ export interface Assignment {
   at: string;
 }
 
-/** Onboard/offboard only (the reassignment workflow is an internal helper). */
-export const JOB_WORKFLOWS = "lifecycle.onboard,lifecycle.offboard";
+/** Onboard / offboard / transfer (the reassignment workflow is an internal helper). */
+export const JOB_WORKFLOWS = "lifecycle.onboard,lifecycle.offboard,lifecycle.transfer";
 
 export interface Evidence {
   id: string;
@@ -68,14 +68,14 @@ export interface Evidence {
 
 export interface Job {
   id: string;
-  workflow_key: "lifecycle.onboard" | "lifecycle.offboard" | string;
+  workflow_key: "lifecycle.onboard" | "lifecycle.offboard" | "lifecycle.transfer" | string;
   workflow_title: string;
   status: JobStatus;
   subject_key: string;
   subject_label: string;
   external_ref: string | null;
   params: {
-    kind: "onboard" | "offboard";
+    kind: "onboard" | "offboard" | "transfer";
     request_id: string;
     request_display_id: string | null;
     effective_date: string | null;
@@ -159,7 +159,9 @@ export function operatorTask(job: Pick<Job, "status" | "current_step" | "steps">
   return { act: false, text: `Không cần làm gì: hệ thống đang chạy ${at}, trang tự cập nhật.` };
 }
 
-export const WORKFLOW_LABEL: Record<string, string> = { "lifecycle.onboard": "Onboard", "lifecycle.offboard": "Offboard" };
+export const WORKFLOW_LABEL: Record<string, string> = { "lifecycle.onboard": "Onboard", "lifecycle.offboard": "Offboard", "lifecycle.transfer": "Thuyên chuyển" };
+/** Request kinds that get a Job, with the label used on buttons and headings. */
+export const JOB_KIND_LABEL: Record<string, string> = { onboard: "onboard", offboard: "offboard", transfer: "thuyên chuyển" };
 export const SYSTEM_WRITE_LABEL: Record<string, string> = { sdp: "ServiceDesk Plus", biostar: "BioStar" };
 
 export function useJob(id: string) {

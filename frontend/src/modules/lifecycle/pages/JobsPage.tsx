@@ -155,6 +155,7 @@ export function JobsPage() {
             <option value="">Tất cả</option>
             <option value="lifecycle.onboard">Onboard</option>
             <option value="lifecycle.offboard">Offboard</option>
+            <option value="lifecycle.transfer">Thuyên chuyển</option>
           </Select>
         </Field>
       </form>

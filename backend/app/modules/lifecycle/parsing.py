@@ -99,8 +99,10 @@ def classify_change_type(raw: str | None, settings: LifecycleSettings) -> EventK
         return "onboard"
     if "chinh thuc" in folded:  # RTR "Chính thức": probation ends
         return "probation_to_official"
-    if "cap tren" in folded:  # RTR "Thay đổi cấp trên trực tiếp": no device or access change for IT
-        return "ignore"
+    if (
+        "cap tren" in folded
+    ):  # RTR "Thay đổi cấp trên trực tiếp": IT moves the person's AD groups (transfer job)
+        return "transfer"
     return None
 
 

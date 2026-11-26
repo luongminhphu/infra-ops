@@ -27,7 +27,7 @@ from app.modules.lifecycle.inventory_api import router as inventory_router
 from app.modules.lifecycle.jobs_api import router as jobs_router
 from app.modules.lifecycle.stock import ASSET_DISPOSE, ASSET_STATE
 from app.modules.lifecycle.stock import router as stock_router
-from app.modules.lifecycle.workflows import OFFBOARD, ONBOARD
+from app.modules.lifecycle.workflows import OFFBOARD, ONBOARD, TRANSFER
 
 
 async def _sync(session: AsyncSession) -> dict[str, Any]:
@@ -107,7 +107,7 @@ manifest = ModuleManifest(
         ),
     ],
     routers=[router, documents_router, jobs_router, inventory_router, stock_router],
-    workflows=[ONBOARD, OFFBOARD, REASSIGN_JOB, ASSET_STATE, ASSET_DISPOSE],
+    workflows=[ONBOARD, OFFBOARD, TRANSFER, REASSIGN_JOB, ASSET_STATE, ASSET_DISPOSE],
     document_kinds=[HANDOVER, RETURN],
     nav=[
         NavItem(

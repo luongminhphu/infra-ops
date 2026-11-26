@@ -14,7 +14,7 @@ import { formatDate, formatDateTime } from "@/core/lib/format";
 import type { Issue, ReconRow, RtrRequest } from "../api";
 import { DOC_STATUS, KIND_SHORT_TITLE, SHORT_OF, type Doc } from "../docs";
 import { CELL_STATUS, KIND_LABEL, SEVERITY, SYSTEM_LABEL } from "../labels";
-import { JOB_WORKFLOWS, JOB_STATUS, WORKFLOW_LABEL, jobStatusLabel, type Job } from "../jobs";
+import { JOB_KIND_LABEL, JOB_WORKFLOWS, JOB_STATUS, WORKFLOW_LABEL, jobStatusLabel, type Job } from "../jobs";
 
 interface Detail {
   row: ReconRow;
@@ -130,7 +130,7 @@ function JobsSection({ employeeId, requests, latestId }: { employeeId: string; r
   const withJob = new Set(items.map((j) => j.external_ref));
   // Only the latest request is open work; an older one (the onboard of someone now leaving) never gets a new Job here.
   const open = requests.filter(
-    (r) => r.id === latestId && (r.kind === "onboard" || r.kind === "offboard") && !withJob.has(r.id) && !r.parse_errors.length,
+    (r) => r.id === latestId && !!r.kind && r.kind in JOB_KIND_LABEL && !withJob.has(r.id) && !r.parse_errors.length,
   );
   return (
     <Section title="Xử lý">
@@ -150,11 +150,11 @@ function JobsSection({ employeeId, requests, latestId }: { employeeId: string; r
         open.map((r) => (
           <Button key={r.id} variant="primary" className="mb-2 mr-2" loading={create.isPending && create.variables === r.id} onClick={() => create.mutate(r.id)}>
             <Play className="size-4" aria-hidden="true" />
-            Tạo Job {r.kind === "onboard" ? "onboard" : "offboard"} từ request #{r.display_id ?? r.id}
+            Tạo Job {JOB_KIND_LABEL[r.kind!]} từ request #{r.display_id ?? r.id}
           </Button>
         ))}
       {items.length === 0 && open.length === 0 && (
-        <p className="text-sm text-muted">Chưa có Job cho nhân viên này. Job được tạo từ request RTR Nhân viên mới hoặc Nghỉ việc.</p>
+        <p className="text-sm text-muted">Chưa có Job cho nhân viên này. Job được tạo từ request RTR Nhân viên mới, Nghỉ việc hoặc Thuyên chuyển / đổi cấp trên.</p>
       )}
     </Section>
   );
