@@ -29,7 +29,13 @@ class FakeSystems:
     def __init__(self) -> None:
         self.requests = {"9101": "Open", "9102": "Open"}
         self.users = [
-            {"id": "u1", "name": "Nguyễn Văn An", "employee_id": "003551"},
+            {
+                "id": "u1",
+                "name": "Nguyễn Văn An",
+                "employee_id": "003551",
+                "job_title": "Chuyên viên",
+                "department": {"name": "Kinh Doanh", "site": {"name": "AB Tower"}},
+            },
             {"id": "u2", "name": "Phạm Thị Bình", "employee_id": "002100"},
         ]
         self.assets = {
@@ -432,6 +438,9 @@ async def test_onboard_end_to_end(admin, systems) -> None:  # type: ignore[no-un
     doc_id = doc_step["output"]["document_id"]
     doc = (await admin.get(f"/api/core/documents/{doc_id}")).json()
     assert doc["data"]["assets"][0]["tag"] == "LT5001" and doc["data"]["reviewer"] == "Trần Văn Quản"
+    # Job title and work location come from the SDP user found by the job.
+    emp = doc["data"]["employee"]
+    assert (emp["job_title"], emp["work_location"]) == ("Chuyên viên", "AB Tower")
     # Not signed yet → job cannot finish
     await run_worker()
     assert (await job(admin, j["id"]))["status"] == "waiting"

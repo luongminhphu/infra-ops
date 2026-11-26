@@ -99,11 +99,29 @@ async def preview_check_request(ctx: StepContext) -> list[str]:
 
 async def find_sdp_user(ctx: StepContext) -> StepOutcome:
     """Find the SDP user (imported from AD via LDAP) carrying the employee ID. Waits while it does not exist yet."""
-    if ctx.params.get("sdp_user_id"):
+    if uid := ctx.params.get("sdp_user_id"):
+        # Chosen in the job: job title / site for the record come from the latest synced SDP user.
+        run = await latest_run(ctx.session)
+        snap = (
+            await ctx.session.scalar(
+                select(Snapshot).where(
+                    Snapshot.run_id == run.id, Snapshot.system == "sdp_user", Snapshot.external_id == uid
+                )
+            )
+            if run
+            else None
+        )
+        known = snap.data if snap else {}
         return StepOutcome(
             "done",
-            f"Dùng user SDP đã chọn: {ctx.params.get('sdp_user_name') or ctx.params['sdp_user_id']}.",
-            {"sdp_user_id": ctx.params["sdp_user_id"], "sdp_user_name": ctx.params.get("sdp_user_name")},
+            f"Dùng user SDP đã chọn: {ctx.params.get('sdp_user_name') or uid}.",
+            {
+                "sdp_user_id": uid,
+                "sdp_user_name": ctx.params.get("sdp_user_name"),
+                "job_title": known.get("job_title"),
+                "site": known.get("site"),
+                "department": known.get("department"),
+            },
         )
     s = await load_module_settings(ctx.session)
     emp = _emp(ctx)
@@ -133,7 +151,14 @@ async def find_sdp_user(ctx: StepContext) -> StepOutcome:
     return StepOutcome(
         "done",
         f"Tìm thấy user SDP {u['name']}{f' ({u["email"]})' if u.get('email') else ''}.",
-        {"sdp_user_id": u["id"], "sdp_user_name": u["name"]},
+        # Job title and work location for the handover / return record (SDP is the reference).
+        {
+            "sdp_user_id": u["id"],
+            "sdp_user_name": u["name"],
+            "job_title": u.get("job_title"),
+            "site": u.get("site"),
+            "department": u.get("department"),
+        },
     )
 
 
@@ -201,13 +226,14 @@ async def _document_step(ctx: StepContext, kind_short: str) -> StepOutcome:
         return StepOutcome(
             "failed", "Không có thiết bị nào để lập biên bản. Bỏ qua bước này nếu không cần biên bản."
         )
+    sdp = ctx.outputs.get("find_sdp_user") or {}
     data = {
         "employee": {
             "id": emp["id"],
             "full_name": emp.get("full_name") or emp["id"],
-            "department": emp.get("department") or "",
-            "job_title": emp.get("job_title") or "",
-            "work_location": emp.get("work_location") or "",
+            "department": sdp.get("department") or emp.get("department") or "",
+            "job_title": sdp.get("job_title") or emp.get("job_title") or "",
+            "work_location": sdp.get("site") or emp.get("work_location") or "",
         },
         "date": today,
         "it_rep": await _users_by_upn(ctx.session, ctx.job.started_by) or "IT Helpdesk",

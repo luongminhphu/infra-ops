@@ -82,9 +82,17 @@ SDP_USERS = [
         "name": "Nguyễn Văn An",
         "email_id": "an.nv@congty.local",
         "employee_id": "003551",
-        "department": {"name": "Kinh Doanh"},
+        "job_title": "Chuyên viên",
+        "department": {"name": "Kinh Doanh", "site": {"name": "AB Tower"}},
     },
-    {"id": "u2", "name": "Phạm Thị Bình", "email_id": "binh.pt@congty.local", "employee_id": "002100"},
+    {
+        "id": "u2",
+        "name": "Phạm Thị Bình",
+        "email_id": "binh.pt@congty.local",
+        "employee_id": "002100",
+        "job_title": "Kế toán viên",
+        "department": {"name": "Kế Toán", "site": {"name": "AB Tower, 76A Le Lai"}},
+    },
     {"id": "u3", "name": "Đỗ Minh Châu", "employee_id": "001500"},
 ]
 

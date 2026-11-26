@@ -38,6 +38,11 @@ def sdp_user(raw: dict[str, Any], employee_id_field: str) -> dict[str, Any]:
         "email": raw.get("email_id"),
         "employee_id": str(emp).strip() if emp not in (None, "") else None,
         "department": _name(raw.get("department")),
+        # Work location: the department's site (SDP shows it after the department name), else the user's site.
+        "site": _name(
+            (raw.get("department") or {}).get("site") if isinstance(raw.get("department"), dict) else None
+        )
+        or _name(raw.get("site")),
         "job_title": raw.get("job_title"),
         "is_technician": bool(raw.get("is_technician", False)),
     }
