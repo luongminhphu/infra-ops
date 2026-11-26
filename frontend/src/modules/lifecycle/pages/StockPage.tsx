@@ -413,8 +413,8 @@ export function StockPage() {
   const alloc = useQuery({ queryKey: ALLOC_KEY, queryFn: () => api<Allocation>("/api/lifecycle/allocation") });
   const stock = useQuery({ queryKey: STOCK_KEY, queryFn: () => api<Stock>("/api/lifecycle/stock") });
   const purchases = useQuery({
-    queryKey: ["workload", "purchases", "onboard"],
-    queryFn: () => api<{ items: PurchaseLite[] }>("/api/workload/purchases"),
+    queryKey: ["workload", "purchases", "onboard-proposed"],
+    queryFn: () => api<{ items: PurchaseLite[] }>("/api/workload/purchases/onboard-proposed"),
     enabled: can("workload.tickets.view"),
   });
   const a = alloc.data;

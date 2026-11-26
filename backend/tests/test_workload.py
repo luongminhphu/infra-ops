@@ -548,12 +548,12 @@ async def test_po_limit_close_and_email(client) -> None:  # type: ignore[no-unty
         )
     ).json()
     ids = []
-    for qty in (2, 1, 1):  # 40M + 20M fit in PO 1; the last 20M opens PO 2
+    for n, qty in enumerate((2, 1, 1), 1):  # 40M + 20M fit in PO 1; the last 20M opens PO 2
         p = (
             await client.post(
                 "/api/workload/purchases",
                 json={"kind": "new", "item": "Màn hình", "quantity": qty, "catalog_item_id": cat["id"],
-                      "source": "onboard", "source_ref": "RTR-1", "employee": "Nguyễn Văn A"},
+                      "source": "onboard", "source_ref": f"RTR-{n}", "employee": "Nguyễn Văn A"},
             )
         ).json()  # fmt: skip
         await client.post(
@@ -1247,3 +1247,37 @@ async def test_tasks_of_operators_not_in_app_are_hidden(admin, sdp) -> None:  # 
         t["id"] for t in (await admin.get("/api/workload/tickets", params={"state": "all"})).json()["items"]
     }
     assert "99001" in listed
+
+
+async def test_onboard_line_is_proposed_once_whoever_proposes(admin, client) -> None:  # type: ignore[no-untyped-def]
+    """An Operator sees (only the minimum of) others' onboard proposals and cannot propose the same line twice."""
+    await _user(admin, "operator", "dup-op1@test.local")
+    await _user(admin, "operator", "dup-op2@test.local")
+    await _user(admin, "manager", "wl-mgr@test.local")
+    body = {"kind": "new", "item": "Laptop Dell 5450", "quantity": 1, "source": "onboard", "source_ref": "RTR-DUP",
+            "reason": "kho hết"}  # fmt: skip
+    await client.login("dup-op1@test.local")
+    first = await client.post("/api/workload/purchases", json=body)
+    assert first.status_code == 201, first.text
+
+    await client.login("dup-op2@test.local")
+    # Not in their own list (row-level scope), but visible as "already proposed" for the line.
+    assert all(
+        p["source_ref"] != "RTR-DUP" for p in (await client.get("/api/workload/purchases")).json()["items"]
+    )
+    seen = (await client.get("/api/workload/purchases/onboard-proposed")).json()["items"]
+    mine = [x for x in seen if x["source_ref"] == "RTR-DUP"]
+    assert mine == [{"source_ref": "RTR-DUP", "item": "Laptop Dell 5450", "status": "proposed"}]
+    dup = await client.post("/api/workload/purchases", json={**body, "item": " laptop dell 5450 "})
+    assert dup.status_code == 409 and dup.json()["error"]["code"] == "purchase_duplicate", dup.text
+    # Another line of the same request is fine.
+    assert (
+        await client.post("/api/workload/purchases", json={**body, "item": "Màn hình 24"})
+    ).status_code == 201
+
+    # Once rejected, the line can be proposed again.
+    await client.login("wl-mgr@test.local")
+    r = await client.patch(f"/api/workload/purchases/{first.json()['id']}", json={"status": "rejected", "note": "trùng"})
+    assert r.status_code == 200, r.text
+    await client.login("dup-op2@test.local")
+    assert (await client.post("/api/workload/purchases", json=body)).status_code == 201

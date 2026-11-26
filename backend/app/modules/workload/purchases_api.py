@@ -25,7 +25,7 @@ from app.core.auth.models import User
 from app.core.config import get_settings
 from app.core.connections.models import ConnectionProfile
 from app.core.db import get_session
-from app.core.errors import AppError, NotFound
+from app.core.errors import AppError, Conflict, NotFound
 from app.core.storage.models import StoredFile
 from app.core.storage.service import check_size, get_storage, read_file, safe_filename, save_file, sniff
 from app.core.workflow.engine import create_job, start_job
@@ -269,6 +269,33 @@ async def list_purchases(
     return {"items": await _full(session, list(rows), user), "counts": counts}
 
 
+def _onboard_open(ref: str) -> Any:
+    """Onboard proposals for a request, whoever made them; rejected ones no longer cover the line."""
+    return select(PurchaseRequest).where(
+        PurchaseRequest.source == "onboard",
+        PurchaseRequest.source_ref == ref,
+        PurchaseRequest.status != "rejected",
+    )
+
+
+@router.get("/purchases/onboard-proposed")
+async def onboard_proposed(
+    _: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """Which onboard device lines already have a proposal, from anyone – so nobody proposes the same line twice.
+
+    Only what is needed to tell (request, item, status): no prices, people or reasons of others' proposals.
+    """
+    rows = await session.execute(
+        select(PurchaseRequest.source_ref, PurchaseRequest.item, PurchaseRequest.status).where(
+            PurchaseRequest.source == "onboard",
+            PurchaseRequest.source_ref.is_not(None),
+            PurchaseRequest.status != "rejected",
+        )
+    )
+    return {"items": [{"source_ref": r, "item": i, "status": st} for r, i, st in rows.all()]}
+
+
 async def _own_ticket(session: AsyncSession, user: CurrentUser, ticket_id: str) -> Ticket:
     """The ticket, if the user may act on it: without view_all only tickets assigned to them."""
     ticket = await session.get(Ticket, ticket_id)
@@ -310,11 +337,26 @@ async def create_purchase(
     if body.ticket_id:
         display = (await _own_ticket(session, user, body.ticket_id)).display_id
     await _catalog(session, body.catalog_item_id)
+    ref = body.source_ref or None
+    if body.source == "onboard" and not body.ticket_id and ref:
+        # shortcut: check-then-insert, two clicks in the same instant can still both pass; add a partial
+        # unique index if that is ever seen.
+        same = [
+            x
+            for x in (await session.scalars(_onboard_open(ref))).all()
+            if x.item.casefold() == body.item.strip().casefold()
+        ]
+        if same:
+            raise Conflict(
+                f"Request #{ref} đã có đề xuất mua “{same[0].item}” (người lập: {same[0].created_by}). "
+                "Không lập trùng – nếu cần đổi, nhờ Supervisor từ chối đề xuất cũ rồi lập lại.",
+                code="purchase_duplicate",
+            )
     p = PurchaseRequest(
         ticket_id=body.ticket_id,
         ticket_display_id=display,
         source="ticket" if body.ticket_id else body.source,
-        source_ref=display if body.ticket_id else (body.source_ref or None),
+        source_ref=display if body.ticket_id else ref,
         employee=(body.employee or "").strip() or None,
         catalog_item_id=body.catalog_item_id,
         kind=body.kind,

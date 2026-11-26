@@ -153,9 +153,9 @@ function PrepareWizard({ job, act, canRun }: { job: Job; act: ReturnType<typeof 
   });
   const { can } = useAuth();
   const purchases = useQuery({
-    queryKey: ["workload", "purchases", "onboard"],
-    queryFn: () => api<{ items: { source_ref: string | null; item: string; status: string }[] }>("/api/workload/purchases"),
-    enabled: steps[i]?.key === "devices" && can("workload.purchase.create"),
+    queryKey: ["workload", "purchases", "onboard-proposed"],
+    queryFn: () => api<{ items: { source_ref: string | null; item: string; status: string }[] }>("/api/workload/purchases/onboard-proposed"),
+    enabled: steps[i]?.key === "devices" && can("workload.tickets.view"),
   });
   const preview = useQuery({
     queryKey: ["job-preview", job.id, job.version],
