@@ -9,7 +9,7 @@ import { PurchasesPage } from "./pages/PurchasesPage";
 import { NewPurchasePage } from "./pages/NewPurchasePage";
 import { ReceivePage } from "./pages/ReceivePage";
 
-/** Module 2 – Helpdesk/Support workload from ServiceDesk Plus. */
+/** Module 2 – Infra Support workload from ServiceDesk Plus. */
 export const workloadModule: FrontendModule = {
   id: "workload",
   routes: [

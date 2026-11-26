@@ -237,7 +237,7 @@ async def _document_step(ctx: StepContext, kind_short: str) -> StepOutcome:
             "work_location": sdp.get("site") or emp.get("work_location") or "",
         },
         "date": today,
-        "it_rep": await _users_by_upn(ctx.session, ctx.job.started_by) or "IT Helpdesk",
+        "it_rep": await _users_by_upn(ctx.session, ctx.job.started_by) or "Infra Support",
         "reviewer": s.reviewer_name,
         "request_id": ctx.params.get("request_id"),
         "assets": assets,
@@ -482,7 +482,7 @@ async def preview_doc(ctx: StepContext) -> list[str]:
     title = "Biên bản Bàn giao" if ctx.params.get("kind") == "onboard" else "Biên bản Thu hồi"
     return [
         f"Tự lập bản nháp {title} từ các thiết bị của Job.",
-        "Chờ Helpdesk chốt, in, lấy chữ ký và tải bản đã ký lên.",
+        "Chờ Infra Support chốt, in, lấy chữ ký và tải bản đã ký lên.",
     ]
 
 
@@ -782,7 +782,7 @@ OFFBOARD = WorkflowDefinition(
             "collect_assets",
             "Thu hồi tài sản (xác nhận tình trạng)",
             "manual",
-            "Helpdesk nhận lại thiết bị và chọn tình trạng: Tốt / Hỏng / Thiếu phụ kiện / Chưa thu hồi.",
+            "Infra Support nhận lại thiết bị và chọn tình trạng: Tốt / Hỏng / Thiếu phụ kiện / Chưa thu hồi.",
             run=collect_assets,
             prepare=prepare_collect,
             skippable=False,

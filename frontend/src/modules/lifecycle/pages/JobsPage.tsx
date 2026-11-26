@@ -121,7 +121,7 @@ export function JobsPage() {
         title="Job onboard / offboard"
         description="Mỗi request RTR (nhân viên mới / nghỉ việc) có một Job. Job nháp được tạo tự động sau mỗi lần đồng bộ; Operator kiểm tra, chọn tài sản rồi bắt đầu."
       />
-      {/* Same filter control as the Helpdesk pages; empty states are dimmed, not hidden. */}
+      {/* Same filter control as the Infra Support pages; empty states are dimmed, not hidden. */}
       {assignee && (
         <p className="mb-2 flex flex-wrap items-center gap-2 text-sm">
           <span>Chỉ Job bạn phụ trách.</span>

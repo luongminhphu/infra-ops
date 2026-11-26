@@ -29,7 +29,7 @@ class Technician(Base):
 
 
 class Ticket(Base):
-    """Snapshot of an SDP request (Helpdesk/Support task)."""
+    """Snapshot of an SDP request (Infra Support task)."""
 
     __tablename__ = "workload_ticket"
 

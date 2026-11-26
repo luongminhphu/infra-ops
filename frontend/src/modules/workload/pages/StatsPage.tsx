@@ -133,8 +133,8 @@ export function StatsPage() {
         title="Thống kê công việc"
         description={
           techs.data && !techs.data.view_all
-            ? "Task Helpdesk/Support của bạn: tiếp nhận, hoàn tất và quá hạn. Ngày tính theo giờ Việt Nam."
-            : "Task Helpdesk/Support tiếp nhận, hoàn tất và quá hạn theo Operator. Ngày tính theo giờ Việt Nam."
+            ? "Task Infra Support của bạn: tiếp nhận, hoàn tất và quá hạn. Ngày tính theo giờ Việt Nam."
+            : "Task Infra Support tiếp nhận, hoàn tất và quá hạn theo Operator. Ngày tính theo giờ Việt Nam."
         }
       />
       <div className="mb-4 flex flex-wrap items-end gap-3">

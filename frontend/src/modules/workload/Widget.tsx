@@ -8,7 +8,7 @@ import { formatDateTime } from "@/core/lib/format";
 import { useTechnicians, type Ticket } from "./api";
 
 /**
- * Dashboard "next action" for the Helpdesk workload. Operators see their own overdue tasks;
+ * Dashboard "next action" for the Infra Support workload. Operators see their own overdue tasks;
  * managers/supervisors see the team's overdue and unassigned tasks (the API scopes the data).
  */
 export function WorkloadNextWidget() {
