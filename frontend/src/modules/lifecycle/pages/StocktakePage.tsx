@@ -93,6 +93,11 @@ const COUNT: Record<Count, { label: string; status: Status }> = {
 const CONDITION: Record<Condition, string> = { good: "Tốt", damaged: "Hư hỏng nhẹ", broken: "Hỏng, không dùng được" };
 const STATUS: Record<Head["status"], Status> = { counting: "in_progress", reviewing: "waiting", closed: "done" };
 const SHOWN = 200;
+/** The two ways into an open stocktake: walking a floor, or the whole picture to follow up and finish. */
+const MODES = [
+  ["walk", "Đi kiểm", "Quét tem hoặc bấm Có từng máy ở khu bạn được giao, theo từng bàn."],
+  ["manage", "Tổng hợp & xử lý", "Tiến độ các khu, giao khu, danh sách đầy đủ, chênh lệch và hướng xử lý, kết thúc kiểm, xuất file."],
+] as const;
 
 export type View = "all" | "pending" | "missing" | "found" | "differences" | "extra";
 
@@ -253,7 +258,7 @@ export function StocktakePage() {
     { key: "extra", label: "Ngoài sổ SDP", n: n("extra") },
     { key: "all", label: "Tất cả", n: n("all") },
   ];
-  // Đi kiểm (walking a floor) for whoever counts while the count is on; Quản lý kỳ for the rest of the job.
+  // Đi kiểm (walking a floor) for whoever counts while the count is on; Tổng hợp & xử lý for the rest of the job.
   const canWalk = counting && s.status === "counting" && s.zones.length > 0;
   const mode = canWalk && (params.get("mode") ?? (mine.length || !manage ? "walk" : "manage")) === "walk" ? "walk" : "manage";
   const setMode = (m: "walk" | "manage") => setParams((p) => { p.set("mode", m); return p; }, { replace: true });
@@ -277,12 +282,15 @@ export function StocktakePage() {
         }
       />
       {canWalk && (
-        <div role="tablist" aria-label="Chế độ" className="mb-4 inline-flex rounded-md border border-line-strong bg-surface p-0.5">
-          {([["walk", "Đi kiểm"], ["manage", "Quản lý kỳ"]] as const).map(([m, label]) => (
-            <button key={m} type="button" role="tab" aria-selected={mode === m} onClick={() => setMode(m)} className={`min-h-10 rounded-sm px-4 text-base transition-colors duration-150 ${mode === m ? "bg-primary text-on-primary" : "text-ink hover:bg-surface-2"}`}>
-              {label}
-            </button>
-          ))}
+        <div className="mb-4 grid gap-1.5">
+          <div role="tablist" aria-label="Chế độ" className="inline-flex w-fit rounded-md border border-line-strong bg-surface p-0.5">
+            {MODES.map(([m, label]) => (
+              <button key={m} type="button" role="tab" aria-selected={mode === m} onClick={() => setMode(m)} className={`min-h-10 rounded-sm px-4 text-base transition-colors duration-150 ${mode === m ? "bg-primary text-on-primary" : "text-ink hover:bg-surface-2"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="text-sm text-muted text-pretty">{mode === "manage" && !manage ? "Xem tiến độ các khu và danh sách đầy đủ tài sản của kỳ kiểm kê." : MODES.find(([m]) => m === mode)![2]}</p>
         </div>
       )}
       {mode === "walk" ? (

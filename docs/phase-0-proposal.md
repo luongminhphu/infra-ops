@@ -1333,7 +1333,7 @@ Quyết định:
 ## 54. Kiểm kê: chế độ “Đi kiểm” cho Helpdesk (26/11/2026)
 
 Sau `/impeccable critique` (23/40: màn hình quản lý dùng chung cho cả người đi kiểm):
-- Trang kỳ đang kiểm có hai chế độ: **Đi kiểm** (mặc định cho người được giao khu / Operator) và **Quản lý kỳ**
+- Trang kỳ đang kiểm có hai chế độ: **Đi kiểm** (mặc định cho người được giao khu / Operator) và **Tổng hợp & xử lý**
   (Manager/Supervisor: chia khu, tiến độ, danh sách đầy đủ, xuất file, kết thúc / đóng kỳ, biên bản).
 - Đi kiểm: một khu một lúc (nút chọn khu của tôi + “Khu khác…”), **thanh quét dính** dưới thanh trên cùng với kết quả
   ngay dưới (máy của người khác / khu khác được nói rõ; mã quét thiếu → gợi ý máy khớp thay vì “ngoài sổ”), danh sách
@@ -1341,5 +1341,5 @@ Sau `/impeccable critique` (23/40: màn hình quản lý dùng chung cho cả ng
   **Có đủ N máy** cho cả bàn, hoàn tác ngay. Nơi thấy tự ghi là khu đang kiểm; máy ngoài sổ điền sẵn khu.
   Hết máy ở khu → “Tầng 5 xong”.
 - **Việc tiếp theo**: người được giao khu thấy “Kiểm kê Tầng 5, Tầng 7 – còn N tài sản”.
-- Quản lý: đếm ở các tab theo khu / tìm kiếm đang lọc; **Kết thúc kiểm** hỏi xác nhận, nêu khu chưa xong; xoá dòng ngoài
+- Tổng hợp & xử lý: đếm ở các tab theo khu / tìm kiếm đang lọc; **Kết thúc kiểm** hỏi xác nhận, nêu khu chưa xong; xoá dòng ngoài
   sổ / xoá khu bấm hai lần.
