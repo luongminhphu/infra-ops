@@ -45,6 +45,8 @@ Tài liệu: [cài đặt Ubuntu + Docker](docs/install-ubuntu-docker.md) · [ki
 ### Module Công việc Infra Support
 - Task SDP theo từng Operator (chưa bắt đầu / đang thực hiện / tạm dừng / quá hạn / đã xong), **chuyển việc**
   (đổi technician trên SDP), **thống kê** theo tuần → năm hoặc khoảng ngày tuỳ chọn; tạo tài khoản Operator khi Administrator xác nhận.
+- **Xuất Excel** task theo bộ lọc đang chọn: sheet *Tổng hợp tồn* (theo người xử lý: đang mở, chưa bắt đầu / đang
+  thực hiện / tạm dừng, quá hạn chia theo mức trễ, tồn lâu nhất) và sheet *Chi tiết task* (số ngày trễ, số ngày tồn).
 - **Đề xuất mua thiết bị** từng bước (gợi ý từ request và từ onboard thiếu máy), bằng chứng Function Head đã duyệt.
 - **Định giá**: PC/Laptop theo báo giá từng đề xuất (trên 20 triệu cần 3 báo giá, lấy giá thấp nhất, xác nhận
   *không có hàng* kèm ảnh chụp website); thiết bị khác theo **Bảng giá** cập nhật từ PDF báo giá, **tự nhận diện

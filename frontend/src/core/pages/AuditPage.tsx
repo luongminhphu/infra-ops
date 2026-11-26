@@ -46,6 +46,7 @@ export const ACTION_LABEL: Record<string, string> = {
   "lifecycle.issue_acknowledged": "Đánh dấu lệch đã biết",
   "lifecycle.issue_reopened": "Mở lại lệch",
   "lifecycle.reconciliation_exported": "Xuất danh sách đối soát",
+  "workload.tickets_exported": "Xuất Excel task Infra Support",
   "workflow.job_created": "Tạo Job",
   "workflow.job_started": "Bắt đầu Job",
   "workflow.job_params_updated": "Sửa dữ liệu Job",

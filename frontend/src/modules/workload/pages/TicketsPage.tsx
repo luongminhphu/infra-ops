@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowRightLeft, ListChecks, RefreshCw } from "lucide-react";
+import { ArrowRightLeft, Download, ListChecks, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { useSearchParams } from "react-router-dom";
-import { api } from "@/core/api/client";
+import { api, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { Button } from "@/core/ui/button";
 import { DataTable } from "@/core/ui/data-table";
@@ -249,6 +249,25 @@ export function TicketsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, canAssign, selected, allOn, selectable.join()]);
 
+  const [exporting, setExporting] = useState(false);
+  const download = async () => {
+    setExporting(true);
+    try {
+      const qs = new URLSearchParams({ state, technician_id: tech, q: debounced });
+      const res = await fetch(`/api/workload/tickets/export?${qs}`, { credentials: "same-origin" });
+      if (!res.ok) throw new Error("Không xuất được file. Thử lại sau.");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(await res.blob());
+      a.download = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "task-infra-support.xlsx";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const t = techs.data;
   return (
     <>
@@ -262,12 +281,22 @@ export function TicketsPage() {
           </>
         }
         actions={
-          can("workload.sync.run") && (
-            <Button onClick={() => syncNow.mutate()} loading={syncNow.isPending || sync.data?.task?.running}>
-              <RefreshCw className="size-4" aria-hidden="true" />
-              Đồng bộ ngay
+          <span className="inline-flex flex-wrap gap-2">
+            <Button
+              onClick={download}
+              loading={exporting}
+              title="Bảng tổng hợp task tồn theo người xử lý và danh sách task theo bộ lọc đang chọn"
+            >
+              <Download className="size-4" aria-hidden="true" />
+              Xuất Excel
             </Button>
-          )
+            {can("workload.sync.run") && (
+              <Button onClick={() => syncNow.mutate()} loading={syncNow.isPending || sync.data?.task?.running}>
+                <RefreshCw className="size-4" aria-hidden="true" />
+                Đồng bộ ngay
+              </Button>
+            )}
+          </span>
         }
       />
 
