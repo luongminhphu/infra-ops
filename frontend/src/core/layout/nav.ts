@@ -14,9 +14,13 @@ export interface RailSection {
 /** The entry module (its pages live under the Playbook rail entry, not under Công cụ). */
 const ENTRY = "playbook";
 
+/** Module pages by menu heading (the order the backend gives each heading); a page's own order is kept within one. */
+const byHeading = (items: NavItem[]) => [...items].sort((a, b) => (a.group_order ?? 99) - (b.group_order ?? 99));
+
 /**
- * Rail = Playbook (the entry point: "what do you need to handle?"), Việc của tôi, Công cụ (every module page,
- * grouped by module – opened from Playbook steps or from here) and Hệ thống at the bottom.
+ * Rail = Playbook (the entry point: "what do you need to handle?"), Việc của tôi, Công cụ (module pages grouped
+ * by what they are for – opened from Playbook steps or from here), Báo cáo (statistics and review reports)
+ * and Hệ thống at the bottom.
  */
 export function railSections(nav: NavGroup[]): RailSection[] {
   const out: RailSection[] = [];
@@ -25,15 +29,17 @@ export function railSections(nav: NavGroup[]): RailSection[] {
   let mine: NavItem | undefined;
   const entry: NavItem[] = [];
   const tools: NavItem[] = [];
+  const reports: NavItem[] = [];
   for (const g of nav) {
     if (g.module === "core") {
       home = g.items.find((i) => i.path === "/");
       mine = g.items.find((i) => i.path === "/me/work");
-      system = g.items.filter((i) => i.path !== "/" && i.path !== "/me/work");
+      reports.push(...g.items.filter((i) => i.section === "reports"));
+      system = g.items.filter((i) => i.path !== "/" && i.path !== "/me/work" && i.section !== "reports");
     } else if (g.module === ENTRY) {
       entry.push(...g.items);
     } else {
-      tools.push(...g.items.map((i) => ({ ...i, group: g.label })));
+      for (const i of g.items) (i.section === "reports" ? reports : tools).push({ ...i, group: i.group || g.label });
     }
   }
   if (home) {
@@ -43,9 +49,9 @@ export function railSections(nav: NavGroup[]): RailSection[] {
   if (mine) out.push({ id: "mine", label: "Việc của tôi", title: "Việc của tôi", icon: mine.icon, items: [mine] });
   if (tools.length && home) {
     const all = { label: "Tất cả công cụ", path: "/tools", icon: "layout-grid", permission: home.permission };
-    const overview = { label: "Tổng quan số liệu", path: "/overview", icon: "layout-dashboard", permission: home.permission };
-    out.push({ id: "tools", label: "Công cụ", title: "Công cụ", icon: "layout-grid", items: [all, overview, ...tools] });
+    out.push({ id: "tools", label: "Công cụ", title: "Công cụ", icon: "layout-grid", items: [all, ...byHeading(tools)] });
   }
+  if (reports.length) out.push({ id: "reports", label: "Báo cáo", title: "Báo cáo", icon: "file-chart-column", items: byHeading(reports) });
   if (system.length) out.push({ id: "system", label: "Hệ thống", title: "Hệ thống", icon: "settings", items: system, bottom: true });
   return out;
 }

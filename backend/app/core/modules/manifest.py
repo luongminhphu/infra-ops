@@ -27,6 +27,19 @@ class Permission:
     default_roles: tuple[SystemRole, ...] = ()
 
 
+# Menu headings, in display order. Modules file each page under one by what it is for, so pages of
+# different modules that do the same kind of work sit together. Report headings form the "Báo cáo" menu;
+# the others the "Công cụ" menu.
+NAV_WORK = "Xử lý công việc"
+NAV_ASSETS = "Thiết bị & biên bản"
+NAV_SOURCES = "Dữ liệu nguồn"
+NAV_SETUP = "Quy trình & cấu hình"
+NAV_STATS = "Thống kê"
+NAV_REVIEWS = "Báo cáo rà soát"
+NAV_GROUPS = (NAV_WORK, NAV_ASSETS, NAV_SOURCES, NAV_SETUP, NAV_STATS, NAV_REVIEWS)
+NAV_REPORT_GROUPS = frozenset({NAV_STATS, NAV_REVIEWS})
+
+
 @dataclass(frozen=True)
 class NavItem:
     """Sidebar entry. ``path`` is the frontend route, ``permission`` gates visibility."""
@@ -35,7 +48,7 @@ class NavItem:
     path: str
     icon: str
     permission: str
-    # Optional heading the item is listed under in the module's sub-navigation.
+    # Heading the item is listed under: one of NAV_GROUPS ("" = under the module name, in "Công cụ").
     group: str = ""
 
 

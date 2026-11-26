@@ -24,6 +24,7 @@ import {
   Route,
   UserCheck,
   ShoppingCart,
+  FileChartColumn,
 } from "lucide-react";
 
 /** Icon names used by backend manifests (nav items, connectors) → components. */
@@ -51,6 +52,7 @@ const ICONS: Record<string, LucideIcon> = {
   "shopping-cart": ShoppingCart,
   package: Package,
   archive: Archive,
+  "file-chart-column": FileChartColumn,
 };
 
 export function iconFor(name: string): LucideIcon {
