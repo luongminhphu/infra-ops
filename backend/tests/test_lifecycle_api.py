@@ -219,12 +219,14 @@ async def test_end_to_end_sync_and_reconciliation(admin, configured, respx_mock)
 
     # Document prefill from the RTR request + latest asset snapshot
     pre = (
-        await admin.get(
-            "/api/lifecycle/documents/prefill", params={"kind": "return", "employee_id": "002100"}
-        )
+        await admin.get("/api/lifecycle/documents/prefill", params={"kind": "return", "employee_id": "2100"})
     ).json()
+    # "2100" means "002100"; job title and work location come from the SDP user (department site).
+    assert pre["employee"]["id"] == "002100"
     assert pre["employee"]["full_name"] == "Phạm Thị Bình" and pre["request_id"] == "1002"
     assert pre["employee"]["department"].startswith("Kế Toán")
+    assert pre["employee"]["job_title"] == "Kế toán viên"
+    assert pre["employee"]["work_location"] == "AB Tower, 76A Le Lai"
     assert [a["tag"] for a in pre["assets"]] == ["LT0123"] and pre["assets"][0]["condition"] == "good"
     missing = await admin.get(
         "/api/lifecycle/documents/prefill", params={"kind": "handover", "employee_id": "777777"}

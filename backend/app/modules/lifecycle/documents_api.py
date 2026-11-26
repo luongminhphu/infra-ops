@@ -57,8 +57,12 @@ async def prefill(
     user: CurrentUser = Depends(create),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    """Suggest form data from the latest RTR request and the latest SDP asset snapshot."""
+    """Suggest form data from the SDP user (name, department, job title, site), the latest RTR request and the
+    latest SDP asset snapshot."""
     settings = await load_module_settings(session)
+    # shortcut: SDP employee IDs are 6 digits, so "3268" means "003268"; revisit if IDs get longer.
+    if employee_id.isdigit() and len(employee_id) < 6:
+        employee_id = employee_id.zfill(6)
     wanted = {"handover": ("onboard", "transfer"), "return": ("offboard", "transfer")}[kind]
     reqs = (
         await session.scalars(
@@ -88,6 +92,16 @@ async def prefill(
                 )
             ).all()
             assets = [s.data for s in snaps]
+    sdp_user: dict[str, Any] = {}
+    if row is not None and row.data.get("sdp_user_ids"):
+        snap = await session.scalar(
+            select(Snapshot).where(
+                Snapshot.run_id == row.run_id,
+                Snapshot.system == "sdp_user",
+                Snapshot.external_id == row.data["sdp_user_ids"][0],
+            )
+        )
+        sdp_user = snap.data if snap else {}
     if req is None and row is None:
         raise NotFound(f"Không tìm thấy dữ liệu của Mã NV {employee_id}. Đồng bộ dữ liệu hoặc nhập tay.")
 
@@ -106,15 +120,24 @@ async def prefill(
     if kind == "return":
         for line in lines:
             line["condition"] = "good"
-    department = fields.get("department") or (row.department if row else "") or ""
+    # SDP is the reference (§37); the RTR request fills what SDP lacks.
     unit = fields.get("unit")
+    rtr_department = (
+        f"{fields['department']} – {unit}" if unit and fields.get("department") else fields.get("department")
+    )
     return {
         "employee": {
             "id": employee_id,
-            "full_name": (req.full_name if req else None) or (row.full_name if row else ""),
-            "department": f"{department} – {unit}" if unit and department else department,
-            "job_title": fields.get("job_title") or "",
-            "work_location": fields.get("work_location") or "",
+            "full_name": sdp_user.get("name")
+            or (row.full_name if row else None)
+            or (req.full_name if req else "")
+            or "",
+            "department": sdp_user.get("department")
+            or rtr_department
+            or (row.department if row else "")
+            or "",
+            "job_title": sdp_user.get("job_title") or fields.get("job_title") or "",
+            "work_location": sdp_user.get("site") or fields.get("work_location") or "",
         },
         "date": today,
         "it_rep": user.display_name,

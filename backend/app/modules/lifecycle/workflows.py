@@ -133,7 +133,14 @@ async def find_sdp_user(ctx: StepContext) -> StepOutcome:
     return StepOutcome(
         "done",
         f"Tìm thấy user SDP {u['name']}{f' ({u["email"]})' if u.get('email') else ''}.",
-        {"sdp_user_id": u["id"], "sdp_user_name": u["name"]},
+        # Job title and work location for the handover / return record (SDP is the reference).
+        {
+            "sdp_user_id": u["id"],
+            "sdp_user_name": u["name"],
+            "job_title": u.get("job_title"),
+            "site": u.get("site"),
+            "department": u.get("department"),
+        },
     )
 
 
@@ -201,13 +208,14 @@ async def _document_step(ctx: StepContext, kind_short: str) -> StepOutcome:
         return StepOutcome(
             "failed", "Không có thiết bị nào để lập biên bản. Bỏ qua bước này nếu không cần biên bản."
         )
+    sdp = ctx.outputs.get("find_sdp_user") or {}
     data = {
         "employee": {
             "id": emp["id"],
             "full_name": emp.get("full_name") or emp["id"],
-            "department": emp.get("department") or "",
-            "job_title": emp.get("job_title") or "",
-            "work_location": emp.get("work_location") or "",
+            "department": sdp.get("department") or emp.get("department") or "",
+            "job_title": sdp.get("job_title") or emp.get("job_title") or "",
+            "work_location": sdp.get("site") or emp.get("work_location") or "",
         },
         "date": today,
         "it_rep": await _users_by_upn(ctx.session, ctx.job.started_by) or "IT Helpdesk",

@@ -62,7 +62,7 @@ function StartNew({ kind, onReady }: { kind: ShortKind; onReady: (d: DocData, in
         }}
       >
         <Field label="Mã nhân viên" className="w-56">
-          <Input value={emp} onChange={(e) => setEmp(e.target.value)} className="font-mono" autoFocus placeholder="Ví dụ: 003551" />
+          <Input value={emp} onChange={(e) => setEmp(e.target.value)} className="font-mono" autoFocus placeholder="Ví dụ: 003551 hoặc 3551" />
         </Field>
         <Button type="submit" variant="primary" loading={prefill.isPending} disabled={!emp.trim()}>
           <Search className="size-4" aria-hidden="true" />

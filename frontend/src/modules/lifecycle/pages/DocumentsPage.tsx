@@ -10,19 +10,18 @@ import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui
 import { Field, Input, Select } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
 import { formatDate, formatDateTime } from "@/core/lib/format";
-import { useDebounced } from "@/core/lib/useDebounced";
 import { DOC_STATUS, KIND_SHORT_TITLE, SHORT_OF, useKinds, type Doc, type DocStatus } from "../docs";
 
 export function DocumentsPage() {
   const navigate = useNavigate();
   const kinds = useKinds();
   const [q, setQ] = useState("");
-  const debounced = useDebounced(q);
+  const [search, setSearch] = useState(""); // applied on Enter, not while typing
   const [kind, setKind] = useState("");
   const [status, setStatus] = useState<"" | DocStatus>("");
   const list = useQuery({
-    queryKey: ["documents", debounced, kind, status],
-    queryFn: () => api<{ total: number; items: Doc[] }>(`/api/core/documents?${new URLSearchParams({ q: debounced, kind, status, limit: "500" })}`),
+    queryKey: ["documents", search, kind, status],
+    queryFn: () => api<{ total: number; items: Doc[] }>(`/api/core/documents?${new URLSearchParams({ q: search, kind, status, limit: "500" })}`),
   });
   const canCreate = kinds.data?.some((k) => k.can_create);
   const columns = useMemo<ColumnDef<Doc, unknown>[]>(
@@ -65,9 +64,9 @@ export function DocumentsPage() {
           )
         }
       />
-      <form role="search" aria-label="Lọc biên bản" className="mb-3 grid gap-3 sm:grid-cols-[2fr_1fr_1fr]" onSubmit={(e) => e.preventDefault()}>
-        <Field label="Tìm kiếm">
-          <Input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Số biên bản, Mã NV, họ tên" />
+      <form role="search" aria-label="Lọc biên bản" className="mb-3 grid gap-3 sm:grid-cols-[2fr_1fr_1fr]" onSubmit={(e) => { e.preventDefault(); setSearch(q.trim()); }}>
+        <Field label="Tìm kiếm" hint="Nhấn Enter để tìm. Mã NV gõ một phần cũng được (vd. 3268).">
+          <Input type="search" value={q} onChange={(e) => { setQ(e.target.value); if (!e.target.value) setSearch(""); }} placeholder="Số biên bản, Mã NV, họ tên" />
         </Field>
         <Field label="Loại">
           <Select value={kind} onChange={(e) => setKind(e.target.value)}>
