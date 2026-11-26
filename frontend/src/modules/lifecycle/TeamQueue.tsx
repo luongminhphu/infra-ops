@@ -1,20 +1,22 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, Hand, Inbox } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { Button } from "@/core/ui/button";
-import { EmptyState, ErrorState, LoadingRows, Mono, Panel } from "@/core/ui/feedback";
+import { EmptyState, ErrorState, LoadingRows, Mono } from "@/core/ui/feedback";
 import { HelpTip } from "@/core/ui/help-tip";
 import { StatusBadge } from "@/core/ui/status";
-import { formatDate } from "@/core/lib/format";
+import { formatDate, isoDateVn } from "@/core/lib/format";
 import { JOB_STATUS, JOB_WORKFLOWS, WORKFLOW_LABEL, jobStatusLabel, type Job } from "./jobs";
 
 /** Open jobs split into the unclaimed queue (oldest effective date first) and the work each person holds. */
 export function splitQueue(jobs: Job[]): { waiting: Job[]; byPerson: { name: string; userId: string | null; jobs: Job[] }[] } {
   const byDate = (a: Job, b: Job) => (a.params.effective_date ?? "9").localeCompare(b.params.effective_date ?? "9");
-  const waiting = jobs.filter((j) => !j.assignee).sort(byDate);
+  // Offboards past their effective date first: access must not outlive the last working day.
+  const late = (j: Job) => (j.params.kind === "offboard" && daysLate(j) > 0 ? 0 : 1);
+  const waiting = jobs.filter((j) => !j.assignee).sort((a, b) => late(a) - late(b) || byDate(a, b));
   const people = new Map<string, { name: string; userId: string | null; jobs: Job[] }>();
   for (const j of jobs.filter((x) => x.assignee)) {
     const key = j.assignee!.user_id ?? j.assignee!.name ?? "?";
@@ -24,6 +26,13 @@ export function splitQueue(jobs: Job[]): { waiting: Job[]; byPerson: { name: str
   }
   const byPerson = [...people.values()].map((p) => ({ ...p, jobs: p.jobs.sort(byDate) })).sort((a, b) => a.jobs.length - b.jobs.length || a.name.localeCompare(b.name));
   return { waiting, byPerson };
+}
+
+/** Whole days past the effective date (Vietnam calendar), 0 when not late. */
+export function daysLate(j: Pick<Job, "params">, today: string = isoDateVn()): number {
+  const eff = j.params.effective_date;
+  if (!eff || eff >= today) return 0;
+  return Math.round((Date.parse(today) - Date.parse(eff)) / 86_400_000);
 }
 
 function stepText(j: Job): string {
@@ -38,6 +47,7 @@ function JobLine({ j, action }: { j: Job; action?: React.ReactNode }) {
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="font-medium">{WORKFLOW_LABEL[j.workflow_key] ?? j.workflow_title} · {j.subject_label}</span>
           <StatusBadge status={j.stalled_minutes ? "warning" : JOB_STATUS[j.status].status} label={jobStatusLabel(j)} />
+          {daysLate(j) > 0 && j.status !== "running" && <StatusBadge status={j.params.kind === "offboard" ? "failed" : "warning"} label={`Trễ ${daysLate(j)} ngày`} />}
         </span>
         <span className="mt-0.5 block text-sm text-muted">
           Hiệu lực {formatDate(j.params.effective_date)} · request <Mono>#{j.params.request_display_id ?? j.external_ref}</Mono> · {stepText(j)}
@@ -49,12 +59,13 @@ function JobLine({ j, action }: { j: Job; action?: React.ReactNode }) {
 }
 
 /**
- * Portal section: the team's RTR queue. Nobody is assigned automatically: each technician takes the next request
- * ("Nhận" – SDP is updated with their own API key) and everyone sees who holds what and at which step.
- * Supervisors / managers move work between people from the job page ("Chuyển Job").
+ * Dashboard widget (main page): the team's RTR queue. Nothing is assigned automatically: each technician takes the
+ * next request ("Nhận" – SDP is updated with their own API key) and it then shows in their "Việc của tôi"; everyone
+ * sees who holds what and at which step. Supervisors / managers move work between people ("Chuyển Job").
  */
-export function TeamQueueSection() {
+export function TeamQueueWidget() {
   const { me } = useAuth();
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["jobs", "team", "open"],
@@ -64,7 +75,9 @@ export function TeamQueueSection() {
   const claim = useMutation({
     mutationFn: (j: Job) => api(`/api/lifecycle/jobs/${j.id}/claim`, { method: "POST" }),
     onSuccess: (_r, j) => {
-      toast.success(`Đã nhận ${WORKFLOW_LABEL[j.workflow_key] ?? "Job"} ${j.subject_label}. SDP được cập nhật Technician là bạn trong ít giây.`);
+      toast.success(`Đã nhận ${WORKFLOW_LABEL[j.workflow_key] ?? "Job"} ${j.subject_label}. SDP ghi bạn là Technician trong ít giây; Job chuyển sang Việc của tôi.`, {
+        action: { label: "Mở Việc của tôi", onClick: () => navigate("/me/work") },
+      });
       void qc.invalidateQueries({ queryKey: ["jobs"] });
     },
     onError: (e) => {
@@ -73,65 +86,58 @@ export function TeamQueueSection() {
     },
   });
   const { waiting, byPerson } = splitQueue(q.data?.items ?? []);
+  if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
+  if (q.isLoading) return <LoadingRows rows={4} />;
   return (
-    <Panel
-      title={
-        <span className="inline-flex items-center gap-1.5">
-          Hàng đợi request RTR của team
-          <HelpTip title="Cách nhận việc">
-            <span className="block">Request RTR mới vào hàng đợi “Chờ nhận”. Ai rảnh bấm “Nhận”: infra-ops ghi bạn là Technician của request trên SDP bằng khoá API của bạn (Khoá API của tôi).</span>
-            <span className="block">Ai nghỉ: Supervisor hoặc Manager mở Job và bấm “Chuyển Job” để giao cho người khác.</span>
-          </HelpTip>
-        </span>
-      }
-      description="Mọi người cùng thấy việc còn tồn, ai đang xử lý và đang ở bước nào."
-    >
-      {q.isError && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
-      {q.isLoading ? (
-        <LoadingRows rows={4} />
-      ) : (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <section aria-label="Chờ nhận">
-            <h3 className="flex items-baseline gap-2 text-base font-semibold">
-              Chờ nhận <span className="text-sm font-normal text-muted tabular">{waiting.length}</span>
-            </h3>
-            {waiting.length ? (
-              <ul className="divide-y divide-line">
-                {waiting.map((j) => (
-                  <JobLine
-                    key={j.id}
-                    j={j}
-                    action={
-                      <Button size="sm" variant="primary" loading={claim.isPending && claim.variables?.id === j.id} onClick={() => claim.mutate(j)} aria-label={`Nhận ${j.subject_label}`}>
-                        <Hand className="size-4" aria-hidden="true" />Nhận
-                      </Button>
-                    }
-                  />
-                ))}
+    <div className="py-2">
+      <p className="mb-3 text-sm text-muted">
+        Ai rảnh bấm “Nhận” – infra-ops ghi bạn là Technician của request trên SDP bằng khoá API của bạn, Job chuyển sang Việc của tôi.
+        <HelpTip title="Ai nghỉ thì sao?" className="ml-1">
+          <span className="block">Supervisor hoặc Manager mở Job của người nghỉ và bấm “Chuyển Job” để giao cho người khác.</span>
+          <span className="block">Chưa nhập khoá API cá nhân thì việc ghi lên SDP chờ đến khi bạn nhập ở “Khoá API của tôi”.</span>
+        </HelpTip>
+      </p>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section aria-label="Chờ nhận">
+          <h3 className="flex items-baseline gap-2 text-base font-semibold">
+            Chờ nhận <span className="text-sm font-normal text-muted tabular">{waiting.length}</span>
+          </h3>
+          {waiting.length ? (
+            <ul className="divide-y divide-line">
+              {waiting.map((j) => (
+                <JobLine
+                  key={j.id}
+                  j={j}
+                  action={
+                    <Button size="sm" loading={claim.isPending && claim.variables?.id === j.id} onClick={() => claim.mutate(j)} aria-label={`Nhận ${j.subject_label}`}>
+                      <Hand className="size-4" aria-hidden="true" />Nhận
+                    </Button>
+                  }
+                />
+              ))}
+            </ul>
+          ) : (
+            <EmptyState icon={Inbox} title="Không còn request chờ nhận" className="py-6">Request RTR mới sẽ xuất hiện ở đây sau lần đồng bộ tới.</EmptyState>
+          )}
+        </section>
+        <section aria-label="Đang xử lý">
+          <h3 className="flex items-baseline gap-2 text-base font-semibold">
+            Đang xử lý <span className="text-sm font-normal text-muted tabular">{byPerson.reduce((n, p) => n + p.jobs.length, 0)}</span>
+          </h3>
+          {byPerson.length === 0 && <p className="py-2 text-sm text-muted">Chưa ai nhận request nào.</p>}
+          {byPerson.map((p) => (
+            <details key={p.userId ?? p.name} className="border-b border-line py-1 last:border-b-0">
+              <summary className="flex min-h-8 cursor-pointer items-center gap-2 py-1">
+                <span className="font-medium">{p.name}{p.userId === me?.id && <span className="ml-1 text-sm font-normal text-muted">(bạn)</span>}</span>
+                <span className="text-sm text-muted tabular">{p.jobs.length} việc</span>
+              </summary>
+              <ul className="divide-y divide-line pl-1">
+                {p.jobs.map((j) => <JobLine key={j.id} j={j} />)}
               </ul>
-            ) : (
-              <EmptyState icon={Inbox} title="Không còn request chờ nhận" className="py-6">Request RTR mới sẽ xuất hiện ở đây sau lần đồng bộ tới.</EmptyState>
-            )}
-          </section>
-          <section aria-label="Đang xử lý">
-            <h3 className="flex items-baseline gap-2 text-base font-semibold">
-              Đang xử lý <span className="text-sm font-normal text-muted tabular">{byPerson.reduce((n, p) => n + p.jobs.length, 0)}</span>
-            </h3>
-            {byPerson.length === 0 && <p className="py-2 text-sm text-muted">Chưa ai nhận request nào.</p>}
-            {byPerson.map((p) => (
-              <details key={p.userId ?? p.name} open={p.userId === me?.id} className="border-b border-line py-1 last:border-b-0">
-                <summary className="flex min-h-8 cursor-pointer items-center gap-2 py-1">
-                  <span className="font-medium">{p.name}{p.userId === me?.id && <span className="ml-1 text-sm font-normal text-muted">(bạn)</span>}</span>
-                  <span className="text-sm text-muted tabular">{p.jobs.length} việc</span>
-                </summary>
-                <ul className="divide-y divide-line pl-1">
-                  {p.jobs.map((j) => <JobLine key={j.id} j={j} />)}
-                </ul>
-              </details>
-            ))}
-          </section>
-        </div>
-      )}
-    </Panel>
+            </details>
+          ))}
+        </section>
+      </div>
+    </div>
   );
 }

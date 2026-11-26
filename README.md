@@ -424,7 +424,11 @@ Lưu ý:
    **Tải danh sách nhóm từ BioStar** để chọn nhóm người dùng và nhóm quyền ra vào mặc định, chọn vô hiệu hoá
    hay xoá user BioStar khi offboard.
 3. Sau mỗi lần đồng bộ, mỗi request *Nhân viên mới* / *Nghỉ việc* có một **Job nháp** (không ghi gì ra ngoài).
-4. Mở Job → **Nhận Job** nếu chưa có người phụ trách → **Làm từng bước** (nút chính), hoặc menu **Thêm** →
+4. **Hàng đợi request RTR của team** (trang Tổng quan): app không tự chia việc – ai rảnh bấm **Nhận** (Technician
+   trên SDP được ghi bằng khoá API của người nhận; hai người bấm cùng lúc thì người sau bị từ chối), Job chuyển sang
+   *Việc của tôi*. Cả team thấy việc còn chờ (offboard quá hạn xếp đầu, nhãn *Trễ N ngày*), ai đang giữ việc gì, ở bước
+   mấy. Ai nghỉ: Supervisor/Manager mở Job và **Chuyển Job**.
+   Mở Job → **Nhận Job** nếu chưa có người phụ trách → **Làm từng bước** (nút chính), hoặc menu **Thêm** →
    Xem trước các bước / **Bắt đầu ngay…** (hỏi xác nhận) / **Lên lịch** theo ngày hiệu lực. Job offboard **khoá
    BioStar trước tiên** (bước 2), không chờ thu hồi thiết bị. Worker chạy các bước tự động; Infra Support xác nhận các bước thủ công (đăng ký vân tay/thẻ,
    tình trạng tài sản thu hồi), nhập lại Mã NV trước khi vô hiệu hoá BioStar, chốt và tải biên bản đã ký.
