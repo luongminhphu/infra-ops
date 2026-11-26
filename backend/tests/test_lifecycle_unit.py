@@ -209,12 +209,10 @@ def test_reconcile_duplicate_and_name_fallback() -> None:
     assert any(n["rule"] == "sdp_no_employee_ids" for n in result.notes)
     row = result.rows[0]
     assert row.asset_ids == ["z"] and "nối theo họ tên" in row.cells["assets"]["detail"]
-    # The SDP user itself is taken as the employee's (name in any word order), flagged so SDP gets the ID.
-    assert row.sdp_user_ids == ["u9"] and row.cells["sdp"]["label"] == "RTR + user"
-    assert "sdp_user_no_employee_id" in {i.rule for i in row.issues}
 
 
-def test_rtr_employee_joins_sdp_user_named_in_another_order() -> None:
+def test_sdp_users_are_joined_by_employee_id_only() -> None:
+    """An SDP user without an employee ID (synced from AD) is never taken as an RTR employee's by name."""
     users = [
         normalize.sdp_user({"id": "h1", "name": "Hau. Nguyen Thi My"}, "employee_id"),
         normalize.sdp_user(
@@ -222,21 +220,12 @@ def test_rtr_employee_joins_sdp_user_named_in_another_order() -> None:
         ),
     ]
     assert users[1]["employee_id"] == "003456"  # brackets typed in SDP are not part of the ID
-    assets = [
-        normalize.sdp_asset({"id": f"a{i}", "name": "PC", "state": {"name": "In Use"}, "user": {"id": "h1"}})
-        for i in range(3)
-    ]
     req = [{"id": "7091", "employee_id": "003475", "full_name": "Nguyễn Thị Mỹ Hậu", "kind": "transfer",
             "effective_date": "2026-10-12", "parse_errors": []}]  # fmt: skip
-    result = reconcile(req, users, assets, [], S, date(2026, 11, 26))
-    row = next(r for r in result.rows if r.employee_id == "003475")
-    assert row.full_name == "Hau. Nguyen Thi My" and row.cells["assets"]["label"] == "3 tài sản"
-    # Two SDP users with that name: no guess.
-    users.append(normalize.sdp_user({"id": "h3", "name": "Nguyen Thi My Hau"}, "employee_id"))
     row = next(
-        r for r in reconcile(req, users, assets, [], S, date(2026, 11, 26)).rows if r.employee_id == "003475"
+        r for r in reconcile(req, users, [], [], S, date(2026, 11, 26)).rows if r.employee_id == "003475"
     )
-    assert row.cells["sdp"]["label"] == "RTR"  # no SDP user taken by guess
+    assert row.sdp_user_ids == [] and row.cells["sdp"]["label"] == "RTR"
 
 
 def test_allocation_reuses_stock_by_date_and_band() -> None:
