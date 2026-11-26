@@ -1236,3 +1236,10 @@ Quyết định:
   Exception → cấp duyệt, luồng xử lý). Giai đoạn 1: chạy thử theo Mã NV kèm vết từng điều kiện; 2: gắn với nhóm
   request SDP, tự kiểm tra khi đồng bộ; 3: kết luận mở đúng luồng (đề xuất mua, Job, sổ ngoại lệ). Chỉ đọc dữ liệu,
   không tự từ chối, thiếu dữ liệu thì báo “Chưa đủ dữ liệu”.
+
+## 47. Mã nội bộ handbook → playbook (26/11/2026)
+
+- Chuẩn hoá theo tên hiển thị: module `playbook`, quyền `playbook.guides.*`, bảng `playbook_*`, API `/api/playbook`,
+  trang `/playbook` (đường dẫn `/handbook…` cũ tự chuyển hướng). Migration `0002_playbook` đổi tên bảng/khoá/chỉ mục,
+  sửa link ảnh trong sơ đồ đã lưu và chuyển quyền đã cấp cho vai trò – không mất dữ liệu. `INFRAOPS_ENABLED_MODULES` cũ
+  có `handbook` vẫn hiểu là `playbook`. Nhật ký cũ giữ tên hành động `handbook.*`.

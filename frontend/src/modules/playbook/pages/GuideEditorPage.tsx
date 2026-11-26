@@ -20,7 +20,7 @@ export function GuideEditorPage() {
   const { can } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const q = useQuery({ queryKey: ["handbook", "guide", id, "draft"], queryFn: () => getGuide(id, "draft") });
+  const q = useQuery({ queryKey: ["playbook", "guide", id, "draft"], queryFn: () => getGuide(id, "draft") });
   const [tree, setTree] = useState<Tree | null>(null);
   const [meta, setMeta] = useState({ title: "", category: "", description: "" });
   const [base, setBase] = useState("");
@@ -53,22 +53,22 @@ export function GuideEditorPage() {
 
   const change = (next: Tree) => { setTree(next); setDirty(true); };
   const save = useMutation({
-    mutationFn: () => api<GuideDetail>(`/api/handbook/guides/${id}/draft`, { method: "PUT", json: { ...meta, tree, base_updated_at: base } }),
+    mutationFn: () => api<GuideDetail>(`/api/playbook/guides/${id}/draft`, { method: "PUT", json: { ...meta, tree, base_updated_at: base } }),
     onSuccess: (g) => { load(g); toast.success("Đã lưu bản nháp. Người đọc vẫn thấy bản đã xuất bản cho đến khi xuất bản lại."); },
     onError: (e) => toast.error(errorMessage(e)),
   });
   const publish = useMutation({
-    mutationFn: () => api(`/api/handbook/guides/${id}/publish`, { method: "POST", json: { note: publishNote } }),
+    mutationFn: () => api(`/api/playbook/guides/${id}/publish`, { method: "POST", json: { note: publishNote } }),
     onSuccess: async () => {
       setPublishOpen(false);
-      await qc.invalidateQueries({ queryKey: ["handbook"] });
+      await qc.invalidateQueries({ queryKey: ["playbook"] });
       toast.success("Đã xuất bản. IT Support thấy phiên bản mới ngay.");
-      navigate(`/handbook/${id}`);
+      navigate(`/playbook/${id}`);
     },
     onError: (e) => toast.error(errorMessage(e)),
   });
   const upload = useMutation({
-    mutationFn: (f: File) => { const fd = new FormData(); fd.set("file", f); return api<{ url: string }>(`/api/handbook/guides/${id}/images`, { method: "POST", body: fd }); },
+    mutationFn: (f: File) => { const fd = new FormData(); fd.set("file", f); return api<{ url: string }>(`/api/playbook/guides/${id}/images`, { method: "POST", body: fd }); },
     onSuccess: (r) => insert(`\n![Ảnh minh hoạ](${r.url})\n`),
     onError: (e) => toast.error(e instanceof ApiError && e.code === "unsupported_file" ? "Chỉ nhận ảnh PNG hoặc JPEG." : errorMessage(e)),
   });
@@ -97,7 +97,7 @@ export function GuideEditorPage() {
   return (
     <>
       <nav aria-label="Đường dẫn">
-        <Link to={q.data?.published_version ? `/handbook/${id}` : "/handbook"} className="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-ink">
+        <Link to={q.data?.published_version ? `/playbook/${id}` : "/playbook"} className="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-ink">
           <ChevronLeft className="size-4" aria-hidden="true" />{q.data?.published_version ? "Xem bản đã xuất bản" : "Infra Playbook"}
         </Link>
       </nav>
@@ -115,7 +115,7 @@ export function GuideEditorPage() {
             <Button variant={dirty ? "primary" : "secondary"} loading={save.isPending} onClick={() => save.mutate()} disabled={!meta.title.trim()}>
               {!save.isPending && <Save className="size-4" aria-hidden="true" />}Lưu nháp
             </Button>
-            {can("handbook.guides.publish") && (
+            {can("playbook.guides.publish") && (
               <Button variant={dirty ? "secondary" : "primary"} disabled={dirty} title={dirty ? "Lưu nháp trước khi xuất bản" : undefined} onClick={() => { setPublishNote(""); setPublishOpen(true); }}>
                 <Send className="size-4" aria-hidden="true" />Xuất bản
               </Button>

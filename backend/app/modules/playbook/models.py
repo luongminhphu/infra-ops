@@ -14,7 +14,7 @@ from app.core.db import Base
 
 
 class Guide(Base):
-    __tablename__ = "handbook_guide"
+    __tablename__ = "playbook_guide"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -32,12 +32,12 @@ class Guide(Base):
 class GuideVersion(Base):
     """A published, immutable copy (what IT Support reads; kept for the ISO change history)."""
 
-    __tablename__ = "handbook_guide_version"
-    __table_args__ = (UniqueConstraint("guide_id", "version", name="uq_handbook_guide_version"),)
+    __tablename__ = "playbook_guide_version"
+    __table_args__ = (UniqueConstraint("guide_id", "version", name="uq_playbook_guide_version"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     guide_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("handbook_guide.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("playbook_guide.id", ondelete="CASCADE"), nullable=False, index=True
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -50,11 +50,11 @@ class GuideVersion(Base):
 class GuideImage(Base):
     """A screenshot pasted into a step's note (the bytes live in core storage)."""
 
-    __tablename__ = "handbook_image"
+    __tablename__ = "playbook_image"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     guide_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("handbook_guide.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("playbook_guide.id", ondelete="CASCADE"), nullable=False, index=True
     )
     file_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("core_file.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

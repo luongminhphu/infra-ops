@@ -17,8 +17,8 @@ export function GuidePage() {
   const { can } = useAuth();
   const [params, setParams] = useSearchParams();
   const version = params.get("v") ?? "published";
-  const q = useQuery({ queryKey: ["handbook", "guide", id, version], queryFn: () => getGuide(id, version) });
-  const history = useQuery({ queryKey: ["handbook", "versions", id], queryFn: () => api<GuideVersionInfo[]>(`/api/handbook/guides/${id}/versions`) });
+  const q = useQuery({ queryKey: ["playbook", "guide", id, version], queryFn: () => getGuide(id, version) });
+  const history = useQuery({ queryKey: ["playbook", "versions", id], queryFn: () => api<GuideVersionInfo[]>(`/api/playbook/guides/${id}/versions`) });
   const [selected, setSelected] = useState<string | null>(null);
   const g = q.data;
   useEffect(() => {
@@ -26,7 +26,7 @@ export function GuidePage() {
   }, [g]);
 
   const back = (
-    <Link to="/handbook" className="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-ink">
+    <Link to="/playbook" className="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-ink">
       <ChevronLeft className="size-4" aria-hidden="true" />Infra Playbook
     </Link>
   );
@@ -44,7 +44,7 @@ export function GuidePage() {
             <span className="block">Phiên bản {g.version} · xuất bản {formatDate(g.published_at)}{g.published_by ? ` bởi ${g.published_by}` : ""}. Bấm vào từng bước trên sơ đồ để đọc hướng dẫn.</span>
           </>
         }
-        actions={can("handbook.guides.edit") && <Link to={`/handbook/${id}/edit`} className={buttonVariants({})}><Pencil className="size-4" aria-hidden="true" />Soạn</Link>}
+        actions={can("playbook.guides.edit") && <Link to={`/playbook/${id}/edit`} className={buttonVariants({})}><Pencil className="size-4" aria-hidden="true" />Soạn</Link>}
       />
       {(history.data?.length ?? 0) > 1 && (
         <Field label="Phiên bản" className="mb-3 w-64">

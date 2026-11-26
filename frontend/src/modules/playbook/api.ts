@@ -39,7 +39,7 @@ export interface GuideVersionInfo {
 }
 
 export const getGuide = (id: string, version = "published") =>
-  api<GuideDetail>(`/api/handbook/guides/${id}?version=${encodeURIComponent(version)}`);
+  api<GuideDetail>(`/api/playbook/guides/${id}?version=${encodeURIComponent(version)}`);
 
 export function newId(): string {
   return Math.random().toString(36).slice(2, 10);

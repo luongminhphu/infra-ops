@@ -67,7 +67,7 @@ root_package = "app"
 [[tool.importlinter.contracts]]
 name = "Modules must not import each other"
 type = "independence"
-modules = ["app.modules.lifecycle", "app.modules.workload", "app.modules.handbook"]
+modules = ["app.modules.lifecycle", "app.modules.workload", "app.modules.playbook"]
 
 [[tool.importlinter.contracts]]
 name = "Core must not depend on modules"

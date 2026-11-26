@@ -7,8 +7,8 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 
 - `backend/app/core/*` – platform core. `backend/app/modules/<id>/` – modules (manifest.py required).
 - `frontend/src/core/*` – shell, design system (`ui/`), core pages. `frontend/src/modules/<id>/` – module UI.
-- `backend/migrations/<branch>/versions` – one Alembic branch per module (`core`, `lifecycle`, `workload`, `handbook`).
-- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §46).
+- `backend/migrations/<branch>/versions` – one Alembic branch per module (`core`, `lifecycle`, `workload`, `playbook`).
+- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §47).
 
 ## Conventions
 

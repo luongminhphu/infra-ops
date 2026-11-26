@@ -21,12 +21,12 @@ export function GuidesPage() {
   const [category, setCategory] = useState("");
   const [tried, setTried] = useState(false);
   const list = useQuery({
-    queryKey: ["handbook", "guides", debounced],
-    queryFn: () => api<{ items: GuideSummary[]; can_edit: boolean; can_publish: boolean }>(`/api/handbook/guides?q=${encodeURIComponent(debounced)}`),
+    queryKey: ["playbook", "guides", debounced],
+    queryFn: () => api<{ items: GuideSummary[]; can_edit: boolean; can_publish: boolean }>(`/api/playbook/guides?q=${encodeURIComponent(debounced)}`),
   });
   const create = useMutation({
-    mutationFn: () => api<GuideSummary>("/api/handbook/guides", { method: "POST", json: { title, category } }),
-    onSuccess: (g) => navigate(`/handbook/${g.id}/edit`),
+    mutationFn: () => api<GuideSummary>("/api/playbook/guides", { method: "POST", json: { title, category } }),
+    onSuccess: (g) => navigate(`/playbook/${g.id}/edit`),
     onError: (e) => toast.error(errorMessage(e)),
   });
   const items = list.data?.items ?? [];
@@ -64,7 +64,7 @@ export function GuidesPage() {
               <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                 {items.filter((g) => (g.category || "Chung") === cat).map((g) => (
                   <li key={g.id}>
-                    <Link to={g.published_version ? `/handbook/${g.id}` : `/handbook/${g.id}/edit`} className="flex h-full items-start gap-3 rounded-md border border-line bg-surface p-3 shadow-card hover:border-primary">
+                    <Link to={g.published_version ? `/playbook/${g.id}` : `/playbook/${g.id}/edit`} className="flex h-full items-start gap-3 rounded-md border border-line bg-surface p-3 shadow-card hover:border-primary">
                       <BookOpen className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />
                       <span className="min-w-0 flex-1">
                         <span className="block font-medium">{g.title}</span>
@@ -99,9 +99,9 @@ export function GuidesPage() {
             <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ví dụ: Xử lý máy trạm mất mạng" maxLength={200} />
           </Field>
           <Field label="Nhóm" hint="Dùng để gom hướng dẫn trên danh sách, ví dụ Mạng, Tài khoản, Thiết bị.">
-            <Input value={category} onChange={(e) => setCategory(e.target.value)} maxLength={100} list="handbook-categories" />
+            <Input value={category} onChange={(e) => setCategory(e.target.value)} maxLength={100} list="playbook-categories" />
           </Field>
-          <datalist id="handbook-categories">{groups.map((c) => <option key={c} value={c} />)}</datalist>
+          <datalist id="playbook-categories">{groups.map((c) => <option key={c} value={c} />)}</datalist>
         </div>
       </Dialog>
     </>

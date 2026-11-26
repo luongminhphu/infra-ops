@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.modules.handbook.tree import Tree, unreachable
+from app.modules.playbook.tree import Tree, unreachable
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 32
 
@@ -39,38 +39,38 @@ def test_tree_rules() -> None:
 
 
 async def test_guide_draft_publish_versions_and_readers(admin, client) -> None:  # type: ignore[no-untyped-def]
-    r = await admin.post("/api/handbook/guides", json={"title": "Xử lý mất mạng", "category": "Mạng"})
+    r = await admin.post("/api/playbook/guides", json={"title": "Xử lý mất mạng", "category": "Mạng"})
     assert r.status_code == 201, r.text
     gid = r.json()["id"]
-    draft = (await admin.get(f"/api/handbook/guides/{gid}", params={"version": "draft"})).json()
+    draft = (await admin.get(f"/api/playbook/guides/{gid}", params={"version": "draft"})).json()
     assert len(draft["tree"]["nodes"]) == 1  # starts with one root step
 
     body = {"title": "Xử lý mất mạng", "category": "Mạng", "description": "Máy trạm không vào mạng",
             "tree": tree(), "base_updated_at": draft["draft_updated_at"]}  # fmt: skip
-    saved = await admin.put(f"/api/handbook/guides/{gid}/draft", json=body)
+    saved = await admin.put(f"/api/playbook/guides/{gid}/draft", json=body)
     assert saved.status_code == 200, saved.text
-    stale = await admin.put(f"/api/handbook/guides/{gid}/draft", json=body)  # started from the old copy
+    stale = await admin.put(f"/api/playbook/guides/{gid}/draft", json=body)  # started from the old copy
     assert stale.status_code == 409 and stale.json()["error"]["code"] == "stale_draft"
 
     # A step nothing leads to is refused at publish.
     orphan = tree()
     orphan["nodes"]["lost"] = {"title": "Bước lạc", "note": "", "children": []}
-    await admin.put(f"/api/handbook/guides/{gid}/draft",
+    await admin.put(f"/api/playbook/guides/{gid}/draft",
                     json={**body, "tree": orphan, "base_updated_at": saved.json()["draft_updated_at"]})  # fmt: skip
-    r = await admin.post(f"/api/handbook/guides/{gid}/publish", json={"note": "v1"})
+    r = await admin.post(f"/api/playbook/guides/{gid}/publish", json={"note": "v1"})
     assert r.status_code == 400 and r.json()["error"]["code"] == "unreachable_steps"
-    current = (await admin.get(f"/api/handbook/guides/{gid}", params={"version": "draft"})).json()
-    await admin.put(f"/api/handbook/guides/{gid}/draft",
+    current = (await admin.get(f"/api/playbook/guides/{gid}", params={"version": "draft"})).json()
+    await admin.put(f"/api/playbook/guides/{gid}/draft",
                     json={**body, "base_updated_at": current["draft_updated_at"]})  # fmt: skip
-    r = await admin.post(f"/api/handbook/guides/{gid}/publish", json={"note": "Bản đầu"})
+    r = await admin.post(f"/api/playbook/guides/{gid}/publish", json={"note": "Bản đầu"})
     assert r.status_code == 201 and r.json()["published_version"] == 1
 
     # Images: PNG by its bytes only.
-    img = await admin.post(f"/api/handbook/guides/{gid}/images", files={"file": ("a.png", PNG, "image/png")})
+    img = await admin.post(f"/api/playbook/guides/{gid}/images", files={"file": ("a.png", PNG, "image/png")})
     assert img.status_code == 201, img.text
     assert (await admin.get(img.json()["url"])).content == PNG
     fake = await admin.post(
-        f"/api/handbook/guides/{gid}/images", files={"file": ("a.png", b"<svg/>", "image/png")}
+        f"/api/playbook/guides/{gid}/images", files={"file": ("a.png", b"<svg/>", "image/png")}
     )
     assert fake.json()["error"]["code"] == "unsupported_file"
 
@@ -79,27 +79,36 @@ async def test_guide_draft_publish_versions_and_readers(admin, client) -> None: 
     await admin.post("/api/core/users", json={"upn": "hb-op@test.local", "display_name": "Op",
                                               "role_ids": [roles["operator"]]})  # fmt: skip
     await client.login("hb-op@test.local")
-    listed = (await client.get("/api/handbook/guides")).json()
+    listed = (await client.get("/api/playbook/guides")).json()
     assert [g["title"] for g in listed["items"]] == ["Xử lý mất mạng"] and not listed["can_edit"]
-    pub = (await client.get(f"/api/handbook/guides/{gid}")).json()
+    pub = (await client.get(f"/api/playbook/guides/{gid}")).json()
     assert pub["version"] == 1 and pub["tree"]["nodes"]["start"]["children"][1]["to"] == "cable"
-    assert (await client.get(f"/api/handbook/guides/{gid}", params={"version": "draft"})).status_code == 404
-    assert (await client.post("/api/handbook/guides", json={"title": "x"})).status_code == 403
+    assert (await client.get(f"/api/playbook/guides/{gid}", params={"version": "draft"})).status_code == 404
+    assert (await client.post("/api/playbook/guides", json={"title": "x"})).status_code == 403
     assert (await client.get(img.json()["url"])).status_code == 200
 
     # Editing after publishing does not change what readers see until the next publish.
-    current = (await admin.get(f"/api/handbook/guides/{gid}", params={"version": "draft"})).json()
+    current = (await admin.get(f"/api/playbook/guides/{gid}", params={"version": "draft"})).json()
     changed = tree()
     changed["nodes"]["start"]["title"] = "Mất mạng (sửa)"
-    await admin.put(f"/api/handbook/guides/{gid}/draft",
+    await admin.put(f"/api/playbook/guides/{gid}/draft",
                     json={**body, "tree": changed, "base_updated_at": current["draft_updated_at"]})  # fmt: skip
-    assert (await client.get(f"/api/handbook/guides/{gid}")).json()["tree"]["nodes"]["start"][
+    assert (await client.get(f"/api/playbook/guides/{gid}")).json()["tree"]["nodes"]["start"][
         "title"
     ] == "Máy không lên mạng"
-    await admin.post(f"/api/handbook/guides/{gid}/publish", json={"note": "Đổi tên"})
-    hist = (await client.get(f"/api/handbook/guides/{gid}/versions")).json()
+    await admin.post(f"/api/playbook/guides/{gid}/publish", json={"note": "Đổi tên"})
+    hist = (await client.get(f"/api/playbook/guides/{gid}/versions")).json()
     assert [v["version"] for v in hist] == [2, 1] and hist[0]["note"] == "Đổi tên"
-    assert (await client.get(f"/api/handbook/guides/{gid}", params={"version": "1"})).json()["version"] == 1
+    assert (await client.get(f"/api/playbook/guides/{gid}", params={"version": "1"})).json()["version"] == 1
 
-    assert (await client.delete(f"/api/handbook/guides/{gid}")).status_code == 403
-    assert (await admin.delete(f"/api/handbook/guides/{gid}")).status_code == 204
+    assert (await client.delete(f"/api/playbook/guides/{gid}")).status_code == 403
+    assert (await admin.delete(f"/api/playbook/guides/{gid}")).status_code == 204
+
+
+def test_old_module_name_in_env_still_enables_playbook() -> None:
+    from app.core.config import Settings
+
+    assert Settings(enabled_modules="lifecycle,handbook,playbook").enabled_modules == [
+        "lifecycle",
+        "playbook",
+    ]

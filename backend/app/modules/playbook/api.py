@@ -16,14 +16,14 @@ from app.core.auth.deps import CurrentUser, require
 from app.core.db import get_session
 from app.core.errors import AppError, Conflict, NotFound
 from app.core.storage.service import check_size, read_file, save_file, sniff
-from app.modules.handbook.models import Guide, GuideImage, GuideVersion
-from app.modules.handbook.tree import Tree, starter, unreachable
+from app.modules.playbook.models import Guide, GuideImage, GuideVersion
+from app.modules.playbook.tree import Tree, starter, unreachable
 
-MODULE_ID = "handbook"
-VIEW, EDIT, PUBLISH = "handbook.guides.view", "handbook.guides.edit", "handbook.guides.publish"
+MODULE_ID = "playbook"
+VIEW, EDIT, PUBLISH = "playbook.guides.view", "playbook.guides.edit", "playbook.guides.publish"
 IMAGE_MIME = {"image/png", "image/jpeg"}
 
-router = APIRouter(tags=["handbook"])
+router = APIRouter(tags=["playbook"])
 view = require(VIEW)
 edit = require(EDIT)
 publish_perm = require(PUBLISH)
@@ -88,7 +88,7 @@ async def create_guide(
     )
     session.add(g)
     await session.flush()
-    await record(session, actor=user.actor, module_id=MODULE_ID, action="handbook.guide_created",
+    await record(session, actor=user.actor, module_id=MODULE_ID, action="playbook.guide_created",
                  target_type="guide", target_id=str(g.id), target_label=g.title)  # fmt: skip
     await session.commit()
     return _summary(g, True)
@@ -144,7 +144,7 @@ async def save_draft(
     g.draft = body.tree.model_dump()
     g.draft_updated_at = func.now()
     g.draft_updated_by = user.upn
-    await record(session, actor=user.actor, module_id=MODULE_ID, action="handbook.draft_saved",
+    await record(session, actor=user.actor, module_id=MODULE_ID, action="playbook.draft_saved",
                  target_type="guide", target_id=str(g.id), target_label=g.title,
                  message=f"{len(body.tree.nodes)} bước")  # fmt: skip
     await session.commit()
@@ -178,7 +178,7 @@ async def publish(
                              note=body.note.strip(), published_by=user.upn))  # fmt: skip
     before = g.published_version
     g.published_version = number
-    await record(session, actor=user.actor, module_id=MODULE_ID, action="handbook.guide_published",
+    await record(session, actor=user.actor, module_id=MODULE_ID, action="playbook.guide_published",
                  target_type="guide", target_id=str(g.id), target_label=g.title,
                  before={"version": before}, after={"version": number}, message=body.note.strip() or None)  # fmt: skip
     await session.commit()
@@ -203,7 +203,7 @@ async def delete_guide(
     session: AsyncSession = Depends(get_session),
 ) -> None:
     g = await _guide(session, guide_id, lock=True)
-    await record(session, actor=user.actor, module_id=MODULE_ID, action="handbook.guide_deleted",
+    await record(session, actor=user.actor, module_id=MODULE_ID, action="playbook.guide_deleted",
                  target_type="guide", target_id=str(g.id), target_label=g.title)  # fmt: skip
     await session.delete(g)
     await session.commit()
@@ -225,10 +225,10 @@ async def upload_image(
     img = GuideImage(guide_id=g.id, file_id=stored.id, created_by=user.upn)
     session.add(img)
     await session.flush()
-    await record(session, actor=user.actor, module_id=MODULE_ID, action="handbook.image_added",
+    await record(session, actor=user.actor, module_id=MODULE_ID, action="playbook.image_added",
                  target_type="guide", target_id=str(g.id), target_label=g.title, message=stored.filename)  # fmt: skip
     await session.commit()
-    return {"id": str(img.id), "url": f"/api/handbook/images/{img.id}"}
+    return {"id": str(img.id), "url": f"/api/playbook/images/{img.id}"}
 
 
 @router.get("/images/{image_id}")
