@@ -4,7 +4,7 @@ import { GuideEditorPage } from "./pages/GuideEditorPage";
 import { GuidePage } from "./pages/GuidePage";
 import { GuidesPage } from "./pages/GuidesPage";
 
-/** Infra Handbook: rules and how-to guides for IT Support as branching mind maps. */
+/** Infra Playbook: rules and how-to guides for IT Support as branching mind maps. */
 export const handbookModule: FrontendModule = {
   id: "handbook",
   routes: [

@@ -11,7 +11,7 @@ export interface RailSection {
   bottom?: boolean;
 }
 
-const SHORT: Record<string, string> = { lifecycle: "Vòng đời", workload: "Công việc", handbook: "Handbook" };
+const SHORT: Record<string, string> = { lifecycle: "Vòng đời", workload: "Công việc", handbook: "Playbook" };
 const ICON: Record<string, string> = { lifecycle: "users", workload: "list-checks", handbook: "book-open" };
 
 /** Rail = Tổng quan, one entry per module, and the platform settings ("Hệ thống") at the bottom. */

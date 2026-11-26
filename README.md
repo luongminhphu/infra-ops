@@ -31,7 +31,7 @@ Tài liệu: [cài đặt Ubuntu + Docker](docs/install-ubuntu-docker.md) · [ki
   toàn, lưu trạng thái trước thay đổi để khôi phục thủ công).
 - Giao diện sáng/tối, dùng được trên điện thoại, đạt kiểm tra trợ năng (axe).
 
-### Infra Handbook
+### Infra Playbook
 - Quy định và hướng dẫn xử lý cho IT Support, mỗi hướng dẫn là một **sơ đồ mindmap rẽ nhánh**: mỗi bước có tiêu đề,
   ghi chú (chữ đậm, danh sách, liên kết, ảnh chụp màn hình dán Ctrl+V) và các nhánh theo lựa chọn (Có / Không…);
   một nhánh có thể trỏ về bước đã có.

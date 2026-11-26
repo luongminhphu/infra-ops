@@ -34,7 +34,7 @@ export function GuidesPage() {
   return (
     <>
       <PageHeader
-        title="Infra Handbook"
+        title="Infra Playbook"
         description="Quy định và hướng dẫn xử lý cho IT Support: mỗi hướng dẫn là một sơ đồ rẽ nhánh, bấm vào từng bước để đọc ghi chú."
         actions={
           list.data?.can_edit && (

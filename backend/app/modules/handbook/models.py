@@ -1,4 +1,4 @@
-"""Infra Handbook: guides drawn as branching mind maps. A guide keeps one editable draft and its published versions."""
+"""Infra Playbook: guides drawn as branching mind maps. A guide keeps one editable draft and its published versions."""
 
 from __future__ import annotations
 

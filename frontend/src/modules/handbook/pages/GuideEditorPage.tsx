@@ -98,7 +98,7 @@ export function GuideEditorPage() {
     <>
       <nav aria-label="Đường dẫn">
         <Link to={q.data?.published_version ? `/handbook/${id}` : "/handbook"} className="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-ink">
-          <ChevronLeft className="size-4" aria-hidden="true" />{q.data?.published_version ? "Xem bản đã xuất bản" : "Infra Handbook"}
+          <ChevronLeft className="size-4" aria-hidden="true" />{q.data?.published_version ? "Xem bản đã xuất bản" : "Infra Playbook"}
         </Link>
       </nav>
       <PageHeader

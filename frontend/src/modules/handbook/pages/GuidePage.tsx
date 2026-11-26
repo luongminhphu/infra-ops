@@ -27,7 +27,7 @@ export function GuidePage() {
 
   const back = (
     <Link to="/handbook" className="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-ink">
-      <ChevronLeft className="size-4" aria-hidden="true" />Infra Handbook
+      <ChevronLeft className="size-4" aria-hidden="true" />Infra Playbook
     </Link>
   );
   if (q.isLoading) return <>{back}<LoadingRows rows={8} /></>;

@@ -1,4 +1,4 @@
-"""Infra Handbook: guides as branching maps, drafts, published versions, images."""
+"""Infra Playbook: guides as branching maps, drafts, published versions, images."""
 
 from __future__ import annotations
 

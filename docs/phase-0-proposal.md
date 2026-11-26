@@ -1225,3 +1225,14 @@ Quyết định:
   (`stale_draft`); xuất bản từ chối khi có bước không nối với gốc. Ghi chú là markdown nhẹ, hiển thị bằng React (không
   HTML thô; liên kết chỉ http(s), mailto, đường dẫn trong app; ảnh chỉ từ kho Handbook hoặc https).
 - Sơ đồ: bố cục trái → phải, mỗi bước vẽ một lần dưới nhánh tới nó sớm nhất (BFS), nhánh khác là ô “Đi tới …”.
+
+## 46. Đổi tên thành Infra Playbook; hướng nâng cấp kiểm tra yêu cầu theo policy (26/11/2026)
+
+- Tên hiển thị *Infra Handbook* → **Infra Playbook** (rail: *Playbook*): hợp cả hướng dẫn dạng sơ đồ lẫn hướng nâng
+  cấp sau. Mã nội bộ giữ nguyên (`handbook`: module, quyền `handbook.guides.*`, bảng, URL `/handbook`) để không phải
+  đổi dữ liệu và phân quyền đã cấp.
+- Hướng nâng cấp (chưa làm): thêm *bước kiểm tra* (điều kiện không cần code trên dữ liệu do module khai báo: band, tài
+  sản đang dùng theo loại, tiêu chuẩn cấp phát, đề xuất mua đang mở…) và *bước kết luận* (Tiêu chuẩn / Adhoc /
+  Exception → cấp duyệt, luồng xử lý). Giai đoạn 1: chạy thử theo Mã NV kèm vết từng điều kiện; 2: gắn với nhóm
+  request SDP, tự kiểm tra khi đồng bộ; 3: kết luận mở đúng luồng (đề xuất mua, Job, sổ ngoại lệ). Chỉ đọc dữ liệu,
+  không tự từ chối, thiếu dữ liệu thì báo “Chưa đủ dữ liệu”.
