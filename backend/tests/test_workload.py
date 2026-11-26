@@ -1160,3 +1160,41 @@ async def test_sync_closes_stored_tickets_with_vietnamese_done_status(sdp) -> No
         await reclassify(s, await load(s))
         assert (t.state, t.phase) == ("done", None)
         await s.rollback()
+
+
+async def test_tasks_of_operators_not_in_app_are_hidden(admin, sdp) -> None:  # type: ignore[no-untyped-def]
+    """A technician nobody added to infra-ops stays synced but is out of the task list, cards and statistics."""
+    from app.modules.workload.models import Technician, Ticket
+
+    async with get_sessionmaker()() as s:
+        s.add(Technician(id="9901", name="Ngoài App", email="ngoai.app@test.local", active=True))
+        s.add(
+            Ticket(
+                id="99001",
+                display_id="99001",
+                subject="Task ngoài app",
+                technician_id="9901",
+                technician_name="Ngoài App",
+                status="Open",
+                state="open",
+                created_at=datetime.now(UTC),
+            )
+        )
+        await s.commit()
+    listed = {
+        t["id"] for t in (await admin.get("/api/workload/tickets", params={"state": "all"})).json()["items"]
+    }
+    assert "99001" not in listed
+    cards = {t["id"] for t in (await admin.get("/api/workload/technicians")).json()["items"]}
+    assert "9901" not in cards
+    # Settings still list it, so an administrator can add the account.
+    every = {
+        t["id"]: t
+        for t in (await admin.get("/api/workload/technicians", params={"all": "1"})).json()["items"]
+    }
+    assert every["9901"]["user"] is None
+    assert (await admin.post("/api/workload/technicians/9901/account")).status_code == 201
+    listed = {
+        t["id"] for t in (await admin.get("/api/workload/tickets", params={"state": "all"})).json()["items"]
+    }
+    assert "99001" in listed

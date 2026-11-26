@@ -70,6 +70,12 @@ def ticket_out(t: Ticket, now: datetime) -> dict[str, Any]:
 
 
 VIEW_ALL = "workload.tickets.view_all"
+# Only tasks of operators who have an infra-ops account (or not assigned yet) are shown: technicians the
+# administrator never added stay synced from SDP but out of the lists and statistics.
+IN_APP = or_(
+    Ticket.technician_id.is_(None),
+    Ticket.technician_id.in_(select(Technician.id).where(Technician.user_id.is_not(None))),
+)
 NO_TECHNICIAN = "__none__"  # matches no ticket
 
 
@@ -88,7 +94,11 @@ async def _scope(session: AsyncSession, user: CurrentUser, requested: str) -> st
 # ---------------------------------------------------------------- technicians (operators)
 @router.get("/technicians")
 async def technicians(
-    user: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
+    user: CurrentUser = Depends(view),
+    session: AsyncSession = Depends(get_session),
+    include_all: bool = Query(
+        False, alias="all", description="Also technicians without an account (settings)"
+    ),
 ) -> dict[str, Any]:
     now = _now()
     counts = {
@@ -107,7 +117,9 @@ async def technicians(
     }
     rows = (
         await session.execute(
-            select(Technician, User).outerjoin(User, User.id == Technician.user_id).order_by(Technician.name)
+            select(Technician, User)
+            .join(User, User.id == Technician.user_id, isouter=include_all)
+            .order_by(Technician.name)
         )
     ).all()
     me = await _my_technician(session, user)
@@ -239,6 +251,7 @@ async def tickets(
     elif state != "all":
         stmt = stmt.where(Ticket.state == state)
     technician_id = await _scope(session, user, technician_id)
+    stmt = stmt.where(IN_APP)
     if technician_id == "none":
         stmt = stmt.where(Ticket.technician_id.is_(None))
     elif technician_id:
@@ -326,7 +339,7 @@ async def stats(
     now = _now()
     bucket = pick_bucket((date_to - date_from).days + 1)
     technician_id = await _scope(session, user, technician_id)
-    scope = [Ticket.technician_id == technician_id] if technician_id else []
+    scope = [IN_APP, *([Ticket.technician_id == technician_id] if technician_id else [])]
 
     created_in = and_(Ticket.created_at >= start, Ticket.created_at < end)
     done_in = and_(Ticket.state == "done", Ticket.completed_at >= start, Ticket.completed_at < end)

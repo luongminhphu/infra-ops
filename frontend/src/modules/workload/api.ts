@@ -64,8 +64,9 @@ export interface Stats {
   series: { period: string; received: number; completed: number }[];
 }
 
-export const useTechnicians = () =>
-  useQuery({ queryKey: ["workload", "technicians"], queryFn: () => api<TechniciansResponse>("/api/workload/technicians") });
+/** Operators with an infra-ops account; `all` adds technicians not added to the app yet (settings only). */
+export const useTechnicians = (all = false) =>
+  useQuery({ queryKey: ["workload", "technicians", all], queryFn: () => api<TechniciansResponse>(`/api/workload/technicians${all ? "?all=1" : ""}`) });
 
 export function useSyncNow() {
   const qc = useQueryClient();
