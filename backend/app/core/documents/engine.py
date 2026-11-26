@@ -11,7 +11,8 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from docxtpl import DocxTemplate
+from docx.shared import Mm
+from docxtpl import DocxTemplate, InlineImage
 from jinja2 import TemplateError
 
 from app.core.config import get_settings
@@ -40,8 +41,10 @@ def template_variables(data: bytes) -> set[str]:
         raise AppError(f"Mẫu có lỗi cú pháp placeholder: {exc}", code="template_syntax") from exc
 
 
-def render_docx(template: bytes, context: dict[str, Any]) -> bytes:
+def render_docx(template: bytes, context: dict[str, Any], logo: bytes | None = None) -> bytes:
+    """``{{ logo }}`` in any template prints the company logo (Hệ thống › Logo báo cáo), or nothing."""
     doc = DocxTemplate(io.BytesIO(template))
+    context = {**context, "logo": InlineImage(doc, io.BytesIO(logo), height=Mm(14)) if logo else ""}
     try:
         # autoescape: user-entered text (names, notes) must not break the XML.
         doc.render(context, autoescape=True)

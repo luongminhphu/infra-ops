@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -141,6 +142,44 @@ class Stocktake(UUIDPk, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     closed_by: Mapped[str | None] = mapped_column(String(320))
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Biên bản kiểm kê (core document) signed by IT and Kế toán.
+    record_document_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+
+
+class StocktakeArea(UUIDPk, Base):
+    """A stocktake area (khu kiểm kê, usually a floor), kept from year to year.
+
+    Its people are the SDP users of the listed departments plus the listed employee IDs (the IDs win when a
+    department is split across floors). The store area takes the assets nobody uses (Kho IT).
+    """
+
+    __tablename__ = "lifecycle_stocktake_area"
+
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    is_store: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    departments: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    employee_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_by: Mapped[str] = mapped_column(String(320), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class StocktakeZone(UUIDPk, Base):
+    """An area as it stood when a stocktake was opened, and who counts it this time."""
+
+    __tablename__ = "lifecycle_stocktake_zone"
+
+    stocktake_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("lifecycle_stocktake.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    is_store: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    assignee_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    assignee_name: Mapped[str | None] = mapped_column(String(256))
 
 
 class StocktakeItem(Base):
@@ -162,6 +201,11 @@ class StocktakeItem(Base):
     user_name: Mapped[str | None] = mapped_column(String(256))
     user_email: Mapped[str | None] = mapped_column(String(320))
     site: Mapped[str | None] = mapped_column(String(128))
+    employee_id: Mapped[str | None] = mapped_column(String(32))
+    department: Mapped[str | None] = mapped_column(String(256))
+    zone_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("lifecycle_stocktake_zone.id", ondelete="SET NULL")
+    )
     count: Mapped[str] = mapped_column(
         String(16), nullable=False, default="pending"
     )  # pending|found|missing|extra

@@ -12,6 +12,7 @@ from sqlalchemy import text
 import app.core.models  # noqa: F401  (register metadata)
 from app.core.audit.api import router as audit_router
 from app.core.auth.api import router as auth_router
+from app.core.branding.api import router as branding_router
 from app.core.config import Settings, get_settings
 from app.core.connections.api import router as connections_router
 from app.core.connectors.registry import load_builtin_connectors
@@ -76,6 +77,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         dashboard_router,
         documents_router,
         workflow_router,
+        branding_router,
     ):
         core.include_router(r)
     app.include_router(core)

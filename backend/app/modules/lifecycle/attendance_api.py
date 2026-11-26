@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit.service import record
 from app.core.auth.deps import CurrentUser, require
+from app.core.branding.service import logo_bytes
 from app.core.connections.service import open_connection
 from app.core.connectors.base import Purpose
 from app.core.connectors.biostar import BioStarClient
@@ -143,7 +144,7 @@ async def export_attendance(
     await session.commit()
     name = f"cham-cong-{body.date_from:%Y%m%d}-{body.date_to:%Y%m%d}.xlsx"
     return Response(
-        to_xlsx(report),
+        to_xlsx(report, await logo_bytes(session)),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
             "Content-Disposition": f'attachment; filename="{name}"',

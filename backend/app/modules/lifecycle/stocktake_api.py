@@ -13,29 +13,38 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit.service import record
 from app.core.auth.deps import CurrentUser, require
+from app.core.branding.service import logo_bytes
 from app.core.db import get_session
+from app.core.documents import service as documents
+from app.core.documents.models import Document
 from app.core.errors import AppError, Conflict, NotFound
 from app.core.timeutil import fmt_date
-from app.modules.lifecycle.models import Snapshot, Stocktake, StocktakeItem
+from app.modules.lifecycle.attendance_input import HEADER_ID, _norm_id
+from app.modules.lifecycle.models import Snapshot, Stocktake, StocktakeArea, StocktakeItem, StocktakeZone
 from app.modules.lifecycle.queries import latest_run
 from app.modules.lifecycle.settings import MODULE_ID
 from app.modules.lifecycle.settings import load as load_settings
 from app.modules.lifecycle.stocktake import (
+    CONDITION_LABEL,
+    COUNT_LABEL,
     RESOLUTION_LABEL,
     Condition,
     Resolution,
+    area_for,
     book_item,
     difference,
     in_book,
     matches,
     summary,
     to_xlsx,
+    zone_progress,
 )
 
 router = APIRouter(tags=["lifecycle"])
 view_perm = require("lifecycle.stocktake.view")
 count_perm = require("lifecycle.stocktake.count")
 manage_perm = require("lifecycle.stocktake.manage")
+assign_perm = require("lifecycle.stocktake.assign")
 
 STATUS_LABEL = {"counting": "Đang kiểm", "reviewing": "Đang xử lý chênh lệch", "closed": "Đã đóng"}
 
@@ -51,7 +60,10 @@ def _item_out(i: StocktakeItem) -> dict[str, Any]:
         "fa_code": i.fa_code,
         "state": i.state,
         "user_name": i.user_name,
+        "employee_id": i.employee_id,
+        "department": i.department,
         "site": i.site,
+        "zone_id": str(i.zone_id) if i.zone_id else None,
         "count": i.count,
         "condition": i.condition,
         "seen_at": i.seen_at,
@@ -89,6 +101,25 @@ async def _get(session: AsyncSession, stocktake_id: uuid.UUID, *, lock: bool = F
     return s
 
 
+def _zone_out(z: StocktakeZone) -> dict[str, Any]:
+    return {
+        "id": str(z.id),
+        "name": z.name,
+        "is_store": z.is_store,
+        "assignee_user_id": str(z.assignee_user_id) if z.assignee_user_id else None,
+        "assignee_name": z.assignee_name,
+    }
+
+
+async def _zones(session: AsyncSession, stocktake_id: uuid.UUID) -> list[dict[str, Any]]:
+    rows = await session.scalars(
+        select(StocktakeZone)
+        .where(StocktakeZone.stocktake_id == stocktake_id)
+        .order_by(StocktakeZone.position)
+    )
+    return [_zone_out(z) for z in rows.all()]
+
+
 async def _items(session: AsyncSession, stocktake_id: uuid.UUID) -> list[StocktakeItem]:
     return list(
         (
@@ -104,6 +135,22 @@ async def _items(session: AsyncSession, stocktake_id: uuid.UUID) -> list[Stockta
 def _open_for_count(s: Stocktake) -> None:
     if s.status == "closed":
         raise Conflict("Kỳ kiểm kê đã đóng, không sửa được.", code="stocktake_closed")
+
+
+def _rule(a: StocktakeArea) -> dict[str, Any]:
+    return {
+        "name": a.name,
+        "is_store": a.is_store,
+        "departments": a.departments,
+        "employee_ids": a.employee_ids,
+    }
+
+
+def _owner(asset: dict[str, Any], users: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    """The SDP user of an asset (from the same sync), or None when nobody uses it."""
+    if not asset.get("user_id"):
+        return None
+    return users.get(asset["user_id"]) or {"name": asset.get("user_name")}
 
 
 def _now() -> datetime:
@@ -145,16 +192,16 @@ async def create_stocktake(
     if run is None:
         raise AppError("Chưa có lần đồng bộ SDP nào – chạy Đồng bộ dữ liệu trước.", code="no_sync")
     settings = await load_settings(session)
+    snaps = (
+        await session.scalars(
+            select(Snapshot)
+            .where(Snapshot.run_id == run.id, Snapshot.system.in_(["sdp_asset", "sdp_user"]))
+            .order_by(Snapshot.id)
+        )
+    ).all()
+    users = {x.data.get("id"): x.data for x in snaps if x.system == "sdp_user"}
     assets = [
-        s.data
-        for s in (
-            await session.scalars(
-                select(Snapshot)
-                .where(Snapshot.run_id == run.id, Snapshot.system == "sdp_asset")
-                .order_by(Snapshot.id)
-            )
-        ).all()
-        if in_book(s.data, settings.asset_state_disposed)
+        x.data for x in snaps if x.system == "sdp_asset" and in_book(x.data, settings.asset_state_disposed)
     ]
     if not assets:
         raise AppError("Lần đồng bộ gần nhất không có tài sản SDP nào.", code="no_assets")
@@ -168,13 +215,34 @@ async def create_stocktake(
     )
     session.add(s)
     await session.flush()
+    # The areas as they stand now become this stocktake's zones; each asset goes to its user's area.
+    areas = (
+        await session.scalars(select(StocktakeArea).order_by(StocktakeArea.position, StocktakeArea.name))
+    ).all()
+    zones = {}
+    for n, a in enumerate(areas):
+        zones[a.name] = StocktakeZone(stocktake_id=s.id, name=a.name, is_store=a.is_store, position=n)
+        session.add(zones[a.name])
+    await session.flush()
+    rules = [_rule(a) for a in areas]
     seen: set[str] = set()
     for a in assets:
         item = book_item(a, settings.asset_fa_code_field)
         if not item["asset_id"] or item["asset_id"] in seen:
             continue
         seen.add(item["asset_id"])
-        session.add(StocktakeItem(stocktake_id=s.id, count="pending", **item))
+        owner = _owner(a, users)
+        zone = zones.get(area_for(owner, rules) or "")
+        session.add(
+            StocktakeItem(
+                stocktake_id=s.id,
+                count="pending",
+                employee_id=(owner or {}).get("employee_id"),
+                department=(owner or {}).get("department") or None,
+                zone_id=zone.id if zone else None,
+                **item,
+            )
+        )
     await record(
         session,
         actor=user.actor,
@@ -195,7 +263,15 @@ async def get_stocktake(
 ) -> dict[str, Any]:
     s = await _get(session, stocktake_id)
     items = [_item_out(i) for i in await _items(session, stocktake_id)]
-    return {**_stocktake_out(s), "summary": summary(items), "items": items}
+    zones = await _zones(session, stocktake_id)
+    record = await session.get(Document, s.record_document_id) if s.record_document_id else None
+    return {
+        **_stocktake_out(s),
+        "summary": summary(items),
+        "zones": zone_progress(zones, items),
+        "items": items,
+        "record": _record_out(record),
+    }
 
 
 class ScanIn(BaseModel):
@@ -480,9 +556,24 @@ async def export_stocktake(
     stocktake_id: uuid.UUID,
     user: CurrentUser = Depends(view_perm),
     session: AsyncSession = Depends(get_session),
+    zone_id: str | None = None,
 ) -> Response:
+    """The whole stocktake (file tổng: every zone together), or one zone's part (file thành phần, ?zone_id=;
+    "none" = assets in no zone)."""
     s = await _get(session, stocktake_id)
-    items = [_item_out(i) for i in await _items(session, stocktake_id)]
+    zones = await _zones(session, stocktake_id)
+    names = {z["id"]: z["name"] for z in zones}
+    items = [
+        {**(o := _item_out(i)), "zone": names.get(o["zone_id"] or "")}
+        for i in await _items(session, stocktake_id)
+    ]
+    part = ""
+    if zone_id:
+        if zone_id != "none" and zone_id not in names:
+            raise NotFound("Không tìm thấy khu trong kỳ kiểm kê.")
+        items = [i for i in items if (i["zone_id"] or "none") == zone_id]
+        zones = [z for z in zones if z["id"] == zone_id]
+        part = names.get(zone_id, "Chưa phân khu")
     head = {
         **_stocktake_out(s),
         "cutoff": fmt_date(s.cutoff),
@@ -495,16 +586,442 @@ async def export_stocktake(
         action="lifecycle.stocktake_exported",
         target_type="stocktake",
         target_id=str(s.id),
-        target_label=s.name,
+        target_label=f"{s.name} · {part}" if part else s.name,
     )
     await session.commit()
+    if part:
+        head["name"] = f"{s.name} – {part}"
     return Response(
-        to_xlsx(head, items),
+        to_xlsx(head, items, zones, await logo_bytes(session)),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="kiem-ke-{s.cutoff:%Y%m%d}.xlsx"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="kiem-ke-{s.cutoff:%Y%m%d}{"-" + _slug(part) if part else ""}.xlsx"'
+        },
     )
+
+
+def _slug(text: str) -> str:
+    """ASCII file-name part ("Tầng 5" → "tang-5")."""
+    import unicodedata
+
+    plain = (
+        unicodedata.normalize("NFKD", text.replace("đ", "d").replace("Đ", "D"))
+        .encode("ascii", "ignore")
+        .decode()
+    )
+    return "-".join("".join(c if c.isalnum() else " " for c in plain.lower()).split())[:40] or "khu"
+
+
+# ---------------------------------------------------------------- biên bản kiểm kê (IT + Kế toán)
+
+
+def _record_out(d: Document | None) -> dict[str, Any] | None:
+    if d is None:
+        return None
+    return {
+        "id": str(d.id),
+        "status": d.status,
+        "number": d.number,
+        "has_pdf": d.pdf_file_id is not None,
+        "has_signed": d.signed_file_id is not None,
+        "data": {
+            k: d.data.get(k) for k in ("it_rep", "it_title", "finance_rep", "finance_title", "conclusion")
+        },
+        "version": d.version,
+    }
+
+
+class RecordIn(BaseModel):
+    it_rep: str = Field(min_length=1, max_length=200)
+    it_title: str = Field("", max_length=200)
+    finance_rep: str = Field(min_length=1, max_length=200)
+    finance_title: str = Field("", max_length=200)
+    conclusion: str = Field("", max_length=2000)
+
+
+def _record_data(
+    s: Stocktake, zones: list[dict[str, Any]], items: list[dict[str, Any]], body: RecordIn
+) -> dict[str, Any]:
+    names = {z["id"]: z["name"] for z in zones}
+    totals = summary(items)
+    diffs = []
+    for i in items:
+        if not (d := difference(i)):
+            continue
+        res = RESOLUTION_LABEL.get(i.get("resolution") or "", "")
+        diffs.append(
+            {
+                "name": i["name"],
+                "codes": " / ".join(c for c in (i.get("asset_tag"), i.get("serial")) if c),
+                "fa_code": i.get("fa_code") or "",
+                "where": " · ".join(w for w in (i.get("user_name"), names.get(i.get("zone_id") or "")) if w),
+                "difference": d,
+                "resolution": f"{res} – {i['resolution_note']}" if i.get("resolution_note") else res,
+            }
+        )
+    return {
+        "stocktake_id": str(s.id),
+        "title": s.name,
+        "cutoff": s.cutoff.isoformat(),
+        "date": datetime.now(UTC).date().isoformat(),
+        "synced_at": fmt_date(s.source_synced_at) if s.source_synced_at else "",
+        "totals": {
+            "book": totals["book"],
+            "found": totals["found"],
+            "missing": totals["missing"],
+            "extra": totals["extra"],
+            "damaged": sum(
+                1 for i in items if i["count"] == "found" and i.get("condition") in ("damaged", "broken")
+            ),
+            "differences": totals["differences"],
+        },
+        "zones": [
+            {
+                "name": z["name"],
+                "assignee": z.get("assignee_name") or "",
+                "book": z["book"],
+                "found": z["found"],
+                "missing": z["missing"],
+                "extra": z["extra"],
+            }
+            for z in zone_progress(zones, items)
+        ],
+        "differences": diffs,
+        "assets": [
+            {
+                "zone": names.get(i.get("zone_id") or "", "Chưa phân khu"),
+                "name": i["name"],
+                "type": i.get("product_type") or "",
+                "codes": " / ".join(c for c in (i.get("asset_tag"), i.get("serial")) if c),
+                "fa_code": i.get("fa_code") or "",
+                "user": f"{i['user_name']} ({i['employee_id']})"
+                if i.get("user_name") and i.get("employee_id")
+                else i.get("user_name") or "",
+                "result": COUNT_LABEL[i["count"]],
+                "condition": CONDITION_LABEL.get(i.get("condition") or "", ""),
+            }
+            for i in sorted(
+                items,
+                key=lambda x: (names.get(x.get("zone_id") or "", "~"), x.get("user_name") or "", x["id"]),
+            )
+        ],
+        **body.model_dump(),
+    }
+
+
+@router.post("/stocktakes/{stocktake_id}/record")
+async def make_record(
+    stocktake_id: uuid.UUID,
+    body: RecordIn,
+    user: CurrentUser = Depends(manage_perm),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Draft (or refresh the draft of) the stocktake record from the closed stocktake. It is then numbered
+    (Chốt biên bản), printed, signed by IT and Kế toán, and the signed scan uploaded (core document endpoints)."""
+    from app.modules.lifecycle.stocktake_record import STOCKTAKE_RECORD
+
+    s = await _get(session, stocktake_id, lock=True)
+    if s.status != "closed":
+        raise Conflict(
+            "Đóng kỳ kiểm kê (mọi chênh lệch đã có hướng xử lý) trước khi lập biên bản.", code="not_closed"
+        )
+    items = [_item_out(i) for i in await _items(session, stocktake_id)]
+    data = _record_data(s, await _zones(session, stocktake_id), items, body)
+    doc = await session.get(Document, s.record_document_id) if s.record_document_id else None
+    if doc is not None and doc.status == "void":
+        doc = None
+    if doc is None:
+        doc = await documents.create_draft(session, user.actor, STOCKTAKE_RECORD, MODULE_ID, data)
+        s.record_document_id = doc.id
+    elif doc.status == "draft":
+        await documents.update_draft(session, user.actor, doc, STOCKTAKE_RECORD, data, doc.version)
+    else:
+        raise Conflict("Biên bản đã chốt số – huỷ biên bản trước nếu cần lập lại.", code="record_finalized")
+    await session.commit()
+    return _record_out(doc)  # type: ignore[return-value]
 
 
 @router.get("/stocktake-meta")
 async def stocktake_meta(_: CurrentUser = Depends(view_perm)) -> dict[str, Any]:
     return {"resolutions": RESOLUTION_LABEL}
+
+
+# ---------------------------------------------------------------- zones of one stocktake: who counts what
+
+
+async def _counters(session: AsyncSession) -> list[dict[str, Any]]:
+    """Active people who may count (lifecycle.stocktake.count)."""
+    from app.core.auth.models import User
+    from app.core.modules.registry import get_registry
+    from app.core.rbac.service import permissions_for_user
+
+    users = (
+        await session.scalars(select(User).where(User.is_active.is_(True)).order_by(User.display_name))
+    ).all()
+    return [
+        {"id": str(u.id), "name": u.display_name, "upn": u.upn}
+        for u in users
+        if "lifecycle.stocktake.count" in await permissions_for_user(session, u.id, get_registry())
+    ]
+
+
+@router.get("/stocktake-counters")
+async def stocktake_counters(
+    _: CurrentUser = Depends(assign_perm), session: AsyncSession = Depends(get_session)
+) -> list[dict[str, Any]]:
+    return await _counters(session)
+
+
+class ZoneAssignIn(BaseModel):
+    user_id: uuid.UUID | None
+
+
+@router.put("/stocktakes/{stocktake_id}/zones/{zone_id}")
+async def assign_zone(
+    stocktake_id: uuid.UUID,
+    zone_id: uuid.UUID,
+    body: ZoneAssignIn,
+    user: CurrentUser = Depends(assign_perm),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Hand a zone to the person who counts it (None = nobody yet). Anyone with the count permission may still
+    count assets of any zone: devices move between floors."""
+    s = await _get(session, stocktake_id, lock=True)
+    _open_for_count(s)
+    zone = await session.get(StocktakeZone, zone_id)
+    if zone is None or zone.stocktake_id != s.id:
+        raise NotFound("Không tìm thấy khu trong kỳ kiểm kê.")
+    name = None
+    if body.user_id:
+        name = next((c["name"] for c in await _counters(session) if c["id"] == str(body.user_id)), None)
+        if name is None:
+            raise AppError("Người này không có quyền kiểm kê.", code="not_a_counter")
+    before = {"assignee": zone.assignee_name}
+    zone.assignee_user_id, zone.assignee_name = body.user_id, name
+    await record(
+        session,
+        actor=user.actor,
+        module_id=MODULE_ID,
+        action="lifecycle.stocktake_zone_assigned",
+        target_type="stocktake",
+        target_id=str(s.id),
+        target_label=f"{s.name} · {zone.name}",
+        before=before,
+        after={"assignee": name},
+    )
+    await session.commit()
+    return _zone_out(zone)
+
+
+class ItemZoneIn(BaseModel):
+    zone_id: uuid.UUID | None
+
+
+@router.put("/stocktakes/{stocktake_id}/items/{item_id}/zone")
+async def move_item(
+    stocktake_id: uuid.UUID,
+    item_id: int,
+    body: ItemZoneIn,
+    user: CurrentUser = Depends(assign_perm),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Put an asset in another zone (e.g. one that was in no area, or whose user moved floor)."""
+    s = await _get(session, stocktake_id, lock=True)
+    _open_for_count(s)
+    item = await session.get(StocktakeItem, item_id)
+    if item is None or item.stocktake_id != s.id:
+        raise NotFound("Không tìm thấy tài sản trong kỳ kiểm kê.")
+    zone = await session.get(StocktakeZone, body.zone_id) if body.zone_id else None
+    if body.zone_id and (zone is None or zone.stocktake_id != s.id):
+        raise NotFound("Không tìm thấy khu trong kỳ kiểm kê.")
+    names = {z["id"]: z["name"] for z in await _zones(session, s.id)}
+    before = {"zone": names.get(str(item.zone_id)) if item.zone_id else None}
+    item.zone_id = zone.id if zone else None
+    await record(
+        session,
+        actor=user.actor,
+        module_id=MODULE_ID,
+        action="lifecycle.stocktake_item_moved",
+        target_type="stocktake",
+        target_id=str(s.id),
+        target_label=f"{s.name} · {item.name} ({item.asset_tag or item.serial or '—'})",
+        before=before,
+        after={"zone": zone.name if zone else None},
+    )
+    await session.commit()
+    return _item_out(item)
+
+
+# ---------------------------------------------------------------- areas (khu kiểm kê), kept from year to year
+
+
+def _area_out(a: StocktakeArea) -> dict[str, Any]:
+    return {
+        "id": str(a.id),
+        "name": a.name,
+        "is_store": a.is_store,
+        "departments": a.departments,
+        "employee_ids": a.employee_ids,
+        "position": a.position,
+    }
+
+
+@router.get("/stocktake-areas")
+async def list_areas(
+    _: CurrentUser = Depends(view_perm), session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """The areas, the departments of the latest SDP sync, and the people holding assets who are in no area."""
+    areas = (
+        await session.scalars(select(StocktakeArea).order_by(StocktakeArea.position, StocktakeArea.name))
+    ).all()
+    rules = [_rule(a) for a in areas]
+    run = await latest_run(session)
+    departments: dict[str, int] = {}
+    uncovered: dict[str, dict[str, Any]] = {}
+    per_area: dict[str, int] = {a.name: 0 for a in areas}
+    unused_without_store = 0
+    if run:
+        snaps = (
+            await session.scalars(
+                select(Snapshot).where(
+                    Snapshot.run_id == run.id, Snapshot.system.in_(["sdp_asset", "sdp_user"])
+                )
+            )
+        ).all()
+        users = {x.data.get("id"): x.data for x in snaps if x.system == "sdp_user"}
+        for x in snaps:
+            if x.system != "sdp_asset":
+                continue
+            owner = _owner(x.data, users)
+            if owner and (d := owner.get("department")):
+                departments[d] = departments.get(d, 0) + 1
+            if (hit := area_for(owner, rules)) is not None:
+                per_area[hit] += 1
+            elif owner:
+                key = owner.get("employee_id") or owner.get("name") or ""
+                u = uncovered.setdefault(
+                    key,
+                    {"employee_id": owner.get("employee_id"), "name": owner.get("name") or "",
+                     "department": owner.get("department"), "assets": 0},
+                )  # fmt: skip
+                u["assets"] += 1
+            else:
+                unused_without_store += 1
+    return {
+        "areas": [{**_area_out(a), "assets": per_area.get(a.name, 0)} for a in areas],
+        "departments": [{"name": k, "assets": v} for k, v in sorted(departments.items())],
+        "uncovered": sorted(uncovered.values(), key=lambda u: (u["department"] or "", u["name"]))[:300],
+        "uncovered_total": len(uncovered),
+        "unused_without_store": unused_without_store,
+        "last_sync": run.finished_at.isoformat() if run and run.finished_at else None,
+    }
+
+
+class AreaIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    is_store: bool = False
+    departments: list[str] = Field(default_factory=list, max_length=200)
+    employee_ids: list[str] = Field(default_factory=list, max_length=2000)
+    position: int = Field(0, ge=0, le=1000)
+
+
+async def _check_area(
+    session: AsyncSession, body: AreaIn, area_id: uuid.UUID | None
+) -> tuple[list[str], list[str]]:
+    """Normalized departments / IDs; a department, an employee ID or the store role belongs to one area only."""
+    depts = list(dict.fromkeys(d.strip() for d in body.departments if d.strip()))
+    ids = list(dict.fromkeys(_norm_id(e) for e in body.employee_ids if e.strip()))
+    if bad := [e for e in ids if not HEADER_ID.match(e)]:
+        raise AppError(f"Mã NV không hợp lệ: {', '.join(bad[:5])}.", code="bad_employee_ids")
+    others = [a for a in (await session.scalars(select(StocktakeArea))).all() if a.id != area_id]
+    if any(a.name.lower() == body.name.strip().lower() for a in others):
+        raise Conflict("Đã có khu cùng tên.", code="area_name_taken")
+    if body.is_store and (store := next((a for a in others if a.is_store), None)):
+        raise Conflict(
+            f"Khu “{store.name}” đã là khu kho (tài sản không có người dùng).", code="store_area_taken"
+        )
+    for a in others:
+        if both := {d.lower() for d in depts} & {d.lower() for d in a.departments}:
+            raise Conflict(
+                f"Phòng ban đã thuộc khu “{a.name}”: {', '.join(sorted(both)[:3])}.", code="department_taken"
+            )
+        if both := set(ids) & set(a.employee_ids):
+            raise Conflict(
+                f"Mã NV đã thuộc khu “{a.name}”: {', '.join(sorted(both)[:5])}.", code="employee_taken"
+            )
+    return depts, ids
+
+
+@router.post("/stocktake-areas", status_code=201)
+async def create_area(
+    body: AreaIn, user: CurrentUser = Depends(manage_perm), session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    depts, ids = await _check_area(session, body, None)
+    a = StocktakeArea(name=body.name.strip(), is_store=body.is_store, departments=depts, employee_ids=ids,
+                      position=body.position, updated_by=user.upn)  # fmt: skip
+    session.add(a)
+    await session.flush()
+    await record(
+        session,
+        actor=user.actor,
+        module_id=MODULE_ID,
+        action="lifecycle.stocktake_area_created",
+        target_type="stocktake_area",
+        target_id=str(a.id),
+        target_label=a.name,
+        after={"departments": depts, "employee_ids": len(ids), "is_store": a.is_store},
+    )
+    await session.commit()
+    return _area_out(a)
+
+
+@router.put("/stocktake-areas/{area_id}")
+async def update_area(
+    area_id: uuid.UUID,
+    body: AreaIn,
+    user: CurrentUser = Depends(manage_perm),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    a = await session.get(StocktakeArea, area_id, with_for_update=True)
+    if a is None:
+        raise NotFound("Không tìm thấy khu kiểm kê.")
+    depts, ids = await _check_area(session, body, a.id)
+    before = _area_out(a)
+    a.name, a.is_store, a.departments, a.employee_ids = body.name.strip(), body.is_store, depts, ids
+    a.position, a.updated_by, a.updated_at = body.position, user.upn, _now()
+    await record(
+        session,
+        actor=user.actor,
+        module_id=MODULE_ID,
+        action="lifecycle.stocktake_area_updated",
+        target_type="stocktake_area",
+        target_id=str(a.id),
+        target_label=a.name,
+        before=before,
+        after=_area_out(a),
+    )
+    await session.commit()
+    return _area_out(a)
+
+
+@router.delete("/stocktake-areas/{area_id}", status_code=204)
+async def delete_area(
+    area_id: uuid.UUID, user: CurrentUser = Depends(manage_perm), session: AsyncSession = Depends(get_session)
+) -> Response:
+    """Stocktakes already opened keep their zones."""
+    a = await session.get(StocktakeArea, area_id)
+    if a is None:
+        raise NotFound("Không tìm thấy khu kiểm kê.")
+    await record(
+        session,
+        actor=user.actor,
+        module_id=MODULE_ID,
+        action="lifecycle.stocktake_area_deleted",
+        target_type="stocktake_area",
+        target_id=str(a.id),
+        target_label=a.name,
+        before=_area_out(a),
+    )
+    await session.delete(a)
+    await session.commit()
+    return Response(status_code=204)

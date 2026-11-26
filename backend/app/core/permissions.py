@@ -22,6 +22,7 @@ CONNECTIONS_TEST = "core.connections.test"
 AUDIT_VIEW = "core.audit.view"
 RBAC_MANAGE = "core.rbac.manage"
 CHECKLIST_MANAGE = "core.workflow.checklist.manage"
+BRANDING_MANAGE = "core.branding.manage"
 
 
 async def _connections_widget(session: AsyncSession) -> dict[str, Any]:
@@ -53,6 +54,7 @@ CORE_MANIFEST = ModuleManifest(
         Permission(CONNECTIONS_TEST, "Kiểm tra kết nối", ("manager", "supervisor", "operator")),
         Permission(AUDIT_VIEW, "Xem nhật ký kiểm tra", ("manager",)),
         Permission(RBAC_MANAGE, "Quản lý người dùng và phân quyền"),
+        Permission(BRANDING_MANAGE, "Đổi logo in trên báo cáo và biên bản"),
         Permission(
             CHECKLIST_MANAGE, "Sửa checklist và yêu cầu bằng chứng của các bước quy trình", ("manager",)
         ),
@@ -92,5 +94,6 @@ CORE_MANIFEST = ModuleManifest(
         NavItem("Kết nối hệ thống", "/settings/connections", "plug", CONNECTIONS_VIEW),
         NavItem("Nhật ký kiểm tra", "/settings/audit", "scroll-text", AUDIT_VIEW),
         NavItem("Người dùng & quyền", "/settings/access", "shield-check", RBAC_MANAGE),
+        NavItem("Logo báo cáo", "/settings/branding", "image", BRANDING_MANAGE),
     ],
 )

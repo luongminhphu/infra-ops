@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit.models import AuditLog
+from app.core.branding.service import xlsx_logo
 from app.core.timeutil import TZ
 from app.core.workflow.models import Job
 from app.modules.lifecycle.models import LifecycleRequest, ReconRow
@@ -195,7 +196,7 @@ def _safe(v: Any) -> Any:
     return f"'{v}" if isinstance(v, str) and v[:1] in ("=", "+", "-", "@") else v
 
 
-def to_xlsx(rows: list[ReviewRow], month: date) -> bytes:
+def to_xlsx(rows: list[ReviewRow], month: date, logo: bytes | None = None) -> bytes:
     wb = Workbook()
     ws = wb.active
     assert ws is not None
@@ -212,6 +213,7 @@ def to_xlsx(rows: list[ReviewRow], month: date) -> bytes:
         for cell in row:
             cell.alignment = Alignment(vertical="top", wrap_text=True)
     ws.freeze_panes = "C2"
+    xlsx_logo(ws, logo)
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
