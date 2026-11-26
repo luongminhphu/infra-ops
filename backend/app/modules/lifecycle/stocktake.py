@@ -25,6 +25,22 @@ RESOLUTION_LABEL = {
 }
 
 
+def area_for(user: dict[str, Any] | None, areas: list[dict[str, Any]]) -> str | None:
+    """The area (name) an asset is counted in, by its user: listed employee ID first, then department.
+
+    Assets nobody uses go to the store area (Kho IT). None = not in any area yet.
+    """
+    if not user:
+        return next((a["name"] for a in areas if a.get("is_store")), None)
+    emp = (user.get("employee_id") or "").strip()
+    if emp and (hit := next((a["name"] for a in areas if emp in a.get("employee_ids", [])), None)):
+        return hit
+    dept = (user.get("department") or "").strip().lower()
+    return next(
+        (a["name"] for a in areas if dept and dept in {d.lower() for d in a.get("departments", [])}), None
+    )
+
+
 def norm_code(code: str | None) -> str:
     return (code or "").strip().upper()
 
@@ -85,15 +101,16 @@ def _safe(v: Any) -> Any:
     return f"'{v}" if isinstance(v, str) and v[:1] in ("=", "+", "-", "@") else v
 
 
-HEADERS = ["STT", "Tên tài sản", "Loại", "Asset tag", "Serial", "Mã TSCĐ", "Trạng thái SDP", "Người dùng", "Site",
-           "Kết quả kiểm", "Tình trạng", "Nơi thấy", "Ghi chú kiểm", "Chênh lệch", "Hướng xử lý", "Ghi chú xử lý",
+HEADERS = ["STT", "Khu", "Tên tài sản", "Loại", "Asset tag", "Serial", "Mã TSCĐ", "Trạng thái SDP", "Người dùng",
+           "Mã NV", "Phòng ban", "Site", "Kết quả kiểm", "Tình trạng", "Nơi thấy", "Ghi chú kiểm", "Chênh lệch", "Hướng xử lý", "Ghi chú xử lý",
            "Người kiểm"]  # fmt: skip
-WIDTHS = [5, 30, 14, 14, 18, 14, 14, 24, 14, 14, 16, 18, 24, 30, 26, 30, 24]
+WIDTHS = [5, 14, 30, 14, 14, 18, 14, 14, 24, 10, 22, 14, 14, 16, 18, 24, 30, 26, 30, 24]
 
 
 def _row(n: int, i: dict[str, Any]) -> list[Any]:
     return [
         n,
+        i.get("zone") or "Chưa phân khu",
         i["name"],
         i.get("product_type") or "",
         i.get("asset_tag") or "",
@@ -101,6 +118,8 @@ def _row(n: int, i: dict[str, Any]) -> list[Any]:
         i.get("fa_code") or "",
         i.get("state") or "",
         i.get("user_name") or "",
+        i.get("employee_id") or "",
+        i.get("department") or "",
         i.get("site") or "",
         COUNT_LABEL[i["count"]],
         CONDITION_LABEL.get(i.get("condition") or "", ""),
@@ -125,11 +144,23 @@ def _sheet(ws: Any, rows: list[dict[str, Any]]) -> None:
     for row in ws.iter_rows(min_row=2):
         for cell in row:
             cell.alignment = Alignment(vertical="top", wrap_text=True)
-    ws.freeze_panes = "C2"
+    ws.freeze_panes = "D2"
 
 
-def to_xlsx(stocktake: dict[str, Any], items: list[dict[str, Any]]) -> bytes:
-    """Tổng hợp · Sổ SDP (for Hành chánh / Kế toán to compare with their books) · Chênh lệch · Ngoài sổ SDP."""
+def zone_progress(zones: list[dict[str, Any]], items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Per zone (in order, then "Chưa phân khu" when some assets have none): who counts it and how far."""
+    rows = [{**z, **summary([i for i in items if i.get("zone_id") == z["id"]])} for z in zones]
+    if loose := [i for i in items if not i.get("zone_id")]:
+        rows.append(
+            {"id": None, "name": "Chưa phân khu", "is_store": False, "assignee_name": None, **summary(loose)}
+        )
+    return rows
+
+
+def to_xlsx(
+    stocktake: dict[str, Any], items: list[dict[str, Any]], zones: list[dict[str, Any]] | None = None
+) -> bytes:
+    """Tổng hợp · Theo khu · Sổ SDP (for Hành chánh / Kế toán to compare with their books) · Chênh lệch · Ngoài sổ."""
     s = summary(items)
     wb = Workbook()
     ws = wb.active
@@ -154,6 +185,18 @@ def to_xlsx(stocktake: dict[str, Any], items: list[dict[str, Any]]) -> bytes:
     ws.column_dimensions["B"].width = 40
     for r in ws.iter_rows(max_col=1):
         r[0].font = Font(bold=True)
+    if zones:
+        zs = wb.create_sheet("Theo khu")
+        zs.append(
+            ["Khu", "Người kiểm", "Trên sổ", "Có", "Không tìm thấy", "Chưa kiểm", "Ngoài sổ", "Chênh lệch"]
+        )
+        for z in zone_progress(zones, items):
+            zs.append([_safe(z["name"]), _safe(z.get("assignee_name") or ""), z["book"], z["found"], z["missing"],
+                       z["pending"], z["extra"], z["differences"]])  # fmt: skip
+        for cell in zs[1]:
+            cell.font = Font(bold=True)
+        for col, w in zip("ABCDEFGH", (18, 26, 10, 10, 14, 10, 10, 12), strict=True):
+            zs.column_dimensions[col].width = w
     _sheet(wb.create_sheet("Sổ SDP"), [i for i in items if i["count"] != "extra"])
     _sheet(wb.create_sheet("Chênh lệch"), [i for i in items if difference(i)])
     _sheet(wb.create_sheet("Ngoài sổ SDP"), [i for i in items if i["count"] == "extra"])

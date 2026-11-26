@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import io
+import uuid
 
 import respx
 from openpyxl import load_workbook
 
-from app.modules.lifecycle.stocktake import book_item, difference, in_book, matches, summary
+from app.modules.lifecycle.stocktake import (
+    area_for,
+    book_item,
+    difference,
+    in_book,
+    matches,
+    summary,
+    zone_progress,
+)
 from tests.test_lifecycle_api import _sync, configured, mock_systems  # noqa: F401  (fixture)
 from tests.test_workload import _user
 
@@ -96,7 +105,9 @@ async def test_stocktake_end_to_end(admin, client, configured, respx_mock) -> No
     assert x.status_code == 200 and "kiem-ke-20261231.xlsx" in x.headers["content-disposition"]
     wb = load_workbook(io.BytesIO(x.content))
     assert wb.sheetnames == ["Tổng hợp", "Sổ SDP", "Chênh lệch", "Ngoài sổ SDP"]
-    assert [r[1] for r in wb["Ngoài sổ SDP"].iter_rows(min_row=2, values_only=True)] == ["Màn hình lạ"]
+    assert [r[1:3] for r in wb["Ngoài sổ SDP"].iter_rows(min_row=2, values_only=True)] == [
+        ("Chưa phân khu", "Màn hình lạ")
+    ]
     actions = (await admin.get("/api/core/audit", params={"action": "lifecycle.stocktake_closed"})).json()
     assert actions["items"]
 
@@ -108,3 +119,81 @@ async def test_stocktake_end_to_end(admin, client, configured, respx_mock) -> No
     assert (
         await client.post("/api/lifecycle/stocktakes", json={"name": "x", "cutoff": "2026-12-31"})
     ).status_code == 403
+
+
+def test_area_by_listed_employee_then_department_and_store_for_unused_assets() -> None:
+    areas = [
+        {"name": "Tầng 5", "departments": ["Kế Toán"], "employee_ids": []},
+        {"name": "Tầng 6", "departments": [], "employee_ids": ["002100"]},
+        {"name": "Kho IT", "is_store": True, "departments": [], "employee_ids": []},
+    ]
+    assert area_for({"employee_id": "002100", "department": "Kế Toán"}, areas) == "Tầng 6"  # listed ID wins
+    assert area_for({"employee_id": "009999", "department": "kế toán "}, areas) == "Tầng 5"
+    assert area_for({"employee_id": "009999", "department": "Kinh Doanh"}, areas) is None
+    assert area_for(None, areas) == "Kho IT"
+    assert area_for(None, areas[:2]) is None
+    zones = [{"id": "z1", "name": "Tầng 5", "assignee_name": "An"}]
+    rows = zone_progress(zones, [{"zone_id": "z1", "count": "found"}, {"zone_id": None, "count": "pending"}])
+    assert [(r["name"], r["found"], r["pending"]) for r in rows] == [
+        ("Tầng 5", 1, 0),
+        ("Chưa phân khu", 0, 1),
+    ]
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_areas_split_the_count_between_counters(admin, configured, respx_mock) -> None:  # type: ignore[no-untyped-def]  # noqa: F811
+    mock_systems(respx_mock)
+    await _sync()
+    areas = "/api/lifecycle/stocktake-areas"
+    t5 = await admin.post(areas, json={"name": "Tầng 5", "departments": ["Kế Toán"], "position": 1})
+    assert t5.status_code == 201, t5.text
+    store = await admin.post(areas, json={"name": "Kho IT", "is_store": True, "position": 9})
+    assert store.status_code == 201, store.text
+    # One department, employee ID and store role per area; IDs keep their leading zeros.
+    taken = await admin.post(areas, json={"name": "Tầng 6", "departments": ["kế toán"]})
+    assert taken.json()["error"]["code"] == "department_taken"
+    assert (await admin.post(areas, json={"name": "Kho 2", "is_store": True})).json()["error"][
+        "code"
+    ] == "store_area_taken"
+    assert (await admin.post(areas, json={"name": "X", "employee_ids": ["00 1"]})).json()["error"][
+        "code"
+    ] == "bad_employee_ids"
+    t6 = (await admin.post(areas, json={"name": "Tầng 6", "employee_ids": ["1500"]})).json()
+    assert t6["employee_ids"] == ["001500"]
+
+    listing = (await admin.get(areas)).json()
+    assert {a["name"]: a["assets"] for a in listing["areas"]}["Tầng 5"] >= 1  # a1 (Kế Toán)
+    assert any(d["name"] == "Kế Toán" for d in listing["departments"])
+
+    st = (
+        await admin.post(
+            "/api/lifecycle/stocktakes", json={"name": "Kiểm kê theo tầng", "cutoff": "2026-12-31"}
+        )
+    ).json()
+    base = f"/api/lifecycle/stocktakes/{st['id']}"
+    got = (await admin.get(base)).json()
+    zones = {z["name"]: z for z in got["zones"]}
+    by_asset = {i["asset_id"]: i for i in got["items"]}
+    assert by_asset["a1"]["zone_id"] == zones["Tầng 5"]["id"] and by_asset["a1"]["employee_id"] == "002100"
+    assert by_asset["a2"]["zone_id"] == zones["Kho IT"]["id"]  # nobody uses it
+
+    # Hand a zone to a counter; someone without the count permission is refused.
+    counters = (await admin.get("/api/lifecycle/stocktake-counters")).json()
+    me = next(c for c in counters if c["upn"] == "admin@test.local")
+    r = await admin.put(f"{base}/zones/{zones['Tầng 5']['id']}", json={"user_id": me["id"]})
+    assert r.json()["assignee_name"] == me["name"]
+    assert (
+        await admin.put(f"{base}/zones/{zones['Tầng 5']['id']}", json={"user_id": str(uuid.uuid4())})
+    ).json()["error"]["code"] == "not_a_counter"
+    # Move an asset to another zone.
+    moved = await admin.put(
+        f"{base}/items/{by_asset['a1']['id']}/zone", json={"zone_id": zones["Tầng 6"]["id"]}
+    )
+    assert moved.json()["zone_id"] == zones["Tầng 6"]["id"]
+    got = (await admin.get(base)).json()
+    assert {z["name"]: z["book"] for z in got["zones"]}["Tầng 6"] >= 1
+    x = await admin.get(f"{base}/export")
+    assert "Theo khu" in load_workbook(io.BytesIO(x.content)).sheetnames
+
+    for a in (await admin.get(areas)).json()["areas"]:  # leave no areas behind for other tests
+        assert (await admin.delete(f"{areas}/{a['id']}")).status_code == 204

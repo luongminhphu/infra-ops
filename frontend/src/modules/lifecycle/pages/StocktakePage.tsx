@@ -14,6 +14,7 @@ import { Field, Input, Select } from "@/core/ui/field";
 import { HelpTip } from "@/core/ui/help-tip";
 import { StatusBadge, type Status } from "@/core/ui/status";
 import { Tabs } from "@/core/ui/tabs";
+import { AreasPanel } from "./StocktakeAreas";
 
 export type Count = "pending" | "found" | "missing" | "extra";
 type Condition = "good" | "damaged" | "broken";
@@ -28,7 +29,10 @@ export interface Item {
   fa_code: string | null;
   state: string | null;
   user_name: string | null;
+  employee_id: string | null;
+  department: string | null;
   site: string | null;
+  zone_id: string | null;
   count: Count;
   condition: Condition | null;
   seen_at: string;
@@ -49,7 +53,16 @@ interface Summary {
   unresolved: number;
 }
 
+export interface ZoneRow extends Summary {
+  id: string | null;
+  name: string;
+  is_store: boolean;
+  assignee_user_id: string | null;
+  assignee_name: string | null;
+}
+
 interface Head {
+  zones: ZoneRow[];
   id: string;
   name: string;
   cutoff: string;
@@ -73,15 +86,25 @@ const SHOWN = 200;
 export type View = "all" | "pending" | "missing" | "found" | "differences" | "extra";
 
 /** Items of one tab, narrowed by a search over name, codes, user and site. */
-export function viewItems(items: Item[], view: View, query: string): Item[] {
+/** "mine" = the zones handed to me, "none" = assets in no zone, "" = every zone, else one zone id. */
+export type ZoneFilter = string;
+
+/** Items of one tab and zone, narrowed by a search over name, codes, user and site; sorted by person. */
+export function viewItems(items: Item[], view: View, query: string, zone: ZoneFilter = "", mine: string[] = []): Item[] {
   const q = query.trim().toLowerCase();
+  const inZone = (i: Item) =>
+    !zone || (zone === "mine" ? mine.includes(i.zone_id ?? "") : zone === "none" ? !i.zone_id : i.zone_id === zone);
   return items.filter(
     (i) =>
+      inZone(i) &&
       (view === "all" ||
         (view === "differences" ? Boolean(i.difference) : view === "found" ? i.count === "found" : i.count === view)) &&
-      (!q || [i.name, i.asset_tag, i.serial, i.fa_code, i.user_name, i.site].some((v) => v?.toLowerCase().includes(q))),
-  );
+      (!q || [i.name, i.asset_tag, i.serial, i.fa_code, i.user_name, i.employee_id, i.department, i.site].some((v) => v?.toLowerCase().includes(q))),
+  ).sort((a, b) => person(a).localeCompare(person(b), "vi") || a.id - b.id);
 }
+
+/** Who the asset is with: counting goes desk by desk. */
+export const person = (i: Item) => (i.user_name ? `${i.user_name}${i.employee_id ? ` · ${i.employee_id}` : ""}` : i.count === "extra" ? "Ngoài sổ SDP" : "Không có người dùng");
 
 // ---------------------------------------------------------------- list
 
@@ -121,6 +144,7 @@ export function StocktakesPage() {
           ))}
         </ul>
       )}
+      <AreasPanel />
       <CreateDialog open={open} onClose={() => setOpen(false)} lastSync={q.data?.last_sync ?? null} onCreated={(id) => navigate(`/lifecycle/stocktake/${id}`)} />
     </>
   );
@@ -170,7 +194,7 @@ function CreateDialog({ open, onClose, lastSync, onCreated }: { open: boolean; o
 
 export function StocktakePage() {
   const { id = "" } = useParams();
-  const { can } = useAuth();
+  const { can, me } = useAuth();
   const qc = useQueryClient();
   const key = ["lifecycle", "stocktake", id];
   const q = useQuery({ queryKey: key, queryFn: () => api<Head & { summary: Summary; items: Item[] }>(`/api/lifecycle/stocktakes/${id}`) });
@@ -178,6 +202,7 @@ export function StocktakePage() {
   const [touchedView, setTouchedView] = useState(false);
   const [query, setQuery] = useState("");
   const [extra, setExtra] = useState<{ code: string } | null>(null);
+  const [zone, setZone] = useState<ZoneFilter | null>(null);
   const refresh = () => qc.invalidateQueries({ queryKey: key });
 
   const step = useMutation({
@@ -198,7 +223,11 @@ export function StocktakePage() {
   const manage = can("lifecycle.stocktake.manage");
   // Counting starts on what is left to count; afterwards on the differences.
   const current: View = view === "differences" && s.status === "counting" && !touchedView ? "pending" : view;
-  const shown = viewItems(s.items, current, query);
+  const mine = s.zones.filter((z) => z.assignee_user_id && z.assignee_user_id === me?.id).map((z) => z.id ?? "");
+  // Opens on my zones when I have some.
+  const zoneNow = zone ?? (mine.length ? "mine" : "");
+  const shown = viewItems(s.items, current, query, zoneNow, mine);
+  const zoneName = new Map(s.zones.map((z) => [z.id ?? "", z.name]));
   const tabs: { key: View; label: string; n: number }[] = [
     s.status === "counting"
       ? { key: "pending", label: "Chưa kiểm", n: s.summary.pending }
@@ -237,6 +266,7 @@ export function StocktakePage() {
           <span className="block">3. Chọn hướng xử lý cho mọi chênh lệch (đã thống nhất với Hành chánh / Kế toán), rồi Đóng kỳ. File Excel có sheet Sổ SDP để HC/KT đối chiếu với sổ của mình.</span>
         </HelpTip>
       </div>
+      {s.zones.length > 0 && <ZonesPanel stocktakeId={id} zones={s.zones} canAssign={manage && open} onSaved={refresh} />}
       {counting && <ScanBox stocktakeId={id} onCounted={refresh} onUnknown={(code) => setExtra({ code })} />}
       <Panel
         title="Tài sản"
@@ -245,8 +275,15 @@ export function StocktakePage() {
       >
         <div className="px-4 pt-3">
           <Tabs label="Lọc tài sản" value={current} onChange={(k) => { setTouchedView(true); setView(k as View); }} tabs={tabs.map((t) => ({ key: t.key, label: <>{t.label} <span className="tabular text-muted">{t.n}</span></> }))}>
-            <div className="py-3">
-              <Input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Tìm tên, serial, asset tag, Mã TSCĐ, người dùng, site" aria-label="Tìm tài sản" className="max-w-md" />
+            <div className="flex flex-wrap gap-3 py-3">
+              {s.zones.length > 0 && (
+                <Select aria-label="Khu" value={zoneNow} onChange={(e) => setZone(e.target.value)} className="w-auto">
+                  <option value="">Mọi khu</option>
+                  {mine.length > 0 && <option value="mine">Khu của tôi</option>}
+                  {s.zones.map((z) => <option key={z.id ?? "none"} value={z.id ?? "none"}>{z.name}{z.assignee_name ? ` – ${z.assignee_name}` : ""}</option>)}
+                </Select>
+              )}
+              <Input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Tìm tên, serial, asset tag, Mã TSCĐ, người dùng, Mã NV, phòng ban" aria-label="Tìm tài sản" className="max-w-md flex-1" />
             </div>
           </Tabs>
         </div>
@@ -254,8 +291,19 @@ export function StocktakePage() {
           <p className="px-4 pb-4 text-sm text-muted">Không có tài sản nào ở mục này.</p>
         ) : (
           <ul className="divide-y divide-line border-t border-line">
-            {shown.slice(0, SHOWN).map((i) => (
-              <ItemRow key={i.id} item={i} stocktakeId={id} status={s.status} canCount={counting} canResolve={manage && open} onSaved={refresh} />
+            {shown.slice(0, SHOWN).map((i, n, all) => (
+              <ItemRow
+                key={i.id}
+                item={i}
+                heading={n === 0 || person(all[n - 1]!) !== person(i) ? person(i) : null}
+                zoneName={i.zone_id ? zoneName.get(i.zone_id) ?? "" : "Chưa phân khu"}
+                zones={manage && open && s.zones.length > 0 ? s.zones : null}
+                stocktakeId={id}
+                status={s.status}
+                canCount={counting}
+                canResolve={manage && open}
+                onSaved={refresh}
+              />
             ))}
           </ul>
         )}
@@ -263,6 +311,61 @@ export function StocktakePage() {
       </Panel>
       {extra && <ExtraDialog stocktakeId={id} code={extra.code} onClose={() => setExtra(null)} onSaved={refresh} />}
     </>
+  );
+}
+
+/** Who counts which zone, and how far each has got. */
+function ZonesPanel({ stocktakeId, zones, canAssign, onSaved }: { stocktakeId: string; zones: ZoneRow[]; canAssign: boolean; onSaved: () => void }) {
+  const counters = useQuery({
+    queryKey: ["lifecycle", "stocktake-counters"],
+    queryFn: () => api<{ id: string; name: string; upn: string }[]>("/api/lifecycle/stocktake-counters"),
+    enabled: canAssign,
+  });
+  const assign = useMutation({
+    mutationFn: ({ zoneId, userId }: { zoneId: string; userId: string }) =>
+      api(`/api/lifecycle/stocktakes/${stocktakeId}/zones/${zoneId}`, { method: "PUT", json: { user_id: userId || null } }),
+    onSuccess: onSaved,
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  return (
+    <Panel title="Chia việc theo khu" className="mb-4" bodyClassName="p-0">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-left text-muted">
+            <tr className="border-b border-line">
+              <th scope="col" className="px-4 py-2 font-medium">Khu</th>
+              <th scope="col" className="px-2 py-2 font-medium">Người kiểm</th>
+              <th scope="col" className="px-2 py-2 text-right font-medium">Đã thấy</th>
+              <th scope="col" className="px-2 py-2 text-right font-medium">Còn lại</th>
+              <th scope="col" className="px-4 py-2 text-right font-medium">Chênh lệch</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {zones.map((z) => {
+              const left = z.pending + z.missing;
+              return (
+                <tr key={z.id ?? "none"}>
+                  <th scope="row" className="px-4 py-2 text-left font-medium">{z.name}</th>
+                  <td className="px-2 py-1.5">
+                    {canAssign && z.id && counters.data ? (
+                      <Select aria-label={`Người kiểm ${z.name}`} value={z.assignee_user_id ?? ""} onChange={(e) => assign.mutate({ zoneId: z.id!, userId: e.target.value })} className="h-7 w-auto max-sm:h-11">
+                        <option value="">Chưa giao</option>
+                        {counters.data.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </Select>
+                    ) : (
+                      z.assignee_name ?? <span className="text-muted">{z.id ? "Chưa giao" : "Supervisor chuyển vào khu"}</span>
+                    )}
+                  </td>
+                  <td className="px-2 py-2 text-right tabular">{z.found} / {z.book}</td>
+                  <td className="px-2 py-2 text-right tabular">{left > 0 ? left : <StatusBadge status="done" label="Xong" />}</td>
+                  <td className="px-4 py-2 text-right tabular">{z.differences || "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
   );
 }
 
@@ -311,7 +414,12 @@ function ScanBox({ stocktakeId, onCounted, onUnknown }: { stocktakeId: string; o
   );
 }
 
-function ItemRow({ item: i, stocktakeId, status, canCount, canResolve, onSaved }: { item: Item; stocktakeId: string; status: Head["status"]; canCount: boolean; canResolve: boolean; onSaved: () => void }) {
+function ItemRow({ item: i, heading, zoneName, zones, stocktakeId, status, canCount, canResolve, onSaved }: { item: Item; heading: string | null; zoneName: string; zones: ZoneRow[] | null; stocktakeId: string; status: Head["status"]; canCount: boolean; canResolve: boolean; onSaved: () => void }) {
+  const move = useMutation({
+    mutationFn: (zoneId: string) => api(`/api/lifecycle/stocktakes/${stocktakeId}/items/${i.id}/zone`, { method: "PUT", json: { zone_id: zoneId || null } }),
+    onSuccess: onSaved,
+    onError: (e) => toast.error(errorMessage(e)),
+  });
   const meta = useQuery({ queryKey: ["lifecycle", "stocktake-meta"], queryFn: () => api<{ resolutions: Record<string, string> }>("/api/lifecycle/stocktake-meta"), staleTime: Infinity });
   const [note, setNote] = useState(i.resolution_note);
   const save = useMutation({
@@ -333,6 +441,7 @@ function ItemRow({ item: i, stocktakeId, status, canCount, canResolve, onSaved }
   const book = i.count !== "extra";
   return (
     <li className="grid gap-2 px-4 py-3">
+      {heading && <p className="-mx-4 -mt-3 mb-1 bg-surface-2 px-4 py-1.5 text-sm font-semibold">{heading}</p>}
       <div className="min-w-0">
         <p className="flex flex-wrap items-center gap-2">
           <span className="font-medium">{i.name}</span>
@@ -345,7 +454,9 @@ function ItemRow({ item: i, stocktakeId, status, canCount, canResolve, onSaved }
           <span>Serial <Mono>{i.serial || "—"}</Mono></span>
           <span>Mã TSCĐ <Mono>{i.fa_code || "—"}</Mono></span>
           {i.user_name && <span>{i.user_name}</span>}
+          {i.department && <span>{i.department}</span>}
           {i.site && <span>Site {i.site}</span>}
+          <span>Khu {zoneName}</span>
           {i.seen_at && <span>Thấy ở {i.seen_at}</span>}
         </p>
         {i.difference && <p className="mt-1 text-sm">Chênh lệch: {i.difference}{i.resolution && meta.data && <> · <b className="font-semibold">{meta.data.resolutions[i.resolution]}</b>{i.resolution_note && ` – ${i.resolution_note}`}</>}</p>}
@@ -364,6 +475,12 @@ function ItemRow({ item: i, stocktakeId, status, canCount, canResolve, onSaved }
           </>
         )}
         {canCount && !book && <Button size="sm" variant="ghost" className="max-sm:h-11" loading={remove.isPending} onClick={() => remove.mutate()}>Xoá dòng</Button>}
+        {zones && (
+          <Select aria-label={`Chuyển khu ${i.name}`} value={i.zone_id ?? ""} onChange={(e) => move.mutate(e.target.value)} className="h-7 w-auto max-sm:h-11">
+            <option value="">Chưa phân khu</option>
+            {zones.filter((z) => z.id).map((z) => <option key={z.id} value={z.id!}>{z.name}</option>)}
+          </Select>
+        )}
         {canResolve && i.difference && status !== "counting" && meta.data && (
           <>
             <Input value={note} onChange={(e) => setNote(e.target.value)} onBlur={() => i.resolution && note !== i.resolution_note && resolve.mutate(i.resolution)} placeholder="Ghi chú xử lý" aria-label={`Ghi chú xử lý ${i.name}`} className="h-7 w-48 max-sm:h-11" maxLength={1000} />
