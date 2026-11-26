@@ -24,6 +24,7 @@ from app.modules.lifecycle.assignment import REASSIGN_JOB
 from app.modules.lifecycle.attendance_api import router as attendance_router
 from app.modules.lifecycle.documents import HANDOVER, RETURN
 from app.modules.lifecycle.documents_api import router as documents_router
+from app.modules.lifecycle.facts import FACTS
 from app.modules.lifecycle.inventory_api import router as inventory_router
 from app.modules.lifecycle.jobs_api import router as jobs_router
 from app.modules.lifecycle.offboard_review import next_action as offboard_review_action
@@ -162,6 +163,7 @@ manifest = ModuleManifest(
     ],
     # Microsoft connectors (entra, ad, exchange) are added once that integration is cleared.
     connectors_used=["sdp", "biostar"],
+    facts=FACTS,
     scheduled_tasks=[
         ScheduledTask(
             "lifecycle.sync",

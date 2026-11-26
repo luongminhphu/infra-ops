@@ -13,8 +13,12 @@ manifest = ModuleManifest(
         Permission(
             VIEW, "Xem Infra Playbook (bản đã xuất bản)", ("manager", "supervisor", "operator", "viewer")
         ),
-        Permission(EDIT, "Soạn hướng dẫn (bản nháp, ảnh minh hoạ)", ("manager", "supervisor")),
-        Permission(PUBLISH, "Xuất bản và xoá hướng dẫn", ("manager",)),
+        Permission(
+            EDIT,
+            "Soạn Playbook: thêm, sửa, thay thế bước (bản nháp, ảnh minh hoạ)",
+            ("manager", "supervisor"),
+        ),
+        Permission(PUBLISH, "Xuất bản và xoá Playbook", ("manager", "supervisor")),
     ],
     routers=[router],
     nav=[NavItem("Infra Playbook", "/playbook", "book-open", VIEW)],

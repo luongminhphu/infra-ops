@@ -10,7 +10,14 @@ import importlib
 from collections.abc import Iterable
 from typing import Any
 
-from app.core.modules.manifest import DocumentKind, ModuleManifest, NavItem, Permission, ScheduledTask
+from app.core.modules.manifest import (
+    DocumentKind,
+    FactSource,
+    ModuleManifest,
+    NavItem,
+    Permission,
+    ScheduledTask,
+)
 from app.core.permissions import CORE_MANIFEST
 
 
@@ -52,6 +59,9 @@ class ModuleRegistry:
 
     def workflows(self) -> list[tuple[str, Any]]:
         return [(m.id, w) for m in self._modules.values() for w in m.workflows]
+
+    def facts(self) -> dict[str, FactSource]:
+        return {f.key: f for m in self._modules.values() for f in m.facts}
 
     def has_permission(self, code: str) -> bool:
         return code in self._permissions

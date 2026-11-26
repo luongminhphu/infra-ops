@@ -112,3 +112,100 @@ def test_old_module_name_in_env_still_enables_playbook() -> None:
         "lifecycle",
         "playbook",
     ]
+
+
+MONITOR_GUIDE = {
+    "root": "start",
+    "nodes": {
+        "start": {"title": "Yêu cầu cấp thêm màn hình", "children": [{"label": "", "to": "chk"}],
+                  "actions": [{"tool": "lifecycle.reconciliation", "label": "Xem đối soát"}]},
+        "chk": {"kind": "check", "title": "Còn trong tiêu chuẩn?",
+                "check": {"left": {"fact": "lifecycle.assets_in_use", "param": "Monitor"}, "op": "<",
+                          "right": {"fact": "lifecycle.standard_quantity", "param": "Monitor"}},
+                "children": [{"label": "Đúng", "to": "std"}, {"label": "Sai", "to": "why"}]},
+        "why": {"title": "Có lý do nghiệp vụ?", "children": [{"label": "Có", "to": "adhoc"}, {"label": "Không", "to": "exc"}]},
+        "std": {"kind": "outcome", "title": "Cấp theo tiêu chuẩn", "outcome": {"result": "standard"}},
+        "adhoc": {"kind": "outcome", "title": "Adhoc", "outcome": {"result": "adhoc", "approval": "Function Head duyệt"}},
+        "exc": {"kind": "outcome", "title": "Exception", "outcome": {"result": "exception", "approval": "IT Manager duyệt"}},
+    },
+}  # fmt: skip
+
+
+async def test_run_decides_checks_and_stops_for_choices() -> None:
+    from app.core.modules.manifest import FactValue
+    from app.modules.playbook.run import compare, run_tree
+
+    t = Tree.model_validate(MONITOR_GUIDE)
+    facts = {("lifecycle.assets_in_use", "Monitor"): FactValue(1, "SDP: 1 Monitor"),
+             ("lifecycle.standard_quantity", "Monitor"): FactValue(1, "Tiêu chuẩn band B3: 1 Monitor")}  # fmt: skip
+
+    async def load(k: str, p: str) -> FactValue | None:
+        return facts.get((k, p))
+
+    r = await run_tree(t, load, {}, {})
+    assert r["status"] == "needs_choice" and [e["id"] for e in r["trace"]] == ["start", "chk", "why"]
+    assert r["trace"][1]["result"] is False and r["trace"][1]["left"]["source"] == "SDP: 1 Monitor"
+    r = await run_tree(t, load, {"why": 0}, {})
+    assert r["status"] == "outcome" and r["outcome"]["result"] == "adhoc" and r["outcome"]["label"] == "Adhoc"
+
+    async def nothing(k: str, p: str) -> FactValue | None:
+        return None
+
+    r = await run_tree(t, nothing, {}, {"lifecycle.assets_in_use": "Số tài sản đang dùng"})
+    assert r["status"] == "missing_data" and r["trace"][-1]["missing"] == "Số tài sản đang dùng"
+    assert compare("2", ">=", 1) and compare("B5", "==", "b5") and not compare("x", "!=", "X")
+    bad = {**MONITOR_GUIDE, "nodes": {**MONITOR_GUIDE["nodes"], "chk": {"kind": "check", "title": "x"}}}
+    with pytest.raises(ValidationError):
+        Tree.model_validate(bad)
+
+
+async def test_lifecycle_facts_and_run_endpoint(admin, client) -> None:  # type: ignore[no-untyped-def]
+    from datetime import UTC, datetime
+
+    from app.core.db import get_sessionmaker
+    from app.modules.lifecycle.models import LifecycleRequest, ReconRow, Snapshot, SyncRun
+
+    async with get_sessionmaker()() as s:
+        run = SyncRun(trigger="manual", status="success", finished_at=datetime(2099, 1, 1, tzinfo=UTC),
+                      started_at=datetime(2099, 1, 1, tzinfo=UTC), stats={}, errors={})  # fmt: skip
+        s.add(run)
+        await s.flush()
+        s.add(ReconRow(run_id=run.id, employee_id="008801", full_name="Lê Màn Hình", department="Trading",
+                       data={"asset_ids": ["m1", "m2"], "cells": {"assets": {"status": "match"}}}, issue_count=0))  # fmt: skip
+        for aid in ("m1", "m2"):
+            s.add(Snapshot(run_id=run.id, system="sdp_asset", external_id=aid,
+                           data={"id": aid, "name": "HP E24", "asset_tag": aid, "product_type": "Monitor",
+                                 "state": "In Use"}))  # fmt: skip
+        s.add(LifecycleRequest(id="pb-1", display_id="8801", subject="x", employee_id="008801", full_name="Lê Màn Hình",
+                               kind="onboard", fields={"band": "B3"}, parse_errors=[], description_text=""))  # fmt: skip
+        await s.commit()
+
+    keys = {f["key"] for f in (await admin.get("/api/playbook/facts")).json()}
+    assert {"lifecycle.assets_in_use", "lifecycle.standard_quantity", "lifecycle.band"} <= keys
+
+    # A supervisor builds and publishes the guide (managers and supervisors design playbooks).
+    roles = {x["code"]: x["id"] for x in (await admin.get("/api/core/roles")).json()}
+    await admin.post("/api/core/users", json={"upn": "pb-sup@test.local", "display_name": "Sup",
+                                              "role_ids": [roles["supervisor"]]})  # fmt: skip
+    await client.login("pb-sup@test.local")
+    gid = (await client.post("/api/playbook/guides", json={"title": "Cấp thêm màn hình"})).json()["id"]
+    d = (await client.get(f"/api/playbook/guides/{gid}", params={"version": "draft"})).json()
+    r = await client.put(f"/api/playbook/guides/{gid}/draft", json={"title": "Cấp thêm màn hình", "tree": MONITOR_GUIDE,
+                                                                       "base_updated_at": d["draft_updated_at"]})  # fmt: skip
+    assert r.status_code == 200, r.text
+    assert (await client.post(f"/api/playbook/guides/{gid}/publish", json={})).status_code == 201
+
+    res = (
+        await client.post(
+            f"/api/playbook/guides/{gid}/run", json={"employee_id": "8801", "choices": {"why": 1}}
+        )
+    ).json()
+    chk = res["trace"][1]
+    assert res["employee_id"] == "008801" and chk["left"]["value"] == 2 and chk["right"]["value"] == 1
+    assert "band B3" in chk["right"]["source"] and chk["result"] is False
+    assert res["status"] == "outcome" and res["outcome"]["result"] == "exception"
+    unknown = (await client.post(f"/api/playbook/guides/{gid}/run", json={"employee_id": "999999"})).json()
+    assert unknown["status"] == "missing_data"
+    async with get_sessionmaker()() as s:  # the far-future run must not become other tests' "latest sync"
+        await s.delete(await s.get(SyncRun, run.id))
+        await s.commit()

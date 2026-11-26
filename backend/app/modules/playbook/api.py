@@ -15,8 +15,10 @@ from app.core.audit.service import record
 from app.core.auth.deps import CurrentUser, require
 from app.core.db import get_session
 from app.core.errors import AppError, Conflict, NotFound
+from app.core.modules.registry import get_registry
 from app.core.storage.service import check_size, read_file, save_file, sniff
 from app.modules.playbook.models import Guide, GuideImage, GuideVersion
+from app.modules.playbook.run import run_tree
 from app.modules.playbook.tree import Tree, starter, unreachable
 
 MODULE_ID = "playbook"
@@ -183,6 +185,56 @@ async def publish(
                  before={"version": before}, after={"version": number}, message=body.note.strip() or None)  # fmt: skip
     await session.commit()
     return _summary(g, True)
+
+
+@router.get("/facts")
+async def facts(_: CurrentUser = Depends(view)) -> list[dict[str, Any]]:
+    """Data a check step can test, declared by the enabled modules."""
+    return [{"key": f.key, "label": f.label, "kind": f.kind, "param_label": f.param_label, "param_hint": f.param_hint}
+            for f in get_registry().facts().values()]  # fmt: skip
+
+
+class RunIn(BaseModel):
+    employee_id: str = Field(min_length=1, max_length=20, pattern=r"^[0-9A-Za-z]+$")
+    version: str = Field("published", pattern=r"^(published|draft)$")
+    choices: dict[str, int] = Field(default_factory=dict, max_length=100)
+
+
+@router.post("/guides/{guide_id}/run")
+async def run_guide(
+    guide_id: uuid.UUID,
+    body: RunIn,
+    user: CurrentUser = Depends(view),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Follow the guide for one employee: checks are decided from the facts (read only, nothing is changed)."""
+    g = await _guide(session, guide_id)
+    if body.version == "draft":
+        if not user.has(EDIT):
+            raise NotFound("Không tìm thấy hướng dẫn.")
+        tree = Tree.model_validate(g.draft)
+    else:
+        v = await session.scalar(
+            select(GuideVersion).where(
+                GuideVersion.guide_id == g.id, GuideVersion.version == g.published_version
+            )
+        )
+        if v is None:
+            raise NotFound("Hướng dẫn chưa được xuất bản.")
+        tree = Tree.model_validate(v.tree)
+    registry = get_registry().facts()
+    emp = (
+        body.employee_id.zfill(6)
+        if body.employee_id.isdigit() and len(body.employee_id) < 6
+        else body.employee_id
+    )
+
+    async def load(key: str, param: str) -> Any:
+        src = registry.get(key)
+        return None if src is None else await src.load(session, emp, param)
+
+    result = await run_tree(tree, load, body.choices, {k: f.label for k, f in registry.items()})
+    return result | {"employee_id": emp}
 
 
 @router.get("/guides/{guide_id}/versions")
