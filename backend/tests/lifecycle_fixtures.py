@@ -125,6 +125,19 @@ ASSETS = [
     },
 ]
 
+WORKSTATIONS = [
+    {"id": "a1", "name": "HSC-LT-0123"},  # also in the asset list: counted once
+    {
+        "id": "w1",
+        "name": "2212-0228.hsc.com.vn",
+        "asset_tag": None,
+        "computer_system": {"service_tag": "5CD2"},
+        "product": {"name": "HP ProBook 440", "product_type": {"name": "Laptop"}},
+        "state": {"name": "In Use"},
+        "user": {"id": "u9", "name": "Hung. Ta Quoc"},
+    },
+]
+
 BIOSTAR_USERS = [
     {
         "user_id": "002100",

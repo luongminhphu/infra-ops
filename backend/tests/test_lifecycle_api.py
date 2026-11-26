@@ -20,6 +20,7 @@ from tests.lifecycle_fixtures import (
     HIDDEN_SDP_USERS,
     REQUESTS,
     SDP_USERS,
+    WORKSTATIONS,
     sdp_ok,
 )
 
@@ -54,6 +55,10 @@ def mock_systems(router: respx.MockRouter) -> dict[str, respx.Route]:
     routes["users"] = router.get(f"{SDP}/api/v3/users").mock(side_effect=users)
     routes["assets"] = router.get(f"{SDP}/api/v3/assets").mock(
         return_value=httpx.Response(200, json=sdp_ok("assets", ASSETS))
+    )
+    # Computers SDP keeps as workstations (not in the asset list); a1 is listed in both and counted once.
+    routes["workstations"] = router.get(f"{SDP}/api/v3/workstations").mock(
+        return_value=httpx.Response(200, json=sdp_ok("workstations", WORKSTATIONS))
     )
     router.post(f"{BS}/api/login").mock(
         return_value=httpx.Response(200, headers={"bs-session-id": "s"}, json={"User": {}})
@@ -136,7 +141,7 @@ async def test_end_to_end_sync_and_reconciliation(admin, configured, respx_mock)
     # SDP 003261 is missing from the paged list but found by searching the employee ID of BioStar 103261;
     # the vendor group is not reconciled at all.
     assert summary["requests_fetched"] == 3 and summary["sdp_users"] == 4 and summary["biostar_users"] == 4
-    assert summary["assets"] == 3  # printer filtered out by product types
+    assert summary["assets"] == 4  # printer filtered out by product types; + one workstation laptop
     assert summary["jobs_created"] == 2  # onboard 003551 + offboard 002100 (1003 has parse errors)
     jobs = (await admin.get("/api/core/jobs", params={"status": "draft"})).json()["items"]
     assert {(j["workflow_key"], j["subject_key"]) for j in jobs} >= {
@@ -152,6 +157,8 @@ async def test_end_to_end_sync_and_reconciliation(admin, configured, respx_mock)
     data = (await admin.get("/api/lifecycle/reconciliation")).json()
     by_emp = {r["employee_id"]: r for r in data["items"]}
     assert set(by_emp) == {"003551", "002100", "001500", "009999", "003261"}
+    # A laptop SDP lists only as a workstation still counts as that person's asset.
+    assert WORKSTATIONS[1]["user"]["id"] == "u9" and by_emp["003261"]["asset_ids"] == ["w1"]
     # Office 103261 = SDP 003261: matched, so no "BioStar user without SDP user" issue.
     assert not by_emp["003261"]["issues"], by_emp["003261"]
     assert HIDDEN_SDP_USERS[0]["employee_id"] == "003261"
