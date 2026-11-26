@@ -132,6 +132,9 @@ class LifecycleSettings(BaseModel):
 
     # Documents (Phase 3)
     reviewer_name: str = Field("", max_length=200)
+    # Monthly offboarding review sent to HR (ISO 27001 access review): e-mail draft recipients.
+    hr_review_to: list[str] = Field(default_factory=list, max_length=20)
+    hr_review_cc: list[str] = Field(default_factory=list, max_length=20)
     # Workflows (Onboard / Offboard)
     auto_create_jobs: bool = True
     sdp_close_status: str = Field("Resolved", min_length=1, max_length=64)

@@ -35,6 +35,9 @@ Tài liệu: [cài đặt Ubuntu + Docker](docs/install-ubuntu-docker.md) · [ki
 - Đồng bộ request **RTR** (nhân viên mới / nghỉ việc), user và tài sản SDP, user BioStar; **đối soát theo Mã NV**
   giữa các hệ thống; xuất Excel.
 - **Báo cáo chấm công** từ log ra vào BioStar theo danh sách Mã NV và khoảng thời gian HR yêu cầu.
+- **Rà soát nhân sự nghỉ việc hằng tháng (ISO 27001)**: danh sách người nghỉ việc trong tháng theo RTR kèm tình
+  trạng thu hồi (Job offboard, tài sản còn gán, BioStar) → **email nháp `.eml`** gửi HR kèm Excel có cột *HR xác nhận*;
+  nhắc trong “Việc tiếp theo” đến khi email tháng trước được lập. Người nhận cấu hình ở *Cấu hình module*.
 - **Biên bản Bàn giao / Thu hồi** theo mẫu Word của công ty: mẫu có phiên bản, số tự sinh, xuất PDF, tải bản đã ký,
   đính kèm vào request SDP.
 - **Job Onboard / Offboard** tự tạo từ request: gán/thu hồi tài sản SDP, tạo/vô hiệu hoá user BioStar, biên bản,

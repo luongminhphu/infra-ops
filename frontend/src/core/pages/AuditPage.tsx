@@ -47,6 +47,7 @@ export const ACTION_LABEL: Record<string, string> = {
   "lifecycle.issue_reopened": "Mở lại lệch",
   "lifecycle.reconciliation_exported": "Xuất danh sách đối soát",
   "lifecycle.attendance_exported": "Xuất báo cáo chấm công",
+  "lifecycle.offboard_review_exported": "Xuất rà soát nghỉ việc gửi HR",
   "workload.tickets_exported": "Xuất Excel task Infra Support",
   "workflow.job_created": "Tạo Job",
   "workflow.job_started": "Bắt đầu Job",
