@@ -6,7 +6,14 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.modules.manifest import DashboardWidget, ModuleManifest, NavItem, Permission, ScheduledTask
+from app.core.modules.manifest import (
+    NAV_STATS,
+    DashboardWidget,
+    ModuleManifest,
+    NavItem,
+    Permission,
+    ScheduledTask,
+)
 
 DASHBOARD_VIEW = "core.dashboard.view"
 CONNECTIONS_VIEW = "core.connections.view"
@@ -81,6 +88,7 @@ CORE_MANIFEST = ModuleManifest(
     nav=[
         NavItem("Tổng quan", "/", "layout-dashboard", DASHBOARD_VIEW),
         NavItem("Việc của tôi", "/me/work", "user-check", DASHBOARD_VIEW),
+        NavItem("Tổng quan số liệu", "/overview", "layout-dashboard", DASHBOARD_VIEW, NAV_STATS),
         NavItem("Kết nối hệ thống", "/settings/connections", "plug", CONNECTIONS_VIEW),
         NavItem("Nhật ký kiểm tra", "/settings/audit", "scroll-text", AUDIT_VIEW),
         NavItem("Người dùng & quyền", "/settings/access", "shield-check", RBAC_MANAGE),

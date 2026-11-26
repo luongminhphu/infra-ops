@@ -11,6 +11,10 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.modules.manifest import (
+    NAV_ASSETS,
+    NAV_SETUP,
+    NAV_STATS,
+    NAV_WORK,
     DashboardWidget,
     ModuleManifest,
     NavItem,
@@ -98,10 +102,18 @@ manifest = ModuleManifest(
     ],
     workflows=[REASSIGN, RECEIVE],
     nav=[
-        NavItem("Công việc", "/workload/tickets", "list-checks", "workload.tickets.view"),
-        NavItem("Thống kê công việc", "/workload/stats", "chart-column", "workload.stats.view"),
-        NavItem("Đề xuất mua thiết bị", "/workload/purchases", "shopping-cart", "workload.tickets.view"),
-        NavItem("Cấu hình công việc", "/workload/settings", "settings", "workload.settings.manage"),
+        NavItem("Công việc", "/workload/tickets", "list-checks", "workload.tickets.view", NAV_WORK),
+        NavItem("Thống kê công việc", "/workload/stats", "chart-column", "workload.stats.view", NAV_STATS),
+        NavItem(
+            "Đề xuất mua thiết bị",
+            "/workload/purchases",
+            "shopping-cart",
+            "workload.tickets.view",
+            NAV_ASSETS,
+        ),
+        NavItem(
+            "Cấu hình công việc", "/workload/settings", "settings", "workload.settings.manage", NAV_SETUP
+        ),
     ],
     # The widget renders per-user data itself (operators see only their own tasks).
     dashboard_widgets=[

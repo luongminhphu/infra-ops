@@ -5,14 +5,16 @@ import { PageHeader } from "@/core/ui/feedback";
 import { iconFor } from "@/core/ui/icons";
 import { railSections } from "@/core/layout/nav";
 
-/** Every page of the app you may open, grouped by module – the same tools Playbook steps open. */
+/** Every page of the app you may open (Công cụ, then Báo cáo), by menu heading – the same tools Playbook steps open. */
 export function ToolsPage() {
   const { me } = useAuth();
-  const tools = railSections(me?.nav ?? []).find((s) => s.id === "tools")?.items.slice(1) ?? [];
+  const tools = railSections(me?.nav ?? [])
+    .filter((s) => s.id === "tools" || s.id === "reports")
+    .flatMap((s) => s.items.filter((t) => t.path !== "/tools").map((t) => ({ ...t, group: t.group || s.title })));
   const groups = [...new Set(tools.map((t) => t.group ?? ""))];
   return (
     <>
-      <PageHeader title="Công cụ" description="Các trang làm việc của từng phân hệ. Thường bạn mở chúng từ bước Playbook; ở đây là danh sách đầy đủ." />
+      <PageHeader title="Công cụ" description="Mọi trang làm việc và báo cáo, gom theo việc. Thường bạn mở chúng từ bước Playbook; ở đây là danh sách đầy đủ." />
       <div className="grid gap-x-10 gap-y-8 md:grid-cols-2 xl:grid-cols-3">
         {groups.map((g) => (
           <section key={g || "chung"} aria-label={g || "Chung"}>

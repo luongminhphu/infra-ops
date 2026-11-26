@@ -3,8 +3,12 @@ export interface NavItem {
   path: string;
   icon: string;
   permission: string;
-  /** Heading the item is listed under in the module's sub-navigation ("" = none). */
+  /** Menu heading the item is listed under (shared across modules; "" = under the module name). */
   group?: string;
+  /** Position of that heading in the menu (set by the backend). */
+  group_order?: number;
+  /** Rail entry the page belongs to: "Công cụ" or "Báo cáo". */
+  section?: "tools" | "reports";
 }
 
 export interface NavGroup {

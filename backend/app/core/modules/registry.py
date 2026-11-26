@@ -11,6 +11,8 @@ from collections.abc import Iterable
 from typing import Any
 
 from app.core.modules.manifest import (
+    NAV_GROUPS,
+    NAV_REPORT_GROUPS,
     DocumentKind,
     FactSource,
     ModuleManifest,
@@ -82,6 +84,11 @@ class ModuleRegistry:
                                 "icon": i.icon,
                                 "permission": i.permission,
                                 "group": i.group,
+                                # Menu position of the heading; unknown or no heading after the shared ones.
+                                "group_order": NAV_GROUPS.index(i.group)
+                                if i.group in NAV_GROUPS
+                                else len(NAV_GROUPS),
+                                "section": "reports" if i.group in NAV_REPORT_GROUPS else "tools",
                             }
                             for i in items
                         ],

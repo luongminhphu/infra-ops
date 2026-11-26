@@ -3,7 +3,7 @@ from fastapi import APIRouter
 
 from app.core.auth.passwords import hash_password, password_problems, verify_password
 from app.core.logging import REDACTED, redact
-from app.core.modules.manifest import ModuleManifest, NavItem, Permission
+from app.core.modules.manifest import NAV_GROUPS, ModuleManifest, NavItem, Permission
 from app.core.modules.registry import ModuleRegistry, load_manifest
 
 
@@ -54,6 +54,7 @@ def test_nav_filtered_by_permission() -> None:
     reg = ModuleRegistry([m])
     nav = reg.nav_for({"a.x.view"})
     assert [i["path"] for i in nav[0]["items"]] == ["/x"]  # type: ignore[index]
+    assert nav[0]["items"][0]["section"] == "tools"  # type: ignore[index]
     assert reg.nav_for(set()) == []
 
 
@@ -61,6 +62,17 @@ def test_load_lifecycle_manifest() -> None:
     m = load_manifest("lifecycle")
     assert m.id == "lifecycle"
     assert "sdp" in m.connectors_used
+
+
+def test_module_pages_are_filed_under_shared_menu_headings() -> None:
+    reg = ModuleRegistry([load_manifest(i) for i in ("lifecycle", "workload")])
+    nav = reg.nav_for({p.code for _, p in reg.permissions()})
+    items = [i for g in nav if g["module"] != "core" for i in g["items"]]  # type: ignore[attr-defined]
+    assert all(i["group"] in NAV_GROUPS for i in items), [
+        i["label"] for i in items if i["group"] not in NAV_GROUPS
+    ]
+    reports = {i["path"] for i in items if i["section"] == "reports"}
+    assert reports == {"/lifecycle/attendance", "/lifecycle/offboard-review", "/workload/stats"}
 
 
 @pytest.mark.parametrize("bad", ["../etc", "not-a-module"])

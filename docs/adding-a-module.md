@@ -15,7 +15,7 @@ backend/app/modules/assets/
 `manifest.py`:
 
 ```python
-from app.core.modules.manifest import DashboardWidget, ModuleManifest, NavItem, Permission
+from app.core.modules.manifest import NAV_WORK, DashboardWidget, ModuleManifest, NavItem, Permission
 from app.modules.assets.api import router
 
 manifest = ModuleManifest(
@@ -26,8 +26,9 @@ manifest = ModuleManifest(
         Permission("assets.renewal.manage", "Cập nhật lịch gia hạn"),
     ],
     routers=[router],                      # mounted under /api/assets
-    # 5th argument (optional): heading in the module sub-navigation; the first item is where the module opens.
-    nav=[NavItem("Gia hạn dịch vụ", "/assets/renewals", "calendar-clock", "assets.renewal.view", "Việc cần làm")],
+    # 5th argument: the shared menu heading (NAV_WORK, NAV_ASSETS, NAV_SOURCES, NAV_SETUP under Công cụ;
+    # NAV_STATS, NAV_REVIEWS under Báo cáo). File the page by what it is for, not by module; core orders headings.
+    nav=[NavItem("Gia hạn dịch vụ", "/assets/renewals", "calendar-clock", "assets.renewal.view", NAV_WORK)],
     connectors_used=["sdp"],               # shown as "Dùng bởi" on connection profiles
     dashboard_widgets=[],                  # DashboardWidget(key, title, kind, permission, load)
     scheduled_tasks=[                      # run by the worker: python -m app.worker

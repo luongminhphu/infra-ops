@@ -9,8 +9,9 @@ dashboard, hàng chờ việc, workflow) và các module cắm vào: **Infra Pla
 việc, cấp thêm thiết bị, rà soát chấm công…), mở hướng dẫn dạng sơ đồ rẽ nhánh; mỗi bước mở sẵn công cụ cần dùng
 (Job, đối soát, kho, chấm công…). Bước **kiểm tra** để app tự so sánh dữ liệu của nhân viên (tài sản đang dùng, band,
 tiêu chuẩn cấp phát…) và bước **kết luận** xếp loại Tiêu chuẩn / Adhoc / Exception; **Chạy với Mã NV** cho thấy từng
-điều kiện, giá trị và nguồn. Thanh trái chỉ còn: Playbook · Việc của tôi · Công cụ (mọi trang của các module) ·
-Hệ thống. Manager và Supervisor (và Administrator) soạn, sửa, thay thế, xuất bản và xoá Playbook.
+điều kiện, giá trị và nguồn. Thanh trái chỉ còn: Playbook · Việc của tôi · Công cụ (trang làm việc, gom theo việc: Xử lý
+công việc, Thiết bị & biên bản, Dữ liệu nguồn, Quy trình & cấu hình) · Báo cáo (Thống kê; Báo cáo rà soát: chấm
+công, nghỉ việc ISO) · Hệ thống. Manager và Supervisor (và Administrator) soạn, sửa, thay thế, xuất bản và xoá Playbook.
 
 | Thành phần | Công nghệ |
 |---|---|

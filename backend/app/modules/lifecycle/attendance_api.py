@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import date
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, Response, UploadFile
 from pydantic import BaseModel, Field
@@ -17,6 +18,7 @@ from app.core.connectors.base import Purpose
 from app.core.connectors.biostar import BioStarClient
 from app.core.db import get_session
 from app.core.errors import AppError
+from app.core.logging import get_logger
 from app.core.timeutil import today_vn
 from app.modules.lifecycle.attendance import (
     MAX_DAYS,
@@ -34,6 +36,17 @@ from app.modules.lifecycle.settings import load as load_settings
 
 router = APIRouter(tags=["lifecycle"])
 export_perm = require("lifecycle.attendance.export")
+log = get_logger(__name__)
+# Not-found IDs sent back in a header for the on-screen result (the full list is in the file's Ghi chú sheet).
+SHOWN_NOT_FOUND = 50
+
+
+def _read_error(source: str, exc: Exception) -> str:
+    """A reader-facing reason why one BioStar could not be read (never a raw exception text)."""
+    if isinstance(exc, AppError):
+        return f"{source}: {exc.message}"
+    log.warning("attendance_biostar_read_failed", source=source, error=repr(exc))
+    return f"{source}: không kết nối được (mạng, địa chỉ hoặc tài khoản BioStar)"
 
 
 class AttendanceIn(BaseModel):
@@ -64,6 +77,18 @@ async def parse_employee_list(
             "column": parsed.header, "max": MAX_EMPLOYEES}  # fmt: skip
 
 
+@router.get("/attendance/status")
+async def attendance_status(
+    _: CurrentUser = Depends(export_perm), session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """Whether the main BioStar can be opened, checked when the page opens (nothing is read from BioStar)."""
+    try:
+        await open_connection(session, "biostar", Purpose.READ, **main_biostar(await load_settings(session)))
+    except AppError as exc:
+        return {"ready": False, "message": exc.message}
+    return {"ready": True, "message": None}
+
+
 @router.post("/attendance/export")
 async def export_attendance(
     body: AttendanceIn,
@@ -83,9 +108,12 @@ async def export_attendance(
     start, end = period(body.date_from, body.date_to)
     found: set[str] = set()
     reads = [main_biostar(settings)] + [{"profile_id": s.profile_id} for s in settings.biostar_sources]
-    for which in reads:
+    read_ok = 0
+    for i, which in enumerate(reads):
+        source = "BioStar chính" if i == 0 else f"BioStar phụ {i}"
         try:
             profile, ctx = await open_connection(session, "biostar", Purpose.READ, **which)
+            source = profile.name
             async with BioStarClient(ctx) as client:
                 users = await client.list_users()
                 by_user = match_users(ids, users)
@@ -97,8 +125,9 @@ async def export_attendance(
                     add_events(
                         report, await client.search_events(sorted(by_user), start, end), by_user, profile.name
                     )
+            read_ok += 1
         except Exception as exc:
-            report.errors.append(getattr(exc, "message", None) or str(exc))
+            report.errors.append(_read_error(source, exc))
     if report.errors and len(report.errors) == len(reads):
         raise AppError("Không đọc được BioStar: " + "; ".join(report.errors), code="biostar_unreadable")
     report.not_found = [e for e in ids if e not in found]
@@ -118,7 +147,12 @@ async def export_attendance(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
             "Content-Disposition": f'attachment; filename="{name}"',
+            "X-Requested": str(len(ids)),
             "X-Not-Found": str(len(report.not_found)),
+            "X-Not-Found-Ids": ",".join(report.not_found[:SHOWN_NOT_FOUND]),
+            "X-Read-Ok": str(read_ok),
             "X-Read-Errors": str(len(report.errors)),
+            # Header values are latin-1: the (Vietnamese) reasons travel percent-encoded, one per line.
+            "X-Read-Error-Detail": quote("\n".join(report.errors)[:1500]),
         },
     )
