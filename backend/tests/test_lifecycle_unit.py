@@ -31,9 +31,9 @@ def test_parse_rtr_description_extracts_fields() -> None:
     assert p.fields["work_location"] == "Chi nhánh 1"
     assert p.manager_name == "Tôn Thất Phi Dũng"
     assert p.manager_employee_id == "003501"
-    # "Chính thức" alone is ambiguous → must be mapped by an admin
-    assert p.kind is None
-    assert any("Chính thức" in e for e in p.errors)
+    # RTR "Chính thức" = probation ends (an admin mapping can still override it)
+    assert p.kind == "probation_to_official"
+    assert p.errors == []
 
 
 def test_parse_reports_missing_and_invalid_values() -> None:
@@ -61,6 +61,12 @@ def test_custom_labels_and_mapping() -> None:
         ("Chuyển từ thử việc sang chính thức", "probation_to_official"),
         ("Thuyên chuyển", "transfer"),
         ("Nghỉ việc", "offboard"),
+        # The five RTR change types sent to SDP
+        ("Thực tập sinh/CTV", "onboard"),
+        ("Tân tuyển - TV", "onboard"),
+        ("Chính thức", "probation_to_official"),
+        ("Thay đổi cấp trên trực tiếp", "ignore"),
+        ("Thôi việc", "offboard"),
         ("Khác", None),
     ],
 )

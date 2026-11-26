@@ -84,8 +84,23 @@ def classify_change_type(raw: str | None, settings: LifecycleSettings) -> EventK
         return "offboard"
     if any(k in folded for k in ("thuyen chuyen", "dieu chuyen", "luan chuyen", "transfer")):
         return "transfer"
-    if any(k in folded for k in ("nhan vien moi", "tuyen moi", "tiep nhan", "recruit", "onboard")):
+    # RTR types: "Tân tuyển - TV" (probation hire), "Thực tập sinh/CTV" (intern / contractor) start work.
+    onboard = (
+        "nhan vien moi",
+        "tuyen moi",
+        "tan tuyen",
+        "thuc tap",
+        "ctv",
+        "tiep nhan",
+        "recruit",
+        "onboard",
+    )
+    if any(k in folded for k in onboard):
         return "onboard"
+    if "chinh thuc" in folded:  # RTR "Chính thức": probation ends
+        return "probation_to_official"
+    if "cap tren" in folded:  # RTR "Thay đổi cấp trên trực tiếp": no device or access change for IT
+        return "ignore"
     return None
 
 
