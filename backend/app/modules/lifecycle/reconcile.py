@@ -169,9 +169,30 @@ def reconcile(
 
     bs_by_emp = {b.get("employee_id") or b["user_id"]: b for b in biostar_users if b.get("user_id")}
 
+    # SDP is the source of truth: employees are SDP users and RTR requests; BioStar only adds access data. BioStar
+    # users matching neither are listed apart (access review), never as employees – unless SDP could not be read.
     # People moved to the "left the company" BioStar group are hidden unless an RTR request still concerns them.
     retired = {e for e, b in bs_by_emp.items() if b.get("retired")}
-    employees = set(req_by_emp) | ((set(users_by_emp) | set(bs_by_emp)) - retired)
+    sdp_known = sources.get("sdp") and sdp_has_emp_ids
+    employees = set(req_by_emp) | (set(users_by_emp) - retired)
+    if not sdp_known:
+        employees |= set(bs_by_emp) - retired
+    elif sources.get("biostar"):
+        for emp, b in sorted(bs_by_emp.items(), key=lambda kv: (not kv[1]["active"], kv[0])):
+            if emp not in employees and emp not in retired and emp not in users_by_emp:
+                notes.append(
+                    {
+                        "rule": "biostar_unknown_employee",
+                        "employee_id": emp,
+                        "name": b.get("name"),
+                        "active": b["active"],
+                        "group": b.get("group"),
+                        "source": b.get("source"),
+                        "message": f"User BioStar “{b.get('name')}” mang Mã NV {emp} nhưng không có user SDP hay "
+                        "request RTR"
+                        + (" – vẫn còn quyền ra vào." if b["active"] else " (đã khoá / hết hạn)."),
+                    }
+                )
     rows: list[Row] = []
     for emp in sorted(employees):
         reqs = req_by_emp.get(emp, [])
@@ -201,7 +222,7 @@ def reconcile(
         row = Row(
             employee_id=emp,
             full_name=ref_name,
-            department=(latest or {}).get("department") or (users[0].get("department") if users else None),
+            department=(users[0].get("department") if users else None) or (latest or {}).get("department"),
             kind=(latest or {}).get("kind"),
             effective_date=date.fromisoformat(latest["effective_date"])
             if latest and latest.get("effective_date")
@@ -302,13 +323,6 @@ def reconcile(
                         f"Ngày hiệu lực {fmt_date(today_eff, '?')} nhưng chưa có tài sản nào.",
                     )
                 )
-        if bs and not bs.get("retired") and sources.get("sdp") and sdp_has_emp_ids and not users and not reqs:
-            row.issues.append(
-                Issue(
-                    "biostar_unknown_employee",
-                    f"User BioStar “{bs['name']}” mang Mã NV {emp} nhưng không có user SDP hay request RTR.",
-                )
-            )
         if len(users) > 1:
             row.issues.append(
                 Issue(

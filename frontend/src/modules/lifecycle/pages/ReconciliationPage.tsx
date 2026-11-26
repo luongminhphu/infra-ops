@@ -312,6 +312,9 @@ export function ReconciliationPage() {
   };
 
   const data = q.data;
+  const unknown = (data?.notes ?? []).filter((n) => n.rule === "biostar_unknown_employee");
+  const unknownActive = unknown.filter((n) => n.active).length;
+  const general = (data?.notes ?? []).filter((n) => n.rule !== "biostar_unknown_employee");
   // Previous / next follow the table as shown, so a sort by name walks names in order.
   const at = selected ? order.indexOf(selected) : -1;
   const step =
@@ -510,11 +513,36 @@ export function ReconciliationPage() {
               </PanelSheet>
             )}
           </div>
-          {data.notes.length > 0 && (
+          {unknown.length > 0 && (
             <details className="mt-4 rounded-md border border-line bg-surface">
-              <summary className="cursor-pointer px-4 py-2.5 font-medium">Ghi chú chung ({data.notes.length}) – không gắn với một nhân viên cụ thể</summary>
+              <summary className="cursor-pointer px-4 py-2.5 font-medium">
+                BioStar không có trên SDP ({unknown.length})
+                {unknownActive > 0 && <span className="text-failed"> – {unknownActive} còn quyền ra vào</span>}
+              </summary>
+              <p className="border-t border-line px-4 py-2 text-sm text-muted">
+                SDP là nguồn chính: các user BioStar này không khớp user SDP hay request RTR nào nên không nằm trong danh sách
+                nhân viên. Rà soát quyền ra vào; nhà cung cấp, khách… thì thêm nhóm vào <b>Cấu hình module → Nhóm loại trừ khỏi đối soát</b>.
+              </p>
               <ul className="divide-y divide-line border-t border-line">
-                {data.notes.map((n, i) => (
+                {unknown.map((n) => (
+                  <li key={`${n.employee_id}-${n.source ?? ""}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-sm">
+                    <Mono>{n.employee_id}</Mono>
+                    <span className="font-medium">{n.name}</span>
+                    {n.active ? <StatusBadge status="warning" label="Còn quyền ra vào" /> : <StatusBadge status="disabled" label="Đã khoá / hết hạn" />}
+                    <span className="text-muted">
+                      Nhóm: {n.group || "—"}
+                      {n.source ? ` · ${n.source}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          {general.length > 0 && (
+            <details className="mt-4 rounded-md border border-line bg-surface">
+              <summary className="cursor-pointer px-4 py-2.5 font-medium">Ghi chú chung ({general.length}) – không gắn với một nhân viên cụ thể</summary>
+              <ul className="divide-y divide-line border-t border-line">
+                {general.map((n, i) => (
                   <li key={i} className="px-4 py-2 text-sm">
                     <span className="font-medium">{NOTE_TITLE[n.rule] ?? n.rule}: </span>
                     {n.request_id && <Link className="text-primary hover:underline" to={`/lifecycle/requests?open=${n.request_id}`}>Request #{n.request_id} </Link>}

@@ -1115,3 +1115,14 @@ Quyết định:
   **Đã chọn cho X** (trên Job nháp) và **Dự kiến cho X** (gợi ý). "Thiếu" chỉ dùng cho số lượng; thiếu dữ liệu là
   "Chưa có …". Bộ lọc tách hai nhóm: Phân bổ (cộng lại bằng Tất cả) và Nguồn (Mới / Thu hồi). "Trả về kho" → "Bỏ chờ
   thanh lý". Trang ghi rõ số nhân viên chưa có band (chưa tính vào Thiếu). Link cũ `status=returned|missing` vẫn chạy.
+
+## 37. SDP là nguồn chính của đối soát nhân sự (26/11/2026)
+
+- Yêu cầu (chủ sản phẩm): thông tin chính lấy từ SDP (chuẩn xác, đầy đủ); BioStar chỉ bổ sung và đối soát.
+- Quyết định: danh sách nhân viên = user SDP ∪ request RTR (bỏ user nghỉ việc trên BioStar như trước); họ tên, phòng
+  ban theo thứ tự SDP → RTR → BioStar. User BioStar không khớp SDP/RTR thành ghi chú `biostar_unknown_employee`
+  (Mã NV, tên, còn quyền ra vào hay không, nhóm, nguồn), hiện ở mục riêng "BioStar không có trên SDP", không thành
+  dòng nhân viên. Khi không đọc được SDP thì không phán xét: user BioStar vẫn hiện như trước.
+- Kèm theo: tra thêm user SDP theo Mã NV khi danh sách bỏ sót, phân trang SDP theo id (§ trước), nhóm BioStar loại trừ
+  khỏi đối soát (vendor…).
+

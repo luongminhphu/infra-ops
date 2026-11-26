@@ -379,7 +379,10 @@ Lưu ý:
    thì chọn mã giống hệt, rồi đến mã có cùng họ tên (không dấu, không kể thứ tự); vẫn không phân biệt được thì
    không tự ghép (tránh nhầm người); mã không khớp SDP vẫn hiện là lệch. User BioStar không khớp ai trong danh
    sách user SDP được tra thêm trên SDP theo Mã NV (tối đa 100 lượt mỗi lần đồng bộ), vì danh sách phân trang của
-   SDP có thể bỏ sót. Tài sản đọc cả danh sách tài sản lẫn **workstation** của SDP (laptop/PC do SDP quét
+   SDP có thể bỏ sót. **SDP là nguồn chính**: danh sách nhân viên đối soát gồm user SDP và request RTR; họ tên, phòng
+   ban lấy theo SDP → RTR → BioStar. BioStar chỉ bổ sung trạng thái ra vào, thẻ, vân tay. User BioStar không khớp user
+   SDP / RTR nào nằm ở mục riêng **BioStar không có trên SDP** (người còn quyền ra vào xếp trước) để rà soát quyền ra
+   vào, không thành dòng nhân viên – trừ khi lần đó không đọc được SDP. Tài sản đọc cả danh sách tài sản lẫn **workstation** của SDP (laptop/PC do SDP quét
    về nằm riêng ở đó), chỉ giữ các loại trong **Cấu hình module → Loại tài sản** cộng mọi loại có trong **Tiêu chuẩn cấp phát** (UPS,
    IP Phone… kể cả tài sản Non-IT trên SDP – app lọc theo loại tài sản, không theo nhóm IT/Non-IT). **Nhóm loại trừ khỏi đối soát** (vd. `3. VENDOR`) bỏ hẳn các user nhà cung cấp, khách… Mỗi lần đồng bộ đọc cả hai và gộp theo Mã NV; người có user ở cả hai
    nơi thì user đang hoạt động được ưu tiên (để phát hiện người đã nghỉ còn quyền ra vào). Một hệ thống đọc lỗi thì cả
