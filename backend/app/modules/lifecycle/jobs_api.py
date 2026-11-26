@@ -333,9 +333,22 @@ async def claim_job(
     """An operator takes an unassigned job ("Nhận Job"): same path as a reassignment, to themselves."""
     from app.core.auth.models import User
 
-    job = await engine.get_job(session, job_id)
+    # Locked: two people pressing "Nhận" at once must not both take it.
+    job = await engine.get_job(session, job_id, for_update=True)
     if job.assignee_user_id is not None:
         raise Conflict(f"Job đã do {job.assignee_name or 'người khác'} phụ trách.", code="job_assigned")
+    # Taken a moment ago: the SDP write-back (an assignment job) has not finished yet.
+    pending = await session.scalar(
+        select(Job).where(
+            Job.workflow_key == "lifecycle.assign",
+            Job.external_ref == str(job.id),
+            Job.status.notin_(["completed", "cancelled", "failed"]),
+        )
+    )
+    if pending is not None:
+        raise Conflict(
+            f"{pending.params.get('to_name') or 'Người khác'} vừa nhận Job này.", code="job_being_assigned"
+        )
     return await _request_assignment(session, user, job, await session.get(User, user.id), "Nhận Job")
 
 
