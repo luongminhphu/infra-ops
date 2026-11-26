@@ -19,6 +19,9 @@ from app.core.connectors.base import (
 )
 from app.core.connectors.netcheck import check_reachability
 from app.core.connectors.registry import register
+from app.core.logging import get_logger
+
+log = get_logger(__name__)
 
 ACCEPT_V3 = "application/vnd.manageengine.sdp.v3+json"
 ZOHO_ACCOUNTS = {
@@ -111,27 +114,42 @@ class SdpClient:
         *,
         search_criteria: list[dict[str, Any]] | dict[str, Any] | None = None,
         sort_field: str | None = None,
+        sort_order: Literal["asc", "desc"] = "desc",
         fields_required: list[str] | None = None,
         page_size: int = 100,
         max_rows: int = 20000,
     ) -> list[dict[str, Any]]:
         """Read every page of a v3 list endpoint (``list_info.has_more_rows``).
 
-        Rows are de-duplicated by ``id``: offset paging over a list whose order shifts between pages (records
-        updated meanwhile, no stable sort) can return the same record twice."""
+        Offset paging over a list in no stable order skips and repeats records (seen on a real SDP: users and
+        assets missing from the list): pass a unique ``sort_field`` such as ``id``. An SDP that refuses that
+        sort is read unsorted. Rows are de-duplicated by ``id``; a short read against SDP's total is logged."""
         rows: list[dict[str, Any]] = []
         seen: set[str] = set()
         start = 1
+        total: int | None = None
         while len(rows) < max_rows:
             info: dict[str, Any] = {"row_count": page_size, "start_index": start}
             if search_criteria:
                 info["search_criteria"] = search_criteria
             if sort_field:
                 info["sort_field"] = sort_field
-                info["sort_order"] = "desc"
+                info["sort_order"] = sort_order
             if fields_required:
                 info["fields_required"] = fields_required
-            data = await self.get(path, info)
+            if start == 1:
+                info["get_total_count"] = True
+            try:
+                data = await self.get(path, info)
+            except SdpError as exc:
+                if not (sort_field and start == 1):
+                    raise
+                log.warning("sdp_list_sort_refused", path=path, sort_field=sort_field, error=str(exc))
+                sort_field = None
+                continue
+            list_info = data.get("list_info") or {}
+            if start == 1 and str(list_info.get("total_count", "")).isdigit():
+                total = int(list_info["total_count"])
             page = data.get(collection) or []
             for r in page:
                 rid = str(r.get("id")) if isinstance(r, dict) and r.get("id") is not None else None
@@ -139,9 +157,11 @@ class SdpClient:
                     rows.append(r)
                     if rid is not None:
                         seen.add(rid)
-            if not (data.get("list_info") or {}).get("has_more_rows") or not page:
+            if not list_info.get("has_more_rows") or not page:
                 break
             start += len(page)
+        if total is not None and len(rows) < min(total, max_rows):
+            log.warning("sdp_list_incomplete", path=path, read=len(rows), total=total)
         return rows[:max_rows]
 
     async def write(self, method: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
