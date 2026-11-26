@@ -435,6 +435,8 @@ Lưu ý:
    Technician tự liên kết với tài khoản infra-ops khi e-mail trên SDP trùng tên đăng nhập; chọn tay ở bảng
    **Operator ↔ Technician SDP** nếu khác.
 3. **Công việc**: task đang chờ / quá hạn / đã thực hiện theo từng Operator (Operator chỉ thấy task của mình).
+   Chỉ hiện task của Operator **có tài khoản infra-ops** (và task chưa giao); technician SDP chưa được thêm vào app vẫn
+   được đồng bộ nhưng không hiện trong danh sách, thẻ Operator và thống kê – bấm **Tạo tài khoản** để hiện lại.
    Task có trạng thái SDP *Resolved / Closed / Completed* (hoặc tiếng Việt *Đã xử lý / Đã đóng / Hoàn thành*) luôn được
    xem là hoàn tất – không bao giờ tính quá hạn; tên trạng thái khác thêm ở **Cấu hình công việc**.
    Manager / Supervisor chọn task →

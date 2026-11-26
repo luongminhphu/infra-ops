@@ -192,7 +192,7 @@ function SettingsForm({ data }: { data: SettingsResponse }) {
 
 function TechnicianLinks() {
   const qc = useQueryClient();
-  const techs = useTechnicians();
+  const techs = useTechnicians(true);
   const users = useQuery({ queryKey: ["workload", "users"], queryFn: () => api<{ id: string; upn: string; display_name: string }[]>("/api/workload/users") });
   const link = useMutation({
     mutationFn: ({ id, user_id }: { id: string; user_id: string }) =>
