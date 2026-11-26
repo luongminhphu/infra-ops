@@ -375,8 +375,9 @@ Lưu ý:
 5. **Nhiều hệ thống BioStar** (vd. *BioStar 2 - Office* là hệ thống chính, *BioStar 2 - Server* là nguồn phụ): ở **Cấu hình
    module → Kết nối sử dụng**, chọn hệ thống chính ở ô *BioStar* (Job tạo/khoá user ở đây), rồi **Thêm hệ thống
    BioStar** cho nguồn phụ. **SDP là chuẩn**: Mã NV trên mọi BioStar và SDP được so theo **5 số cuối** (vd. user
-   `100008` → Mã NV `000008`); Mã NV và họ tên hiển thị lấy theo user SDP. Nếu hai Mã NV trên SDP trùng 5 số cuối
-   thì không tự ghép (tránh nhầm người); mã không khớp SDP vẫn hiện là lệch. Mỗi lần đồng bộ đọc cả hai và gộp theo Mã NV; người có user ở cả hai
+   `100008` → Mã NV `000008`); Mã NV và họ tên hiển thị lấy theo user SDP. Nếu nhiều Mã NV trên SDP trùng 5 số cuối
+   thì chọn mã giống hệt, rồi đến mã có cùng họ tên (không dấu, không kể thứ tự); vẫn không phân biệt được thì
+   không tự ghép (tránh nhầm người); mã không khớp SDP vẫn hiện là lệch. Mỗi lần đồng bộ đọc cả hai và gộp theo Mã NV; người có user ở cả hai
    nơi thì user đang hoạt động được ưu tiên (để phát hiện người đã nghỉ còn quyền ra vào). Một hệ thống đọc lỗi thì cả
    cột BioStar được bỏ qua lần đó, không kết luận sai.
 6. **Nhóm nghỉ việc trên BioStar**: nếu quy trình là chuyển user nghỉ việc vào một nhóm (vd. `0.NGHIVIEC`) thay vì xoá,
