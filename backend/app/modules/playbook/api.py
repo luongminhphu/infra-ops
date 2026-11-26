@@ -19,6 +19,7 @@ from app.core.modules.registry import get_registry
 from app.core.storage.service import check_size, read_file, save_file, sniff
 from app.modules.playbook.models import Guide, GuideImage, GuideVersion
 from app.modules.playbook.run import run_tree
+from app.modules.playbook.templates import TEMPLATES
 from app.modules.playbook.tree import Tree, starter, unreachable
 
 MODULE_ID = "playbook"
@@ -76,15 +77,28 @@ class GuideIn(BaseModel):
     description: str = Field("", max_length=1000)
 
 
+class NewGuideIn(GuideIn):
+    template: str | None = Field(None, max_length=40)  # start from a built-in template (TEMPLATES key)
+
+
+@router.get("/templates")
+async def templates(_: CurrentUser = Depends(edit)) -> list[dict[str, Any]]:
+    return [{"key": k, "title": t["title"], "category": t["category"], "description": t["description"],
+             "steps": len(t["tree"]["nodes"])} for k, t in TEMPLATES.items()]  # fmt: skip
+
+
 @router.post("/guides", status_code=201)
 async def create_guide(
-    body: GuideIn, user: CurrentUser = Depends(edit), session: AsyncSession = Depends(get_session)
+    body: NewGuideIn, user: CurrentUser = Depends(edit), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
+    tpl = TEMPLATES.get(body.template or "")
+    if body.template and tpl is None:
+        raise NotFound("Không có mẫu này.")
     g = Guide(
         title=body.title.strip(),
-        category=body.category.strip(),
-        description=body.description.strip(),
-        draft=starter(body.title.strip()),
+        category=body.category.strip() or (tpl["category"] if tpl else ""),
+        description=body.description.strip() or (tpl["description"] if tpl else ""),
+        draft=Tree.model_validate(tpl["tree"]).model_dump() if tpl else starter(body.title.strip()),
         created_by=user.upn,
         draft_updated_by=user.upn,
     )

@@ -7,7 +7,7 @@ import { api, errorMessage } from "@/core/api/client";
 import { Button } from "@/core/ui/button";
 import { Dialog } from "@/core/ui/dialog";
 import { EmptyState, ErrorState, LoadingRows, PageHeader } from "@/core/ui/feedback";
-import { Field, Input } from "@/core/ui/field";
+import { Field, Input, Select } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
 import { useDebounced } from "@/core/lib/useDebounced";
 import type { GuideSummary } from "../api";
@@ -19,13 +19,19 @@ export function GuidesPage() {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("");
+  const [template, setTemplate] = useState("");
   const [tried, setTried] = useState(false);
   const list = useQuery({
     queryKey: ["playbook", "guides", debounced],
     queryFn: () => api<{ items: GuideSummary[]; can_edit: boolean; can_publish: boolean }>(`/api/playbook/guides?q=${encodeURIComponent(debounced)}`),
   });
+  const templates = useQuery({
+    queryKey: ["playbook", "templates"],
+    queryFn: () => api<{ key: string; title: string; description: string; steps: number }[]>("/api/playbook/templates"),
+    enabled: open,
+  });
   const create = useMutation({
-    mutationFn: () => api<GuideSummary>("/api/playbook/guides", { method: "POST", json: { title, category } }),
+    mutationFn: () => api<GuideSummary>("/api/playbook/guides", { method: "POST", json: { title, category, template: template || null } }),
     onSuccess: (g) => navigate(`/playbook/${g.id}/edit`),
     onError: (e) => toast.error(errorMessage(e)),
   });
@@ -38,7 +44,7 @@ export function GuidesPage() {
         description="Quy định và hướng dẫn xử lý cho IT Support: mỗi hướng dẫn là một sơ đồ rẽ nhánh, bấm vào từng bước để đọc ghi chú."
         actions={
           list.data?.can_edit && (
-            <Button variant="primary" onClick={() => { setTitle(""); setCategory(""); setTried(false); setOpen(true); }}>
+            <Button variant="primary" onClick={() => { setTitle(""); setCategory(""); setTemplate(""); setTried(false); setOpen(true); }}>
               <Plus className="size-4" aria-hidden="true" />Tạo hướng dẫn
             </Button>
           )
@@ -95,6 +101,19 @@ export function GuidesPage() {
         }
       >
         <div className="grid gap-3">
+          <Field label="Bắt đầu từ" hint={template ? templates.data?.find((t) => t.key === template)?.description : "Một bước gốc trống."}>
+            <Select
+              value={template}
+              onChange={(e) => {
+                const t = templates.data?.find((x) => x.key === e.target.value);
+                setTemplate(e.target.value);
+                if (t && !title.trim()) setTitle(t.title);
+              }}
+            >
+              <option value="">Sơ đồ trống</option>
+              {templates.data?.map((t) => <option key={t.key} value={t.key}>{`Mẫu: ${t.title} (${t.steps} bước)`}</option>)}
+            </Select>
+          </Field>
           <Field label="Tên hướng dẫn" required error={title.trim() ? "" : "Nhập tên hướng dẫn."} showError={tried}>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ví dụ: Xử lý máy trạm mất mạng" maxLength={200} />
           </Field>

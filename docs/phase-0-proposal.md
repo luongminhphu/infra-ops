@@ -1263,3 +1263,16 @@ Quyết định:
   - Sửa lỗi khởi động sau khi đổi tên quyền: migration `0002_playbook` đổi cả `core_permission`; đồng bộ quyền lúc khởi
     động bỏ qua quyền đã được cấp.
   - Màu: nền trắng, đường kẻ mảnh, bóng gần như không có; cobalt là màu nhấn duy nhất.
+
+## 49. Mẫu Playbook “Onboard nhân viên mới” (26/11/2026)
+
+- Yêu cầu: thiết kế đủ luồng Onboard từ tiếp nhận request RTR trên SDP, đối soát, tạo tài khoản AD, mailbox và mapping,
+  license M365, Office Tools theo chuẩn, đến in biên bản bàn giao.
+- Quyết định:
+  - Playbook có *mẫu dựng sẵn* (`modules/playbook/templates.py`, `GET /api/playbook/templates`); “Tạo hướng dẫn” →
+    “Bắt đầu từ” tạo bản nháp từ mẫu, sau đó sửa như mọi bản nháp. Mẫu không tự xuất bản.
+  - Luồng: tiếp nhận RTR → đủ thông tin? (thiếu → HR bổ sung, quay lại) → đối soát → *kiểm tra* đã có laptop (tái tuyển /
+    trùng Mã NV → exception) → tài khoản AD → mailbox → *kiểm tra* band ≥ B5 (gói đầy đủ / chọn theo vị trí) → Office
+    Tools → *kiểm tra* laptop đủ tiêu chuẩn band (kho / đề xuất mua) → BioStar → biên bản → bàn giao → đóng request.
+  - AD / Exchange / M365 vẫn là hướng dẫn thủ công (tích hợp Microsoft tạm hoãn). Quy ước đặt tên, OU, gói license,
+    danh mục phần mềm và ngưỡng band là ví dụ đánh dấu “Điều chỉnh theo quy định công ty” – Manager sửa trước khi xuất bản.

@@ -227,3 +227,24 @@ async def test_permission_sync_tolerates_grants_moved_by_a_migration(admin) -> N
             "playbook.guides.view"
         ]  # grants already there: no error
         await s.commit()
+
+
+async def test_onboard_template_is_a_valid_connected_guide(admin) -> None:  # type: ignore[no-untyped-def]
+    from app.modules.playbook.templates import TEMPLATES
+
+    for key, tpl in TEMPLATES.items():
+        t = Tree.model_validate(tpl["tree"])
+        assert unreachable(t) == [], key
+        tools = {a.tool for n in t.nodes.values() for a in n.actions}
+        assert tools <= {"lifecycle.requests", "lifecycle.reconciliation", "lifecycle.jobs", "lifecycle.stock",
+                         "lifecycle.documents", "workload.purchases"}, tools  # fmt: skip
+    listed = (await admin.get("/api/playbook/templates")).json()
+    assert [t["key"] for t in listed] == ["onboard"] and listed[0]["steps"] > 20
+    r = await admin.post("/api/playbook/guides", json={"title": "Onboard (mẫu)", "template": "onboard"})
+    assert r.status_code == 201, r.text
+    d = (await admin.get(f"/api/playbook/guides/{r.json()['id']}", params={"version": "draft"})).json()
+    assert d["category"] == "Vòng đời nhân sự" and d["tree"]["root"] == "receive"
+    assert d["tree"]["nodes"]["rehire"]["kind"] == "check"
+    assert (
+        await admin.post("/api/playbook/guides", json={"title": "x", "template": "nope"})
+    ).status_code == 404
