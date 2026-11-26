@@ -15,7 +15,7 @@ from sqlalchemy import select
 
 from app.core.db import get_sessionmaker
 from app.core.workflow.engine import pump
-from app.modules.workload.rules import device_need, normalize_ticket, pick_bucket, ticket_phase
+from app.modules.workload.rules import device_need, normalize_ticket, pick_bucket, ticket_phase, ticket_state
 from app.modules.workload.settings import WorkloadSettings
 
 SDP = "https://sdp-wl.test.local"
@@ -60,6 +60,10 @@ def test_normalize_rules() -> None:
     reopened = normalize_ticket(req("3", "Open", None, 1, ms(11, 2), 6), s)
     assert reopened["state"] == "open" and reopened["completed_at"] is None
     assert normalize_ticket(req("4", "Canceled", None, 1, None), s)["state"] == "cancelled"
+    # SDP in Vietnamese: a closed case is done even with a configuration saved before these names existed.
+    old = WorkloadSettings(done_statuses=["Resolved"], cancelled_statuses=["Canceled"])
+    assert ticket_state(" Đã xử lý ", old) == "done" and ticket_state("Đã đóng", old) == "done"
+    assert ticket_state("Đã huỷ", old) == "cancelled" and ticket_state("Đang xử lý", old) == "open"
     assert [pick_bucket(d) for d in (7, 31, 92, 184, 365)] == ["day", "day", "week", "week", "month"]
 
 
@@ -1134,3 +1138,20 @@ async def test_unused_quote_files_are_cleaned_up(client) -> None:  # type: ignor
     ev = (await client.get("/api/workload/purchases")).json()["items"]
     ev_id = next(x for x in ev if x["id"] == p["id"])["evidence"][0]["id"]
     assert (await client.get(f"/api/workload/purchases/{p['id']}/evidence/{ev_id}")).content == PNG
+
+
+async def test_sync_closes_stored_tickets_with_vietnamese_done_status(sdp) -> None:  # type: ignore[no-untyped-def]
+    """A ticket stored as open (rule did not know "Đã xử lý") is closed by the next sync's reclassify."""
+    from sqlalchemy import select
+
+    from app.modules.workload.models import Ticket
+    from app.modules.workload.settings import load
+    from app.modules.workload.sync import reclassify
+
+    async with get_sessionmaker()() as s:
+        t = (await s.scalars(select(Ticket).where(Ticket.state == "open").limit(1))).one()
+        t.status, t.phase = "Đã xử lý", "pending"
+        await s.flush()
+        await reclassify(s, await load(s))
+        assert (t.state, t.phase) == ("done", None)
+        await s.rollback()
