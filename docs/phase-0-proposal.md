@@ -1302,7 +1302,8 @@ Quyết định:
   dùng → khu kho (“Kho IT”, chỉ một khu). Mỗi phòng ban / Mã NV / vai trò kho thuộc một khu. Trang Kiểm kê cảnh báo
   nhân viên đang giữ tài sản mà chưa thuộc khu nào (theo lần đồng bộ gần nhất).
 - **Mở kỳ**: khu lúc đó được chốt thành *zone* của kỳ (`lifecycle_stocktake_zone`); tài sản mang Mã NV, phòng ban, khu.
-  Supervisor/Manager giao mỗi khu cho một người có quyền kiểm, chuyển tài sản sang khu khác khi cần.
+  Administrator/Manager (quyền `lifecycle.stocktake.assign`) giao mỗi khu cho một Operator có quyền kiểm, chuyển tài
+  sản sang khu khác khi cần.
 - **Người kiểm** mở trang thấy *Khu của tôi*, tài sản gom theo nhân viên (đi từng bàn). Được kiểm cả tài sản khu khác.
 - Excel thêm sheet *Theo khu* và cột Khu / Mã NV / Phòng ban.
 - Phase sau: hàng chờ “Việc tiếp theo” cho người được giao khu; biên bản kiểm kê có chữ ký.

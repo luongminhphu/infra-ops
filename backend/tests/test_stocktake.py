@@ -141,7 +141,7 @@ def test_area_by_listed_employee_then_department_and_store_for_unused_assets() -
 
 
 @respx.mock(assert_all_mocked=True, assert_all_called=False)
-async def test_areas_split_the_count_between_counters(admin, configured, respx_mock) -> None:  # type: ignore[no-untyped-def]  # noqa: F811
+async def test_areas_split_the_count_between_counters(admin, client, configured, respx_mock) -> None:  # type: ignore[no-untyped-def]  # noqa: F811
     mock_systems(respx_mock)
     await _sync()
     areas = "/api/lifecycle/stocktake-areas"
@@ -185,6 +185,14 @@ async def test_areas_split_the_count_between_counters(admin, configured, respx_m
     assert (
         await admin.put(f"{base}/zones/{zones['Tầng 5']['id']}", json={"user_id": str(uuid.uuid4())})
     ).json()["error"]["code"] == "not_a_counter"
+    # Only Administrator / Manager hand out zones: a Supervisor (who otherwise runs the stocktake) may not.
+    await _user(admin, "supervisor", "st-sup@test.local")
+    await client.login("st-sup@test.local")
+    assert (await client.get(base)).status_code == 200
+    assert (
+        await client.put(f"{base}/zones/{zones['Tầng 5']['id']}", json={"user_id": None})
+    ).status_code == 403
+    assert (await client.get("/api/lifecycle/stocktake-counters")).status_code == 403
     # Move an asset to another zone.
     moved = await admin.put(
         f"{base}/items/{by_asset['a1']['id']}/zone", json={"zone_id": zones["Tầng 6"]["id"]}

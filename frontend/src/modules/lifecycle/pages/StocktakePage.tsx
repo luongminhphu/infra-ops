@@ -221,6 +221,8 @@ export function StocktakePage() {
   const open = s.status !== "closed";
   const counting = can("lifecycle.stocktake.count") && open;
   const manage = can("lifecycle.stocktake.manage");
+  // Administrator / Manager hand zones to Operators (lifecycle.stocktake.assign).
+  const assign = can("lifecycle.stocktake.assign");
   // Counting starts on what is left to count; afterwards on the differences.
   const current: View = view === "differences" && s.status === "counting" && !touchedView ? "pending" : view;
   const mine = s.zones.filter((z) => z.assignee_user_id && z.assignee_user_id === me?.id).map((z) => z.id ?? "");
@@ -266,7 +268,7 @@ export function StocktakePage() {
           <span className="block">3. Chọn hướng xử lý cho mọi chênh lệch (đã thống nhất với Hành chánh / Kế toán), rồi Đóng kỳ. File Excel có sheet Sổ SDP để HC/KT đối chiếu với sổ của mình.</span>
         </HelpTip>
       </div>
-      {s.zones.length > 0 && <ZonesPanel stocktakeId={id} zones={s.zones} canAssign={manage && open} onSaved={refresh} />}
+      {s.zones.length > 0 && <ZonesPanel stocktakeId={id} zones={s.zones} canAssign={assign && open} onSaved={refresh} />}
       {counting && <ScanBox stocktakeId={id} onCounted={refresh} onUnknown={(code) => setExtra({ code })} />}
       <Panel
         title="Tài sản"
@@ -297,7 +299,7 @@ export function StocktakePage() {
                 item={i}
                 heading={n === 0 || person(all[n - 1]!) !== person(i) ? person(i) : null}
                 zoneName={i.zone_id ? zoneName.get(i.zone_id) ?? "" : "Chưa phân khu"}
-                zones={manage && open && s.zones.length > 0 ? s.zones : null}
+                zones={assign && open && s.zones.length > 0 ? s.zones : null}
                 stocktakeId={id}
                 status={s.status}
                 canCount={counting}
@@ -353,7 +355,7 @@ function ZonesPanel({ stocktakeId, zones, canAssign, onSaved }: { stocktakeId: s
                         {counters.data.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </Select>
                     ) : (
-                      z.assignee_name ?? <span className="text-muted">{z.id ? "Chưa giao" : "Supervisor chuyển vào khu"}</span>
+                      z.assignee_name ?? <span className="text-muted">{z.id ? "Chưa giao" : "Manager chuyển vào khu"}</span>
                     )}
                   </td>
                   <td className="px-2 py-2 text-right tabular">{z.found} / {z.book}</td>

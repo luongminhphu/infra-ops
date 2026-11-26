@@ -39,6 +39,7 @@ router = APIRouter(tags=["lifecycle"])
 view_perm = require("lifecycle.stocktake.view")
 count_perm = require("lifecycle.stocktake.count")
 manage_perm = require("lifecycle.stocktake.manage")
+assign_perm = require("lifecycle.stocktake.assign")
 
 STATUS_LABEL = {"counting": "Đang kiểm", "reviewing": "Đang xử lý chênh lệch", "closed": "Đã đóng"}
 
@@ -604,7 +605,7 @@ async def _counters(session: AsyncSession) -> list[dict[str, Any]]:
 
 @router.get("/stocktake-counters")
 async def stocktake_counters(
-    _: CurrentUser = Depends(manage_perm), session: AsyncSession = Depends(get_session)
+    _: CurrentUser = Depends(assign_perm), session: AsyncSession = Depends(get_session)
 ) -> list[dict[str, Any]]:
     return await _counters(session)
 
@@ -618,7 +619,7 @@ async def assign_zone(
     stocktake_id: uuid.UUID,
     zone_id: uuid.UUID,
     body: ZoneAssignIn,
-    user: CurrentUser = Depends(manage_perm),
+    user: CurrentUser = Depends(assign_perm),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     """Hand a zone to the person who counts it (None = nobody yet). Anyone with the count permission may still
@@ -659,7 +660,7 @@ async def move_item(
     stocktake_id: uuid.UUID,
     item_id: int,
     body: ItemZoneIn,
-    user: CurrentUser = Depends(manage_perm),
+    user: CurrentUser = Depends(assign_perm),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     """Put an asset in another zone (e.g. one that was in no area, or whose user moved floor)."""

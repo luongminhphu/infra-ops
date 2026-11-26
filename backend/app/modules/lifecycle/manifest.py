@@ -138,6 +138,11 @@ manifest = ModuleManifest(
             ("manager", "supervisor", "operator"),
         ),
         Permission(
+            "lifecycle.stocktake.assign",
+            "Giao khu kiểm kê cho Operator và chuyển tài sản giữa các khu",
+            ("manager",),
+        ),
+        Permission(
             "lifecycle.stocktake.manage",
             "Mở / kết thúc / đóng kỳ kiểm kê và chọn hướng xử lý chênh lệch",
             ("manager", "supervisor"),
