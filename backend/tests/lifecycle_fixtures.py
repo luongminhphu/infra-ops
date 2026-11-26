@@ -82,7 +82,8 @@ SDP_USERS = [
         "name": "Nguyễn Văn An",
         "email_id": "an.nv@congty.local",
         "employee_id": "003551",
-        "department": {"name": "Kinh Doanh"},
+        "job_title": "Chuyên viên",
+        "department": {"name": "Kinh Doanh", "site": {"name": "AB Tower"}},
     },
     {
         "id": "u2",
