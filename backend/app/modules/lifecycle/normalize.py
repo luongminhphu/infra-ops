@@ -31,12 +31,13 @@ def _sdp_time(value: Any) -> str | None:
 
 
 def sdp_user(raw: dict[str, Any], employee_id_field: str) -> dict[str, Any]:
-    emp = _get_path(raw, employee_id_field)
+    # Typed by hand in SDP: "<003456>" or "(003456)" is the employee ID 003456.
+    emp = str(_get_path(raw, employee_id_field) or "").strip().strip("<>()[]{}\"' ")
     return {
         "id": str(raw.get("id", "")),
         "name": raw.get("name") or "",
         "email": raw.get("email_id"),
-        "employee_id": str(emp).strip() if emp not in (None, "") else None,
+        "employee_id": emp or None,
         "department": _name(raw.get("department")),
         # Work location: the department's site (SDP shows it after the department name), else the user's site.
         "site": _name(
