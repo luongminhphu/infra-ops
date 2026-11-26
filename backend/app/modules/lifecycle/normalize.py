@@ -50,7 +50,8 @@ def sdp_asset(raw: dict[str, Any]) -> dict[str, Any]:
         "id": str(raw.get("id", "")),
         "name": raw.get("name") or "",
         "asset_tag": raw.get("asset_tag"),
-        "serial": raw.get("serial_number"),
+        # Workstations keep the serial under computer_system.service_tag.
+        "serial": raw.get("serial_number") or ((raw.get("computer_system") or {}).get("service_tag") or None),
         "product": _name(product),
         "product_type": _name(product.get("product_type") if isinstance(product, dict) else None)
         or _name(raw.get("product_type")),

@@ -214,6 +214,17 @@ async def run_sync(
         raise
 
 
+async def _workstations(client: SdpClient, seen: set[str]) -> list[dict[str, Any]]:
+    """Computers (laptops, PCs) SDP keeps as workstations, which its asset list may leave out. Optional: an SDP
+    without that endpoint (or a key without access to it) just adds nothing."""
+    try:
+        rows = await client.list_all("/api/v3/workstations", "workstations")
+    except Exception as exc:
+        log.warning("lifecycle_sdp_workstations_unreadable", error=_err(exc))
+        return []
+    return [w for w in rows if str(w.get("id")) not in seen]
+
+
 # shortcut: at most this many SDP searches per sync; raise if many active staff are missing from the user list.
 MAX_SDP_LOOKUPS = 100
 
@@ -293,6 +304,7 @@ async def _sync(
                 errors["sdp_users"] = _err(exc)
             try:
                 raw_assets = await client.list_all("/api/v3/assets", "assets")
+                raw_assets += await _workstations(client, {str(a.get("id")) for a in raw_assets})
                 types = {t.lower() for t in settings.asset_product_types}
                 assets = [
                     a

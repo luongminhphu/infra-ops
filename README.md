@@ -379,7 +379,8 @@ Lưu ý:
    thì chọn mã giống hệt, rồi đến mã có cùng họ tên (không dấu, không kể thứ tự); vẫn không phân biệt được thì
    không tự ghép (tránh nhầm người); mã không khớp SDP vẫn hiện là lệch. User BioStar không khớp ai trong danh
    sách user SDP được tra thêm trên SDP theo Mã NV (tối đa 100 lượt mỗi lần đồng bộ), vì danh sách phân trang của
-   SDP có thể bỏ sót. **Nhóm loại trừ khỏi đối soát** (vd. `3. VENDOR`) bỏ hẳn các user nhà cung cấp, khách… Mỗi lần đồng bộ đọc cả hai và gộp theo Mã NV; người có user ở cả hai
+   SDP có thể bỏ sót. Tài sản đọc cả danh sách tài sản lẫn **workstation** của SDP (laptop/PC do SDP quét
+   về nằm riêng ở đó), chỉ giữ các loại trong **Cấu hình module → Loại tài sản** (thêm `UPS`… nếu cần đối soát). **Nhóm loại trừ khỏi đối soát** (vd. `3. VENDOR`) bỏ hẳn các user nhà cung cấp, khách… Mỗi lần đồng bộ đọc cả hai và gộp theo Mã NV; người có user ở cả hai
    nơi thì user đang hoạt động được ưu tiên (để phát hiện người đã nghỉ còn quyền ra vào). Một hệ thống đọc lỗi thì cả
    cột BioStar được bỏ qua lần đó, không kết luận sai.
 6. **Nhóm nghỉ việc trên BioStar**: nếu quy trình là chuyển user nghỉ việc vào một nhóm (vd. `0.NGHIVIEC`) thay vì xoá,
