@@ -337,3 +337,16 @@ def test_returned_stock_is_suggested_first() -> None:
     assert [a["id"] for a in plan["r1"][0].reuse] == [
         "old1"
     ]  # the returned laptop goes out, the new one stays
+
+
+def test_synced_asset_types_include_the_allocation_standard() -> None:
+    from app.modules.lifecycle.settings import LifecycleSettings, StandardItem
+    from app.modules.lifecycle.sync import asset_types
+
+    s = LifecycleSettings(
+        asset_product_types=["Laptop"],
+        allocation_standard=[StandardItem(label="UPS", product_types=["UPS", " IP Phone "], quantity=1)],
+    )
+    # Non-IT types (UPS, IP Phone) named only in the standard are still read, so stock shows them.
+    assert asset_types(s) == {"laptop", "ups", "ip phone"}
+    assert asset_types(LifecycleSettings(asset_product_types=[])) == set()  # empty = every type
