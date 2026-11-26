@@ -296,7 +296,7 @@ export function StocktakePage() {
         </div>
       )}
       {mode === "walk" ? (
-        <StocktakeWalk stocktakeId={id} items={s.items} zones={s.zones} mine={mine} onSaved={refresh} onExtra={(code, seenAt) => setExtra({ code, seenAt })} />
+        <StocktakeWalk stocktakeId={id} items={s.items} zones={s.zones} mine={mine} canSeeAll={overview} onSaved={refresh} onExtra={(code, seenAt) => setExtra({ code, seenAt })} />
       ) : !overview ? (
         <div role="status" className="flex flex-wrap items-center gap-3 rounded-md border border-line bg-surface-2 px-4 py-3">
           <StatusBadge status={STATUS[s.status]} label={s.status_label} />

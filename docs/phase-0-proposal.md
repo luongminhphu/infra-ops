@@ -1343,3 +1343,6 @@ Sau `/impeccable critique` (23/40: màn hình quản lý dùng chung cho cả ng
 - **Việc tiếp theo**: người được giao khu thấy “Kiểm kê Tầng 5, Tầng 7 – còn N tài sản”.
 - Tổng hợp & xử lý: đếm ở các tab theo khu / tìm kiếm đang lọc; **Kết thúc kiểm** hỏi xác nhận, nêu khu chưa xong; xoá dòng ngoài
   sổ / xoá khu bấm hai lần.
+- **Phân quyền tối thiểu** (`lifecycle.stocktake.view_all`: Manager, Supervisor, Viewer): chế độ Tổng hợp & xử lý, file
+  tổng, file khu bất kỳ, danh mục khu. Operator chỉ có Đi kiểm và **file Excel của khu mình được giao** (API kiểm
+  `assignee_user_id`); không thấy tên người kiểm khu khác.

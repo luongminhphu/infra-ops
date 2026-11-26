@@ -17,7 +17,7 @@ from app.core.branding.service import logo_bytes
 from app.core.db import get_session
 from app.core.documents import service as documents
 from app.core.documents.models import Document
-from app.core.errors import AppError, Conflict, NotFound
+from app.core.errors import AppError, Conflict, NotFound, PermissionDenied
 from app.core.timeutil import fmt_date
 from app.modules.lifecycle.attendance_input import HEADER_ID, _norm_id
 from app.modules.lifecycle.models import Snapshot, Stocktake, StocktakeArea, StocktakeItem, StocktakeZone
@@ -556,14 +556,18 @@ async def close_stocktake(
 @router.get("/stocktakes/{stocktake_id}/export")
 async def export_stocktake(
     stocktake_id: uuid.UUID,
-    user: CurrentUser = Depends(view_all_perm),
+    user: CurrentUser = Depends(view_perm),
     session: AsyncSession = Depends(get_session),
     zone_id: str | None = None,
 ) -> Response:
     """The whole stocktake (file tổng: every zone together), or one zone's part (file thành phần, ?zone_id=;
-    "none" = assets in no zone)."""
+    "none" = assets in no zone). Without lifecycle.stocktake.view_all only the zones handed to me."""
     s = await _get(session, stocktake_id)
     zones = await _zones(session, stocktake_id)
+    if not user.has("lifecycle.stocktake.view_all") and not any(
+        z["id"] == zone_id and z["assignee_user_id"] == str(user.id) for z in zones
+    ):
+        raise PermissionDenied("Chỉ tải được file của khu bạn được giao kiểm.")
     names = {z["id"]: z["name"] for z in zones}
     items = [
         {**(o := _item_out(i)), "zone": names.get(o["zone_id"] or "")}

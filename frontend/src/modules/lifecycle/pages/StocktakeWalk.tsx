@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { CircleCheck, ChevronDown, PackagePlus, ScanLine, TriangleAlert, Undo2 } from "lucide-react";
+import { CircleCheck, ChevronDown, Download, PackagePlus, ScanLine, TriangleAlert, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
 import { cn } from "@/core/lib/cn";
@@ -64,6 +64,7 @@ export function StocktakeWalk({
   items,
   zones,
   mine,
+  canSeeAll,
   onSaved,
   onExtra,
 }: {
@@ -71,6 +72,8 @@ export function StocktakeWalk({
   items: Item[];
   zones: ZoneRow[];
   mine: string[];
+  /** lifecycle.stocktake.view_all: may download any zone's file; otherwise only the zones handed to me. */
+  canSeeAll: boolean;
   onSaved: () => void;
   onExtra: (code: string, seenAt: string) => void;
 }) {
@@ -216,6 +219,11 @@ export function StocktakeWalk({
           <span className="tabular">{book - left} / {book} thiết bị đã kiểm</span>
           {damaged > 0 && <span className="tabular">{damaged} hỏng</span>}
           {extras > 0 && <span className="tabular">{extras} ngoài sổ</span>}
+          {(canSeeAll || mine.includes(zoneId)) && (
+            <a href={`/api/lifecycle/stocktakes/${stocktakeId}/export?zone_id=${zoneId}`} className="inline-flex min-h-9 items-center gap-1 text-primary hover:underline">
+              <Download className="size-4" aria-hidden="true" />File Excel {zone.name}
+            </a>
+          )}
         </p>
       )}
       {zone && left === 0 && book > 0 && (
