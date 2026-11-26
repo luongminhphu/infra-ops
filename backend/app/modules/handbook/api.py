@@ -1,4 +1,4 @@
-"""Infra Handbook API: guides (draft + published versions) and the images pasted into step notes."""
+"""Infra Playbook API: guides (draft + published versions) and the images pasted into step notes."""
 
 from __future__ import annotations
 
