@@ -240,12 +240,31 @@ def test_biostar_employee_id_last_five_digits_and_merge() -> None:
 
     assert id_key("100008") == "00008" and id_key("1002352") == "02352" and id_key("2352") == "2352"
     assert id_key("GUEST-01") == "GUEST-01"  # non-numeric IDs are compared as they are
-    sdp = sdp_id_index(["002352", "000008", "100100", "000100"])
-    assert resolve_employee_id("1002352", sdp) == "002352"
-    assert resolve_employee_id("100008", sdp) == "000008"  # Office 100008 = SDP 000008
-    assert resolve_employee_id("000008", sdp) == "000008"
-    assert resolve_employee_id("200100", sdp) == "200100"  # 00100 is shared by two SDP IDs: not guessed
-    assert resolve_employee_id("777777", sdp) == "777777"  # unknown to SDP: kept as is (flagged)
+    sdp = sdp_id_index(
+        [
+            {"employee_id": e, "name": n}
+            for e, n in [
+                ("002352", "A"),
+                ("000008", "Thinh. Nguyen Canh"),
+                ("100100", "Binh. Tran"),
+                ("000100", "An. Le"),
+                ("003273", "Minh. Lam Ngoc Gia"),
+                ("103273", "Minh. Lam Ngoc Gia"),  # stale second SDP account with the same name
+                ("203273", "Hoa. Pham"),
+                ("003273", "Minh. Lam Ngoc Gia"),  # duplicate record, same ID: still one candidate
+            ]
+        ]
+    )
+    r = resolve_employee_id
+    assert r("1002352", "", sdp) == "002352"
+    assert r("100008", "", sdp) == "000008"  # Office 100008 = SDP 000008
+    assert r("000008", "", sdp) == "000008"
+    assert r("200100", "", sdp) == "200100"  # 00100 is shared by two SDP IDs, no name: not guessed
+    assert r("200100", "AN LE", sdp) == "000100"  # shared digits: the name decides
+    assert r("103273", "LAM NGOC GIA MINH", sdp) == "103273"  # identical SDP ID wins
+    assert r("303273", "HOA PHAM", sdp) == "203273"
+    assert r("303273", "LAM NGOC GIA MINH", sdp) == "303273"  # two SDP IDs with that name: not guessed
+    assert r("777777", "", sdp) == "777777"  # unknown to SDP: kept as is (flagged)
     old = {"user_id": "100002", "employee_id": "000002", "active": True, "source": "Office"}
     new = {"user_id": "000002", "employee_id": "000002", "active": False, "source": "Server"}
     assert merge_biostar_users([new, old]) == [old]  # an active user anywhere wins (offboard checks)

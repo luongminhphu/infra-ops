@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from app.modules.lifecycle.parsing import name_key
+
 
 def _get_path(data: dict[str, Any], path: str) -> Any:
     cur: Any = data
@@ -85,18 +87,29 @@ def id_key(employee_id: str) -> str:
     return employee_id[-EMPLOYEE_ID_DIGITS:] if employee_id.isdigit() else employee_id
 
 
-def sdp_id_index(employee_ids: list[str]) -> dict[str, str]:
-    """Last 5 digits → SDP employee ID. A key shared by two SDP IDs is left out: never guess between people."""
-    by_key: dict[str, set[str]] = {}
-    for e in employee_ids:
-        by_key.setdefault(id_key(e), set()).add(e)
-    return {k: next(iter(ids)) for k, ids in by_key.items() if len(ids) == 1}
+def sdp_id_index(users: list[dict[str, Any]]) -> dict[str, list[tuple[str, tuple[str, ...]]]]:
+    """Last 5 digits → the SDP (employee ID, name key) pairs sharing them."""
+    by_key: dict[str, list[tuple[str, tuple[str, ...]]]] = {}
+    for u in users:
+        if e := u.get("employee_id"):
+            by_key.setdefault(id_key(e), []).append((e, name_key(u.get("name") or "")))
+    return by_key
 
 
-def resolve_employee_id(user_id: str, sdp_ids: dict[str, str]) -> str:
-    """Employee ID for a BioStar user: the SDP employee ID with the same last 5 digits (SDP is the reference),
-    else the BioStar ID as it is."""
-    return sdp_ids.get(id_key(user_id), user_id)
+def resolve_employee_id(
+    user_id: str, name: str, sdp_ids: dict[str, list[tuple[str, tuple[str, ...]]]]
+) -> str:
+    """Employee ID for a BioStar user: the SDP employee ID with the same last 5 digits (SDP is the reference).
+    When several SDP IDs share those digits: the identical ID, else the one whose name matches; never a guess –
+    otherwise the BioStar ID is kept as it is (and flagged by reconciliation)."""
+    candidates = sdp_ids.get(id_key(user_id), [])
+    ids = {e for e, _ in candidates}
+    if len(ids) == 1:
+        return next(iter(ids))
+    if user_id in ids:
+        return user_id
+    named = {e for e, n in candidates if n and n == name_key(name)}
+    return next(iter(named)) if len(named) == 1 else user_id
 
 
 def biostar_user(raw: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:

@@ -102,7 +102,7 @@ export function AppShell() {
             <ul data-subnav-strip className="flex gap-1 overflow-x-auto px-3 py-1.5">{subLinks(true)}</ul>
           </nav>
         )}
-        <main id="main" className="mx-auto w-full max-w-[1600px] flex-1 px-4 pt-5 pb-24 sm:px-5 sm:pb-5 [&_h1]:outline-none" tabIndex={-1}>
+        <main id="main" className="w-full min-w-0 flex-1 px-4 pt-5 pb-24 sm:px-5 sm:pb-5 [&_h1]:outline-none" tabIndex={-1}>
           {/* Opened from the "Việc của tôi" queue: one click back to it, on every module page. */}
           {(location.state as { from?: string } | null)?.from === "me" && location.pathname !== "/me/work" && (
             <Link to="/me/work" className="mb-3 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
