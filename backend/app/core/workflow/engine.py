@@ -462,6 +462,50 @@ async def cancel_job(session: AsyncSession, actor: Actor, job: Job, reason: str)
     return job
 
 
+async def reopen_job(session: AsyncSession, actor: Actor, job: Job, reason: str) -> Job:
+    """Bring a cancelled job back to draft when none of its steps did anything (no step finished, none wrote to
+    an external system): the case is handed back as not done. Anything else must be redone as a new job."""
+    if job.status != "cancelled":
+        raise Conflict("Chỉ mở lại được Job đã huỷ.", code="not_cancelled")
+    _, wf = workflow_or_404(job.workflow_key)
+    defs = {d.key: d for d in wf.steps}
+
+    def did_work(s: JobStep) -> bool:  # wrote to an external system, or a person did a manual step
+        d = defs.get(s.key)
+        finished = s.status in ("done", "verify")
+        return bool(s.before_state) or (finished and d is not None and (bool(d.writes) or d.kind == "manual"))
+
+    touched = [s.title for s in job.steps if did_work(s)]
+    if touched:
+        raise Conflict(
+            "Job đã có bước thực hiện (" + ", ".join(touched) + ") nên không mở lại được – tạo Job mới.",
+            code="job_has_work",
+        )
+    for s in job.steps:
+        s.status, s.message, s.output, s.attempts = "pending", "", {}, 0
+        s.next_run_at = s.waiting_since = s.started_at = s.finished_at = None
+        s.actor = s.confirmed_by = s.confirmed_at = None
+        s.verified_by = s.verified_at = s.verify_note = None
+    job.status = "draft"
+    job.current_step = None
+    job.started_at = job.closed_at = job.close_reason = job.scheduled_for = None
+    job.started_by = None
+    touch(job)
+    event(session, job, f"Đã mở lại Job (về bản nháp): {reason}", actor=actor.upn)
+    await record(
+        session,
+        actor=actor,
+        module_id=job.module_id,
+        action="workflow.job_reopened",
+        target_type="job",
+        target_id=str(job.id),
+        target_label=job.subject_label,
+        before={"status": "cancelled"},
+        after={"status": "draft", "reason": reason},
+    )
+    return job
+
+
 async def override_close(session: AsyncSession, actor: Actor, job: Job, reason: str) -> Job:
     """Admin: close a job although required steps (e.g. signed record) are missing."""
     if job.status in ("completed", "cancelled"):

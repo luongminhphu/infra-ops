@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import uuid
 from datetime import UTC, date, datetime, timedelta
 from urllib.parse import parse_qs
 
@@ -604,6 +605,43 @@ async def test_closed_request_fails_and_retry_recovers(admin, systems) -> None: 
         await admin.post(f"/api/core/jobs/{j['id']}/cancel", json={"reason": "Ứng viên không nhận việc"})
     ).json()
     assert cancelled["status"] == "cancelled"
+    # Nothing was written (only read-only checks ran): the case goes back to draft, steps reset.
+    reopened = await admin.post(f"/api/core/jobs/{j['id']}/reopen", json={"reason": "Chưa thực hiện"})
+    assert reopened.status_code == 200, reopened.text
+    r = reopened.json()
+    assert r["status"] == "draft" and all(x["status"] == "pending" for x in r["steps"])
+    again = await admin.post(f"/api/core/jobs/{j['id']}/reopen", json={"reason": "Mở lại để thử"})
+    assert again.json()["error"]["code"] == "not_cancelled"
+
+
+async def test_reopen_refused_after_a_write_step(admin) -> None:  # type: ignore[no-untyped-def]
+    from app.core.workflow.models import Job as JobRow
+
+    async with get_sessionmaker()() as s:
+        s.add(
+            LifecycleRequest(
+                id="9196",
+                display_id="7996",
+                subject="x",
+                employee_id="004446",
+                full_name="Lê E",
+                kind="onboard",
+                effective_date=date(2026, 11, 20),
+                fields={},
+                parse_errors=[],
+                description_text="",
+            )
+        )
+        await s.commit()
+    j = (await admin.post("/api/lifecycle/jobs", json={"request_id": "9196"})).json()
+    await admin.post(f"/api/core/jobs/{j['id']}/cancel", json={"reason": "Huỷ để thử"})
+    async with get_sessionmaker()() as s:
+        row = await s.get(JobRow, uuid.UUID(j["id"]))
+        assign = next(x for x in row.steps if x.key == "assign_assets")
+        assign.status, assign.before_state = "done", {"assets": {}}
+        await s.commit()
+    refused = await admin.post(f"/api/core/jobs/{j['id']}/reopen", json={"reason": "Mở lại để thử"})
+    assert refused.json()["error"]["code"] == "job_has_work"
 
 
 async def test_auto_create_jobs_and_list(admin) -> None:  # type: ignore[no-untyped-def]

@@ -335,6 +335,18 @@ async def cancel(
     return await _done(session, user, job, wf)
 
 
+@router.post("/jobs/{job_id}/reopen")
+async def reopen(
+    job_id: uuid.UUID,
+    body: ReasonIn,
+    user: CurrentUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    job, wf = await _load(session, user, job_id, "execute", for_update=True)
+    await engine.reopen_job(session, user.actor, job, body.reason)
+    return await _done(session, user, job, wf)
+
+
 @router.post("/jobs/{job_id}/override-close")
 async def override_close(
     job_id: uuid.UUID,
