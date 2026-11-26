@@ -16,7 +16,6 @@ interface Values {
   sdp_profile_id: string | null;
   biostar_profile_id: string | null;
   biostar_sources: BioStarSource[];
-  biostar_retired_groups: string[];
   biostar_excluded_groups: string[];
   rtr_requester_name: string;
   rtr_lookback_days: number;
@@ -33,6 +32,8 @@ interface Values {
   offboard_grace_days: number;
   snapshot_retention_days: number;
   reviewer_name: string;
+  hr_review_to: string[];
+  hr_review_cc: string[];
   auto_create_jobs: boolean;
   sdp_close_status: string;
   sdp_closed_statuses: string[];
@@ -79,9 +80,10 @@ export function SettingsPage() {
   });
   const [v, setV] = useState<Values | null>(null);
   const [productTypes, setProductTypes] = useState("");
+  const [hrTo, setHrTo] = useState("");
+  const [hrCc, setHrCc] = useState("");
   const [serverError, setServerError] = useState("");
   const [closedStatuses, setClosedStatuses] = useState("");
-  const [retiredGroups, setRetiredGroups] = useState("");
   const [excludedGroups, setExcludedGroups] = useState("");
   const [std, setStd] = useState<StdRow[]>([]);
   const [loadGroups, setLoadGroups] = useState(false);
@@ -96,8 +98,9 @@ export function SettingsPage() {
       setV(q.data.values);
       setProductTypes(q.data.values.asset_product_types.join(", "));
       setClosedStatuses(q.data.values.sdp_closed_statuses.join(", "));
-      setRetiredGroups(q.data.values.biostar_retired_groups.join(", "));
       setExcludedGroups(q.data.values.biostar_excluded_groups.join(", "));
+      setHrTo(q.data.values.hr_review_to.join(", "));
+      setHrCc(q.data.values.hr_review_cc.join(", "));
       setStd(toRows(q.data.values.allocation_standard));
     }
   }, [q.data]);
@@ -127,8 +130,9 @@ export function SettingsPage() {
       ...v,
       asset_product_types: list(productTypes),
       sdp_closed_statuses: list(closedStatuses),
-      biostar_retired_groups: list(retiredGroups),
       biostar_excluded_groups: list(excludedGroups),
+      hr_review_to: list(hrTo),
+      hr_review_cc: list(hrCc),
       allocation_standard: std
         .filter((r) => r.label.trim())
         .map((r) => ({ ...r, label: r.label.trim(), bands: list(r.bands), product_types: list(r.product_types), quantity: Math.max(1, r.quantity || 1) })),
@@ -202,22 +206,13 @@ export function SettingsPage() {
             <Plus className="size-4" aria-hidden="true" />Thêm hệ thống BioStar
           </Button>
           <GroupPicker
-            id="retired-groups"
-            label="Nhóm nghỉ việc trên BioStar"
-            hint="User trong nhóm này coi như đã nghỉ việc: không đối soát với SDP, không báo “còn hoạt động”."
-            placeholder="0.NGHIVIEC"
-            value={retiredGroups}
-            onChange={setRetiredGroups}
-            className="mt-5"
-          />
-          <GroupPicker
             id="excluded-groups"
             label="Nhóm loại trừ khỏi đối soát"
-            hint="User trong nhóm này không được đối soát SDP với BioStar và không xuất hiện trong đối soát (nhà cung cấp, khách, nhà thầu…)."
-            placeholder="3. VENDOR"
+            hint="Người đã nghỉ việc (chuyển sang nhóm nghỉ việc thay vì xoá), nhà cung cấp, khách, nhà thầu…: không đối soát với SDP, không báo “còn hoạt động” hay “không có trên SDP”. Nếu còn request RTR liên quan, người đó vẫn hiện với trạng thái “Nhóm loại trừ”."
+            placeholder="0.NGHIVIEC"
             value={excludedGroups}
             onChange={setExcludedGroups}
-            className="mt-4"
+            className="mt-5"
           />
         </Panel>
 
@@ -450,9 +445,20 @@ export function SettingsPage() {
           </Field>
         </Panel>
 
+        <Panel title="Rà soát nghỉ việc hằng tháng (ISO 27001)" description="Người nhận email nháp gửi phòng Nhân sự. Nhiều địa chỉ cách nhau bằng dấu phẩy.">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Gửi đến (To)">
+              <Input type="text" inputMode="email" value={hrTo} onChange={(e) => setHrTo(e.target.value)} placeholder="hr@congty.com.vn" />
+            </Field>
+            <Field label="Đồng gửi (Cc)">
+              <Input type="text" inputMode="email" value={hrCc} onChange={(e) => setHrCc(e.target.value)} placeholder="it-manager@congty.com.vn" />
+            </Field>
+          </div>
+        </Panel>
+
         {serverError && <p role="alert" className="rounded-sm bg-failed-soft px-3 py-2 text-sm text-failed">{serverError}</p>}
         <div className="sticky bottom-0 -mx-4 sm:-mx-5 flex justify-end gap-2 border-t border-line bg-paper/95 px-5 py-3 backdrop-blur">
-          <Button onClick={() => { setV(d.values); setProductTypes(d.values.asset_product_types.join(", ")); setClosedStatuses(d.values.sdp_closed_statuses.join(", ")); setRetiredGroups(d.values.biostar_retired_groups.join(", ")); setExcludedGroups(d.values.biostar_excluded_groups.join(", ")); setStd(toRows(d.values.allocation_standard)); }}>Hoàn tác thay đổi</Button>
+          <Button onClick={() => { setV(d.values); setProductTypes(d.values.asset_product_types.join(", ")); setClosedStatuses(d.values.sdp_closed_statuses.join(", ")); setExcludedGroups(d.values.biostar_excluded_groups.join(", ")); setHrTo(d.values.hr_review_to.join(", ")); setHrCc(d.values.hr_review_cc.join(", ")); setStd(toRows(d.values.allocation_standard)); }}>Hoàn tác thay đổi</Button>
           <Button type="submit" variant="primary" loading={save.isPending}>Lưu cấu hình</Button>
         </div>
       </form>

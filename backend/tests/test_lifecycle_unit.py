@@ -312,7 +312,7 @@ def test_retired_biostar_group_is_not_reconciled() -> None:
     result = reconcile(requests, users, assets, moved, S, date(2026, 11, 16))
     rules, row = _issues(result, "002100")
     assert "offboard_biostar_active" not in rules
-    assert row.cells["biostar"]["label"] == "Nghỉ việc"  # kept: an RTR request concerns 002100
+    assert row.cells["biostar"]["label"] == "Nhóm loại trừ"  # kept: an RTR request concerns 002100
     # Without an RTR request a person in that group is hidden, even with an SDP user.
     assert "009999" not in {r.employee_id for r in result.rows}
     # 001500: SDP user + BioStar user, no RTR request.
@@ -381,3 +381,13 @@ def test_synced_asset_types_include_the_allocation_standard() -> None:
     # Non-IT types (UPS, IP Phone) named only in the standard are still read, so stock shows them.
     assert asset_types(s) == {"laptop", "ups", "ip phone"}
     assert asset_types(LifecycleSettings(asset_product_types=[])) == set()  # empty = every type
+
+
+def test_old_retired_groups_setting_joins_the_excluded_groups() -> None:
+    from app.modules.lifecycle.settings import LifecycleSettings
+
+    s = LifecycleSettings.model_validate(
+        {"biostar_retired_groups": ["0.NGHIVIEC"], "biostar_excluded_groups": ["3. VENDOR", "0.NGHIVIEC"]}
+    )
+    assert s.biostar_excluded_groups == ["0.NGHIVIEC", "3. VENDOR"]
+    assert "biostar_retired_groups" not in s.model_dump()

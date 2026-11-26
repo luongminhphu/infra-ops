@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -72,16 +73,26 @@ class BioStarClient:
         return self.login_user
 
     async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        return await self._read("GET", path, params=params)
+
+    async def _read(
+        self, method: str, path: str, *, params: dict[str, Any] | None = None, json: Any = None
+    ) -> dict[str, Any]:
+        """A call that changes nothing (GET, or a POST search): retried, with one re-login on 401."""
         if not self.session_id:
             await self.login()
-        resp = await http.request(
-            self._client, "GET", path, params=params, headers={SESSION_HEADER: self.session_id or ""}
-        )
-        if resp.status_code == 401:
-            await self.login()
+        for _ in range(2):
             resp = await http.request(
-                self._client, "GET", path, params=params, headers={SESSION_HEADER: self.session_id or ""}
+                self._client,
+                method,
+                path,
+                params=params,
+                json=json,
+                headers={SESSION_HEADER: self.session_id or ""},
             )
+            if resp.status_code != 401:
+                break
+            await self.login()
         data = self._json(resp)
         if resp.status_code >= 400:
             message = (data.get("Response") or {}).get("message") or f"HTTP {resp.status_code}"
@@ -184,6 +195,34 @@ class BioStarClient:
                 break
         return rows
 
+    async def search_events(
+        self,
+        user_ids: list[str],
+        start: datetime,
+        end: datetime,
+        page_size: int = 1000,
+        max_rows: int = 200_000,
+    ) -> list[dict[str, Any]]:
+        """Access-log events of these users between start and end (timezone-aware), oldest first."""
+        rows: list[dict[str, Any]] = []
+        conditions = [
+            {"column": "datetime", "operator": 3, "values": [_iso(start), _iso(end)]},  # BETWEEN
+            {"column": "user_id.user_id", "operator": 2, "values": user_ids},  # IN
+        ]
+        while len(rows) < max_rows:
+            query = {
+                "limit": page_size,
+                "offset": len(rows),
+                "conditions": conditions,
+                "orders": [{"column": "datetime", "descending": False}],
+            }
+            data = await self._read("POST", "/api/events/search", json={"Query": query})
+            page = (data.get("EventCollection") or {}).get("rows") or []
+            rows.extend(page)
+            if len(page) < page_size:
+                break
+        return rows
+
     @staticmethod
     def _json(resp: httpx.Response) -> dict[str, Any]:
         try:
@@ -195,6 +234,10 @@ class BioStarClient:
                 hint="Kiểm tra Base URL trỏ tới BioStar 2 (vd. https://biostar.congty.local).",
             ) from exc
         return data if isinstance(data, dict) else {}
+
+
+def _iso(d: datetime) -> str:
+    return d.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
 def _total(data: dict[str, Any], collection: str) -> str | None:

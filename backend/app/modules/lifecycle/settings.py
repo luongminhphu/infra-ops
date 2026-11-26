@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings.service import load_settings
@@ -83,11 +83,21 @@ class LifecycleSettings(BaseModel):
     biostar_profile_id: uuid.UUID | None = None
     # More BioStar systems read for reconciliation (each with its own employee-ID prefix rule).
     biostar_sources: list[BioStarSource] = Field(default_factory=list, max_length=5)
-    # BioStar user groups that mean "left the company" (users are moved there instead of deleted): treated as
-    # offboarded and not reconciled against SDP.
-    biostar_retired_groups: list[str] = Field(default_factory=list, max_length=20)
-    # BioStar user groups left out of reconciliation entirely (vendors, contractors, guests…).
-    biostar_excluded_groups: list[str] = Field(default_factory=list, max_length=20)
+    # BioStar user groups left out of reconciliation: people who left (moved there instead of deleted), vendors,
+    # contractors… Their users count as without access and are never reported as active or unknown.
+    biostar_excluded_groups: list[str] = Field(default_factory=list, max_length=40)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _merge_retired_groups(cls, data: Any) -> Any:
+        """Settings saved before the two lists were merged kept the "left the company" groups apart."""
+        if isinstance(data, dict) and data.get("biostar_retired_groups"):
+            data = dict(data)
+            retired = data.pop("biostar_retired_groups")
+            data["biostar_excluded_groups"] = list(
+                dict.fromkeys([*retired, *data.get("biostar_excluded_groups", [])])
+            )
+        return data
 
     # RTR requests in ServiceDesk Plus
     rtr_requester_name: str = Field("RTR", min_length=1, max_length=200)
@@ -122,6 +132,9 @@ class LifecycleSettings(BaseModel):
 
     # Documents (Phase 3)
     reviewer_name: str = Field("", max_length=200)
+    # Monthly offboarding review sent to HR (ISO 27001 access review): e-mail draft recipients.
+    hr_review_to: list[str] = Field(default_factory=list, max_length=20)
+    hr_review_cc: list[str] = Field(default_factory=list, max_length=20)
     # Workflows (Onboard / Offboard)
     auto_create_jobs: bool = True
     sdp_close_status: str = Field("Resolved", min_length=1, max_length=64)

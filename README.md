@@ -34,6 +34,10 @@ Tài liệu: [cài đặt Ubuntu + Docker](docs/install-ubuntu-docker.md) · [ki
 ### Module Vòng đời nhân sự
 - Đồng bộ request **RTR** (nhân viên mới / nghỉ việc), user và tài sản SDP, user BioStar; **đối soát theo Mã NV**
   giữa các hệ thống; xuất Excel.
+- **Báo cáo chấm công** từ log ra vào BioStar theo danh sách Mã NV và khoảng thời gian HR yêu cầu.
+- **Rà soát nhân sự nghỉ việc hằng tháng (ISO 27001)**: danh sách người nghỉ việc trong tháng theo RTR kèm tình
+  trạng thu hồi (Job offboard, tài sản còn gán, BioStar) → **email nháp `.eml`** gửi HR kèm Excel có cột *HR xác nhận*;
+  nhắc trong “Việc tiếp theo” đến khi email tháng trước được lập. Người nhận cấu hình ở *Cấu hình module*.
 - **Biên bản Bàn giao / Thu hồi** theo mẫu Word của công ty: mẫu có phiên bản, số tự sinh, xuất PDF, tải bản đã ký,
   đính kèm vào request SDP.
 - **Job Onboard / Offboard** tự tạo từ request: gán/thu hồi tài sản SDP, tạo/vô hiệu hoá user BioStar, biên bản,
@@ -390,15 +394,19 @@ Lưu ý:
    SDP / RTR nào nằm ở mục riêng **BioStar không có trên SDP** (người còn quyền ra vào xếp trước) để rà soát quyền ra
    vào, không thành dòng nhân viên – trừ khi lần đó không đọc được SDP. Tài sản đọc cả danh sách tài sản lẫn **workstation** của SDP (laptop/PC do SDP quét
    về nằm riêng ở đó), chỉ giữ các loại trong **Cấu hình module → Loại tài sản** cộng mọi loại có trong **Tiêu chuẩn cấp phát** (UPS,
-   IP Phone… kể cả tài sản Non-IT trên SDP – app lọc theo loại tài sản, không theo nhóm IT/Non-IT). **Nhóm loại trừ khỏi đối soát** (vd. `3. VENDOR`) bỏ hẳn các user nhà cung cấp, khách…: ở **Cấu hình module**,
+   IP Phone… kể cả tài sản Non-IT trên SDP – app lọc theo loại tài sản, không theo nhóm IT/Non-IT). **Nhóm loại trừ khỏi đối soát** (vd. `0.NGHIVIEC`, `3. VENDOR`) gồm người đã nghỉ việc, nhà cung cấp, khách…: ở **Cấu hình module**,
    app đọc danh sách nhóm người dùng trực tiếp từ BioStar 2 (kèm số user lần đồng bộ gần nhất) – bấm một nhóm để thêm
-   vào *Nhóm loại trừ* hoặc *Nhóm nghỉ việc*, hoặc gõ tên nhóm khác. Mỗi lần đồng bộ đọc cả hai và gộp theo Mã NV; người có user ở cả hai
+   vào *Nhóm loại trừ*, hoặc gõ tên nhóm khác. Mỗi lần đồng bộ đọc cả hai và gộp theo Mã NV; người có user ở cả hai
    nơi thì user đang hoạt động được ưu tiên (để phát hiện người đã nghỉ còn quyền ra vào). Một hệ thống đọc lỗi thì cả
    cột BioStar được bỏ qua lần đó, không kết luận sai.
-6. **Nhóm nghỉ việc trên BioStar**: nếu quy trình là chuyển user nghỉ việc vào một nhóm (vd. `0.NGHIVIEC`) thay vì xoá,
-   nhập tên nhóm ở **Cấu hình module → Kết nối sử dụng**. User trong nhóm đó coi như đã nghỉ việc: không đối soát với
-   SDP và bị ẩn khỏi trang Đối soát (dòng đầu trang ghi số user đã ẩn), trừ khi còn request RTR liên quan; khi đó ô
-   BioStar ghi *Nghỉ việc* và không báo “còn hoạt động” khi offboard.
+6. User trong **Nhóm loại trừ** coi như không còn quyền ra vào: không đối soát với SDP, không vào mục “BioStar không có
+   trên SDP” và bị ẩn khỏi trang Đối soát (dòng đầu trang ghi số user đã ẩn), trừ khi còn request RTR liên quan; khi đó
+   ô BioStar ghi *Nhóm loại trừ* và không báo “còn hoạt động” khi offboard.
+7. **Báo cáo chấm công** (HR yêu cầu rà soát chấm công / Overtime): nhập danh sách Mã NV và khoảng thời gian (tối đa
+   62 ngày) → **Xuất Excel**. App đọc log quẹt thành công trên mọi BioStar (Mã NV khớp theo 5 số cuối): sheet *Tổng
+   hợp theo ngày* (giờ vào/ra đầu – cuối ngày, số giờ, ngày không quẹt), *Log chi tiết*, *Ghi chú* (Mã NV không có
+   trên BioStar, hệ thống đọc lỗi). Quyền `lifecycle.attendance.export` (Manager, Supervisor, Operator); mỗi lần xuất
+   ghi nhật ký.
 
 ### Biên bản Bàn giao / Thu hồi
 - **Vòng đời nhân sự → Biên bản → Lập biên bản…**: nhập Mã NV để điền sẵn từ request RTR và thiết bị đang gán

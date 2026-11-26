@@ -266,7 +266,7 @@ def reconcile(
             row.cells["biostar"] = {"status": "pending", "label": "Không có", "detail": ""}
         else:
             state = (
-                "Nghỉ việc"
+                "Nhóm loại trừ"
                 if bs.get("retired")
                 else ("Hoạt động" if bs["active"] else ("Vô hiệu" if bs["disabled"] else "Hết hạn"))
             )

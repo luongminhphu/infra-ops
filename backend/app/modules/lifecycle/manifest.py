@@ -21,10 +21,13 @@ from app.core.modules.manifest import (
 from app.modules.lifecycle import next_actions
 from app.modules.lifecycle.api import router
 from app.modules.lifecycle.assignment import REASSIGN_JOB
+from app.modules.lifecycle.attendance_api import router as attendance_router
 from app.modules.lifecycle.documents import HANDOVER, RETURN
 from app.modules.lifecycle.documents_api import router as documents_router
 from app.modules.lifecycle.inventory_api import router as inventory_router
 from app.modules.lifecycle.jobs_api import router as jobs_router
+from app.modules.lifecycle.offboard_review import next_action as offboard_review_action
+from app.modules.lifecycle.offboard_review_api import router as offboard_review_router
 from app.modules.lifecycle.stock import ASSET_DISPOSE, ASSET_STATE
 from app.modules.lifecycle.stock import router as stock_router
 from app.modules.lifecycle.workflows import OFFBOARD, ONBOARD, TRANSFER
@@ -101,12 +104,30 @@ manifest = ModuleManifest(
             "Cập nhật tồn kho: đánh dấu hàng thu hồi, chuyển sang / trả về từ Chờ thanh lý trên SDP",
             ("manager", "supervisor"),
         ),
+        Permission(
+            "lifecycle.attendance.export",
+            "Xuất báo cáo chấm công (log ra vào BioStar) theo Mã NV",
+            ("manager", "supervisor", "operator"),
+        ),
+        Permission(
+            "lifecycle.offboard_review.export",
+            "Rà soát nhân sự nghỉ việc hằng tháng và lập email gửi HR (ISO 27001)",
+            ("manager", "supervisor"),
+        ),
         # Administrator has every permission; only Managers among the other roles may dispose.
         Permission(
             "lifecycle.stock.dispose", "Thanh lý tài sản (trạng thái Disposed) trên SDP", ("manager",)
         ),
     ],
-    routers=[router, documents_router, jobs_router, inventory_router, stock_router],
+    routers=[
+        router,
+        documents_router,
+        jobs_router,
+        inventory_router,
+        stock_router,
+        attendance_router,
+        offboard_review_router,
+    ],
     workflows=[ONBOARD, OFFBOARD, TRANSFER, REASSIGN_JOB, ASSET_STATE, ASSET_DISPOSE],
     document_kinds=[HANDOVER, RETURN],
     nav=[
@@ -121,6 +142,13 @@ manifest = ModuleManifest(
         NavItem("Kho thiết bị", "/lifecycle/stock", "package", "lifecycle.job.view"),
         NavItem("Request RTR", "/lifecycle/requests", "ticket", "lifecycle.reconciliation.view"),
         NavItem("Biên bản", "/lifecycle/documents", "file-text", "lifecycle.documents.view"),
+        NavItem("Báo cáo chấm công", "/lifecycle/attendance", "clock", "lifecycle.attendance.export"),
+        NavItem(
+            "Rà soát nghỉ việc (ISO)",
+            "/lifecycle/offboard-review",
+            "user-check",
+            "lifecycle.offboard_review.export",
+        ),
         NavItem("Đồng bộ dữ liệu", "/lifecycle/sync", "refresh-cw", "lifecycle.reconciliation.view"),
         NavItem("Mẫu biên bản", "/lifecycle/templates", "file-cog", "lifecycle.templates.manage"),
         NavItem("Cấu hình module", "/lifecycle/settings", "settings", "lifecycle.settings.manage"),
@@ -137,7 +165,10 @@ manifest = ModuleManifest(
         ),
     ],
     next_actions=[
-        NextActionSource("lifecycle.jobs", "lifecycle.job.view", next_actions.load, next_actions.summary)
+        NextActionSource("lifecycle.jobs", "lifecycle.job.view", next_actions.load, next_actions.summary),
+        NextActionSource(
+            "lifecycle.offboard_review", "lifecycle.offboard_review.export", offboard_review_action
+        ),
     ],
     dashboard_widgets=[
         DashboardWidget(

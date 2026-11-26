@@ -1147,3 +1147,29 @@ Quyết định:
 - Nhóm loại trừ / nghỉ việc: `GET /api/lifecycle/biostar/user-groups` đọc nhóm người dùng trực tiếp từ mọi BioStar
   (chính + đọc thêm) kèm số user của lần đồng bộ gần nhất; hệ thống nào không đọc được thì dùng nhóm của lần đồng bộ.
 
+
+## 40. Gộp nhóm loại trừ BioStar; báo cáo chấm công (26/11/2026)
+
+- Yêu cầu: gộp *Nhóm nghỉ việc* và *Nhóm loại trừ khỏi đối soát* thành một mục; xuất báo cáo chấm công khi HR yêu cầu
+  rà soát chấm công / Overtime (danh sách Mã NV + khung thời gian).
+- Quyết định: chỉ còn `biostar_excluded_groups`. User trong nhóm được đọc nhưng coi như không còn quyền ra vào (ẩn,
+  không báo “còn hoạt động” / “không có trên SDP”; vẫn hiện nếu còn request RTR, nhãn *Nhóm loại trừ*). Cấu hình cũ
+  `biostar_retired_groups` được gộp tự động khi đọc.
+- Chấm công: `POST /api/lifecycle/attendance/export` (quyền `lifecycle.attendance.export`: Manager, Supervisor,
+  Operator; audit `lifecycle.attendance_exported`). Đọc trực tiếp mọi BioStar bằng credential Read: user khớp Mã NV
+  theo 5 số cuối, `POST /api/events/search` (BETWEEN theo giờ Việt Nam, IN user), chỉ tính quẹt thành công (mã sự
+  kiện 4096–4351, 4864–5119). Giới hạn 500 Mã NV, 62 ngày mỗi lần. Giờ vào/ra = lần đầu/cuối trong ngày; ca qua đêm
+  chưa gộp (chờ quy tắc ca từ HR). Chạy trong request vì là thao tác đọc theo yêu cầu, không ghi gì.
+
+## 41. Rà soát nhân sự nghỉ việc hằng tháng gửi HR (ISO 27001) (26/11/2026)
+
+- Yêu cầu: thống kê nhân sự nghỉ việc trong tháng và soạn email gửi HR rà soát theo quy trình ISO 27001 định kỳ.
+- Quyết định: trang *Rà soát nghỉ việc (ISO)* trong module Vòng đời nhân sự (quyền `lifecycle.offboard_review.export`:
+  Manager, Supervisor). Danh sách = request RTR `offboard` có ngày hiệu lực trong tháng; mỗi người kèm Job offboard mới
+  nhất, số tài sản đang dùng và trạng thái BioStar của lần đối soát gần nhất; kết luận *Đã thu hồi đủ* khi Job hoàn
+  tất, 0 tài sản và BioStar không còn hoạt động (Annex A 5.18 / 6.5).
+- `GET /api/lifecycle/offboard-review?month=yyyy-MM` (mặc định tháng trước) và `/export?format=eml|xlsx`: `.eml` nháp
+  (`X-Unsent`) tới `hr_review_to` / `hr_review_cc`, nội dung đề nghị HR xác nhận danh sách đầy đủ, đúng, kèm Excel có
+  cột *HR xác nhận* / *Ghi chú HR*. Mỗi lần xuất ghi audit `lifecycle.offboard_review_exported` (target = tháng).
+- Nhắc định kỳ: nguồn “Việc tiếp theo” `lifecycle.offboard_review` hiện mục cho tháng trước đến khi có người tải email
+  nháp của tháng đó. App không tự gửi email (chưa có SMTP; tích hợp Exchange vẫn hoãn).

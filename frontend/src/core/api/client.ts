@@ -71,3 +71,25 @@ export function errorDetails(error: unknown): string {
   }
   return errorMessage(error);
 }
+
+/** POST JSON and save the file the server returns (Content-Disposition name). Returns the response headers. */
+export async function downloadFile(path: string, json: unknown, fallbackName: string): Promise<Headers> {
+  const h = new Headers({ "Content-Type": "application/json" });
+  if (csrfToken) h.set("X-CSRF-Token", csrfToken);
+  let res: Response;
+  try {
+    res = await fetch(path, { method: "POST", headers: h, credentials: "same-origin", body: JSON.stringify(json) });
+  } catch {
+    throw new ApiError(0, "network_error", NETWORK_MESSAGE);
+  }
+  if (!res.ok) {
+    const err = ((await res.json().catch(() => undefined)) as { error?: { code?: string; message?: string } } | undefined)?.error;
+    throw new ApiError(res.status, err?.code ?? "http_error", err?.message ?? `Máy chủ trả về lỗi ${res.status}. Thử lại sau ít phút.`);
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(await res.blob());
+  a.download = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? fallbackName;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  return res.headers;
+}

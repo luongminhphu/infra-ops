@@ -344,7 +344,7 @@ export function EmployeePanel({
               <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
                 <dt className="text-muted">Trạng thái</dt>
                 <dd>
-                  <StatusBadge status={d.biostar.retired ? "skipped" : flagged.has("biostar") ? "mismatch" : d.biostar.active ? "done" : "disabled"} label={d.biostar.retired ? "Nghỉ việc" : d.biostar.active ? "Hoạt động" : d.biostar.disabled ? "Vô hiệu hoá" : "Hết hạn"} />
+                  <StatusBadge status={d.biostar.retired ? "skipped" : flagged.has("biostar") ? "mismatch" : d.biostar.active ? "done" : "disabled"} label={d.biostar.retired ? "Nhóm loại trừ" : d.biostar.active ? "Hoạt động" : d.biostar.disabled ? "Vô hiệu hoá" : "Hết hạn"} />
                 </dd>
                 <dt className="text-muted">Tên</dt>
                 <dd>{d.biostar.name}</dd>
