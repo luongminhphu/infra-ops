@@ -37,6 +37,7 @@ from app.modules.lifecycle.offboard_review_api import router as offboard_review_
 from app.modules.lifecycle.stock import ASSET_DISPOSE, ASSET_STATE
 from app.modules.lifecycle.stock import router as stock_router
 from app.modules.lifecycle.stocktake_api import router as stocktake_router
+from app.modules.lifecycle.stocktake_record import STOCKTAKE_RECORD
 from app.modules.lifecycle.workflows import OFFBOARD, ONBOARD, TRANSFER
 
 
@@ -163,7 +164,7 @@ manifest = ModuleManifest(
         stocktake_router,
     ],
     workflows=[ONBOARD, OFFBOARD, TRANSFER, REASSIGN_JOB, ASSET_STATE, ASSET_DISPOSE],
-    document_kinds=[HANDOVER, RETURN],
+    document_kinds=[HANDOVER, RETURN, STOCKTAKE_RECORD],
     # Filed under the shared menu headings by what each page is for (core orders the headings).
     nav=[
         NavItem("Job onboard / offboard", "/lifecycle/jobs", "workflow", "lifecycle.job.view", NAV_WORK),

@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, ClipboardCheck, Download, PackagePlus, ScanLine } from "lucide-react";
+import { ChevronRight, ClipboardCheck, Download, FileSignature, PackagePlus, ScanLine, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
@@ -61,7 +61,17 @@ export interface ZoneRow extends Summary {
   assignee_name: string | null;
 }
 
+export interface RecordInfo {
+  id: string;
+  status: "draft" | "finalized" | "signed" | "void";
+  number: string | null;
+  has_pdf: boolean;
+  has_signed: boolean;
+  data: { it_rep: string; it_title: string; finance_rep: string; finance_title: string; conclusion: string };
+}
+
 interface Head {
+  record?: RecordInfo | null;
   zones: ZoneRow[];
   id: string;
   name: string;
@@ -247,7 +257,7 @@ export function StocktakePage() {
         description={<>Chốt sổ {formatDate(s.cutoff)} · dữ liệu SDP lúc {formatDateTime(s.source_synced_at)} · mở bởi {s.created_by}</>}
         actions={
           <>
-            <a href={`/api/lifecycle/stocktakes/${id}/export`} className={buttonVariants({ variant: "secondary" })}><Download className="size-4" aria-hidden="true" />Xuất Excel</a>
+            <a href={`/api/lifecycle/stocktakes/${id}/export`} className={buttonVariants({ variant: "secondary" })}><Download className="size-4" aria-hidden="true" />File tổng (Excel)</a>
             {manage && s.status === "counting" && <Button variant="primary" loading={step.isPending} onClick={() => step.mutate("finish-count")}>Kết thúc kiểm</Button>}
             {manage && s.status === "reviewing" && (
               <Button variant="primary" loading={step.isPending} disabled={s.summary.unresolved > 0} onClick={() => step.mutate("close")}>
@@ -268,6 +278,7 @@ export function StocktakePage() {
           <span className="block">3. Chọn hướng xử lý cho mọi chênh lệch (đã thống nhất với Hành chánh / Kế toán), rồi Đóng kỳ. File Excel có sheet Sổ SDP để HC/KT đối chiếu với sổ của mình.</span>
         </HelpTip>
       </div>
+      {s.status === "closed" && <RecordPanel stocktakeId={id} record={s.record ?? null} canMake={manage} onSaved={refresh} />}
       {s.zones.length > 0 && <ZonesPanel stocktakeId={id} zones={s.zones} canAssign={assign && open} onSaved={refresh} />}
       {counting && <ScanBox stocktakeId={id} onCounted={refresh} onUnknown={(code) => setExtra({ code })} />}
       <Panel
@@ -339,7 +350,8 @@ function ZonesPanel({ stocktakeId, zones, canAssign, onSaved }: { stocktakeId: s
               <th scope="col" className="px-2 py-2 font-medium">Người kiểm</th>
               <th scope="col" className="px-2 py-2 text-right font-medium">Đã thấy</th>
               <th scope="col" className="px-2 py-2 text-right font-medium">Còn lại</th>
-              <th scope="col" className="px-4 py-2 text-right font-medium">Chênh lệch</th>
+              <th scope="col" className="px-2 py-2 text-right font-medium">Chênh lệch</th>
+              <th scope="col" className="px-4 py-2 text-right font-medium"><span className="sr-only">File khu</span></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
@@ -360,13 +372,85 @@ function ZonesPanel({ stocktakeId, zones, canAssign, onSaved }: { stocktakeId: s
                   </td>
                   <td className="px-2 py-2 text-right tabular">{z.found} / {z.book}</td>
                   <td className="px-2 py-2 text-right tabular">{left > 0 ? left : <StatusBadge status="done" label="Xong" />}</td>
-                  <td className="px-4 py-2 text-right tabular">{z.differences || "—"}</td>
+                  <td className="px-2 py-2 text-right tabular">{z.differences || "—"}</td>
+                  <td className="px-4 py-1.5 text-right">
+                    <a href={`/api/lifecycle/stocktakes/${stocktakeId}/export?zone_id=${z.id ?? "none"}`} className="inline-flex items-center gap-1 text-primary hover:underline" aria-label={`Tải file kiểm kê ${z.name}`}>
+                      <Download className="size-4" aria-hidden="true" />File khu
+                    </a>
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+    </Panel>
+  );
+}
+
+const RECORD_STATUS: Record<RecordInfo["status"], { label: string; status: Status }> = {
+  draft: { label: "Bản nháp", status: "pending" },
+  finalized: { label: "Đã chốt – chờ ký", status: "waiting" },
+  signed: { label: "Đã ký", status: "done" },
+  void: { label: "Đã huỷ", status: "skipped" },
+};
+
+/** Biên bản kiểm kê signed by IT and Kế toán: drafted from the closed stocktake, numbered, printed, signed scan uploaded. */
+function RecordPanel({ stocktakeId, record, canMake, onSaved }: { stocktakeId: string; record: RecordInfo | null; canMake: boolean; onSaved: () => void }) {
+  const live = record && record.status !== "void" ? record : null;
+  const [f, setF] = useState(live?.data ?? { it_rep: "", it_title: "", finance_rep: "", finance_title: "", conclusion: "" });
+  const [touched, setTouched] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  const ok = (msg: string) => () => { toast.success(msg); onSaved(); };
+  const fail = (e: unknown) => toast.error(errorMessage(e));
+  const make = useMutation({ mutationFn: () => api(`/api/lifecycle/stocktakes/${stocktakeId}/record`, { method: "POST", json: f }), onSuccess: ok(live ? "Đã cập nhật bản nháp biên bản." : "Đã lập bản nháp biên bản."), onError: fail });
+  const finalize = useMutation({ mutationFn: () => api(`/api/core/documents/${live!.id}/finalize`, { method: "POST" }), onSuccess: ok("Đã chốt biên bản – in, ký rồi tải bản đã ký lên."), onError: fail });
+  const upload = useMutation({
+    mutationFn: (file: File) => { const fd = new FormData(); fd.set("file", file); return api(`/api/core/documents/${live!.id}/signed`, { method: "POST", body: fd }); },
+    onSuccess: ok("Đã lưu bản đã ký."),
+    onError: fail,
+  });
+  const draft = !live || live.status === "draft";
+  const missing = !f.it_rep.trim() || !f.finance_rep.trim();
+  const file = (which: string) => `/api/core/documents/${live!.id}/file/${which}`;
+  return (
+    <Panel
+      title={<span className="inline-flex items-center gap-2">Biên bản kiểm kê{live && <StatusBadge {...RECORD_STATUS[live.status]} />}{live?.number && <Mono>{live.number}</Mono>}</span>}
+      description="Hai bên ký xác nhận: IT và Kế toán. Số liệu, kết quả theo khu và chênh lệch lấy từ kỳ đã đóng."
+      className="mb-4"
+    >
+      {canMake && draft && (
+        <form
+          className="grid gap-4 sm:grid-cols-2"
+          onSubmit={(e) => { e.preventDefault(); setTouched(true); if (!missing) make.mutate(); }}
+        >
+          <Field label="Đại diện IT" required error="Nhập họ tên đại diện IT." showError={touched && !f.it_rep.trim()}><Input value={f.it_rep} onChange={set("it_rep")} maxLength={200} /></Field>
+          <Field label="Chức danh (IT)"><Input value={f.it_title} onChange={set("it_title")} maxLength={200} placeholder="vd. Trưởng nhóm IT" /></Field>
+          <Field label="Đại diện Kế toán" required error="Nhập họ tên đại diện Kế toán." showError={touched && !f.finance_rep.trim()}><Input value={f.finance_rep} onChange={set("finance_rep")} maxLength={200} /></Field>
+          <Field label="Chức danh (Kế toán)"><Input value={f.finance_title} onChange={set("finance_title")} maxLength={200} placeholder="vd. Kế toán TSCĐ" /></Field>
+          <Field label="Kết luận" hint="Để trống: app tự ghi theo số chênh lệch." className="sm:col-span-2"><Input value={f.conclusion} onChange={set("conclusion")} maxLength={2000} /></Field>
+          <div className="flex flex-wrap gap-2 sm:col-span-2">
+            <Button type="submit" variant={live ? "secondary" : "primary"} loading={make.isPending}><FileSignature className="size-4" aria-hidden="true" />{live ? "Cập nhật bản nháp" : "Lập biên bản"}</Button>
+            {live && <a href={`/api/core/documents/${live.id}/preview.pdf`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "secondary" })}>Xem trước PDF</a>}
+            {live && <Button variant="primary" loading={finalize.isPending} onClick={() => finalize.mutate()}>Chốt biên bản</Button>}
+          </div>
+        </form>
+      )}
+      {!draft && live && (
+        <div className="flex flex-wrap items-center gap-2">
+          {live.has_pdf && <a href={file("pdf")} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "secondary" })}><Download className="size-4" aria-hidden="true" />PDF để in, ký</a>}
+          <a href={file("docx")} className={buttonVariants({ variant: "ghost" })}>DOCX</a>
+          {live.has_signed && <a href={file("signed")} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "secondary" })}>Bản đã ký</a>}
+          {canMake && (
+            <>
+              <input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={(e) => { const x = e.target.files?.[0]; e.target.value = ""; if (x) upload.mutate(x); }} />
+              <Button variant={live.has_signed ? "ghost" : "primary"} loading={upload.isPending} onClick={() => fileRef.current?.click()}><Upload className="size-4" aria-hidden="true" />{live.has_signed ? "Tải lại bản đã ký" : "Tải bản đã ký lên"}</Button>
+            </>
+          )}
+        </div>
+      )}
+      {!canMake && draft && <p className="text-sm text-muted">{live ? "Biên bản đang ở bản nháp." : "Chưa lập biên bản."} Supervisor/Manager lập và chốt biên bản.</p>}
     </Panel>
   );
 }

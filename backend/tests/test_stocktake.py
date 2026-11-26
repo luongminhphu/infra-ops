@@ -100,6 +100,21 @@ async def test_stocktake_end_to_end(admin, client, configured, respx_mock) -> No
         "code"
     ] == "stocktake_closed"
 
+    # Biên bản kiểm kê signed by IT and Kế toán: drafted from the closed stocktake, refreshed while a draft.
+    who = {"it_rep": "Lê Minh Tuấn", "it_title": "Trưởng nhóm IT", "finance_rep": "Phạm Thu Hà"}
+    rec = await admin.post(f"{base}/record", json=who)
+    assert rec.status_code == 200, rec.text
+    doc_id = rec.json()["id"]
+    doc = (await admin.get(f"/api/core/documents/{doc_id}")).json()
+    assert doc["kind"] == "lifecycle.stocktake" and doc["status"] == "draft" and doc["external_ref"] == sid
+    assert doc["data"]["totals"]["extra"] == 1 and len(doc["data"]["differences"]) == len(needs)
+    assert doc["data"]["differences"][0]["resolution"] == "Cập nhật SDP – ok"
+    again = await admin.post(f"{base}/record", json={**who, "finance_title": "Kế toán TSCĐ"})
+    assert (
+        again.json()["id"] == doc_id
+        and (await admin.get(base)).json()["record"]["data"]["finance_title"] == "Kế toán TSCĐ"
+    )
+
     # Excel for Hành chánh / Kế toán.
     x = await admin.get(f"{base}/export")
     assert x.status_code == 200 and "kiem-ke-20261231.xlsx" in x.headers["content-disposition"]
@@ -202,6 +217,24 @@ async def test_areas_split_the_count_between_counters(admin, client, configured,
     assert {z["name"]: z["book"] for z in got["zones"]}["Tầng 6"] >= 1
     x = await admin.get(f"{base}/export")
     assert "Theo khu" in load_workbook(io.BytesIO(x.content)).sheetnames
+    # One zone's part (file thành phần) next to the whole (file tổng).
+    part = await admin.get(f"{base}/export", params={"zone_id": zones["Kho IT"]["id"]})
+    assert "kiem-ke-20261231-kho-it.xlsx" in part.headers["content-disposition"]
+    rows = list(load_workbook(io.BytesIO(part.content))["Sổ SDP"].iter_rows(min_row=2, values_only=True))
+    assert rows and {r[1] for r in rows} == {"Kho IT"}
+    assert (await admin.post(f"{base}/record", json={"it_rep": "a", "finance_rep": "b"})).json()["error"][
+        "code"
+    ] == "not_closed"
 
     for a in (await admin.get(areas)).json()["areas"]:  # leave no areas behind for other tests
         assert (await admin.delete(f"{areas}/{a['id']}")).status_code == 204
+
+
+def test_stocktake_record_template_uses_documented_placeholders() -> None:
+    from app.core.documents.engine import template_variables
+    from app.modules.lifecycle.stocktake_record import STOCKTAKE_RECORD
+
+    assert template_variables(STOCKTAKE_RECORD.default_template.read_bytes()) == {
+        "number", "title", "cutoff", "date", "synced_at", "totals", "zones", "differences",
+        "it_rep", "it_title", "finance_rep", "finance_title", "conclusion",
+    }  # fmt: skip

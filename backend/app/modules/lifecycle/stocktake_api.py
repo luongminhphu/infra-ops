@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit.service import record
 from app.core.auth.deps import CurrentUser, require
 from app.core.db import get_session
+from app.core.documents import service as documents
+from app.core.documents.models import Document
 from app.core.errors import AppError, Conflict, NotFound
 from app.core.timeutil import fmt_date
 from app.modules.lifecycle.attendance_input import HEADER_ID, _norm_id
@@ -259,11 +261,13 @@ async def get_stocktake(
     s = await _get(session, stocktake_id)
     items = [_item_out(i) for i in await _items(session, stocktake_id)]
     zones = await _zones(session, stocktake_id)
+    record = await session.get(Document, s.record_document_id) if s.record_document_id else None
     return {
         **_stocktake_out(s),
         "summary": summary(items),
         "zones": zone_progress(zones, items),
         "items": items,
+        "record": _record_out(record),
     }
 
 
@@ -549,7 +553,10 @@ async def export_stocktake(
     stocktake_id: uuid.UUID,
     user: CurrentUser = Depends(view_perm),
     session: AsyncSession = Depends(get_session),
+    zone_id: str | None = None,
 ) -> Response:
+    """The whole stocktake (file tổng: every zone together), or one zone's part (file thành phần, ?zone_id=;
+    "none" = assets in no zone)."""
     s = await _get(session, stocktake_id)
     zones = await _zones(session, stocktake_id)
     names = {z["id"]: z["name"] for z in zones}
@@ -557,6 +564,13 @@ async def export_stocktake(
         {**(o := _item_out(i)), "zone": names.get(o["zone_id"] or "")}
         for i in await _items(session, stocktake_id)
     ]
+    part = ""
+    if zone_id:
+        if zone_id != "none" and zone_id not in names:
+            raise NotFound("Không tìm thấy khu trong kỳ kiểm kê.")
+        items = [i for i in items if (i["zone_id"] or "none") == zone_id]
+        zones = [z for z in zones if z["id"] == zone_id]
+        part = names.get(zone_id, "Chưa phân khu")
     head = {
         **_stocktake_out(s),
         "cutoff": fmt_date(s.cutoff),
@@ -569,14 +583,141 @@ async def export_stocktake(
         action="lifecycle.stocktake_exported",
         target_type="stocktake",
         target_id=str(s.id),
-        target_label=s.name,
+        target_label=f"{s.name} · {part}" if part else s.name,
     )
     await session.commit()
+    if part:
+        head["name"] = f"{s.name} – {part}"
     return Response(
         to_xlsx(head, items, zones),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="kiem-ke-{s.cutoff:%Y%m%d}.xlsx"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="kiem-ke-{s.cutoff:%Y%m%d}{"-" + _slug(part) if part else ""}.xlsx"'
+        },
     )
+
+
+def _slug(text: str) -> str:
+    """ASCII file-name part ("Tầng 5" → "tang-5")."""
+    import unicodedata
+
+    plain = (
+        unicodedata.normalize("NFKD", text.replace("đ", "d").replace("Đ", "D"))
+        .encode("ascii", "ignore")
+        .decode()
+    )
+    return "-".join("".join(c if c.isalnum() else " " for c in plain.lower()).split())[:40] or "khu"
+
+
+# ---------------------------------------------------------------- biên bản kiểm kê (IT + Kế toán)
+
+
+def _record_out(d: Document | None) -> dict[str, Any] | None:
+    if d is None:
+        return None
+    return {
+        "id": str(d.id),
+        "status": d.status,
+        "number": d.number,
+        "has_pdf": d.pdf_file_id is not None,
+        "has_signed": d.signed_file_id is not None,
+        "data": {
+            k: d.data.get(k) for k in ("it_rep", "it_title", "finance_rep", "finance_title", "conclusion")
+        },
+        "version": d.version,
+    }
+
+
+class RecordIn(BaseModel):
+    it_rep: str = Field(min_length=1, max_length=200)
+    it_title: str = Field("", max_length=200)
+    finance_rep: str = Field(min_length=1, max_length=200)
+    finance_title: str = Field("", max_length=200)
+    conclusion: str = Field("", max_length=2000)
+
+
+def _record_data(
+    s: Stocktake, zones: list[dict[str, Any]], items: list[dict[str, Any]], body: RecordIn
+) -> dict[str, Any]:
+    names = {z["id"]: z["name"] for z in zones}
+    totals = summary(items)
+    diffs = []
+    for i in items:
+        if not (d := difference(i)):
+            continue
+        res = RESOLUTION_LABEL.get(i.get("resolution") or "", "")
+        diffs.append(
+            {
+                "name": i["name"],
+                "codes": " / ".join(c for c in (i.get("asset_tag"), i.get("serial")) if c),
+                "fa_code": i.get("fa_code") or "",
+                "where": " · ".join(w for w in (i.get("user_name"), names.get(i.get("zone_id") or "")) if w),
+                "difference": d,
+                "resolution": f"{res} – {i['resolution_note']}" if i.get("resolution_note") else res,
+            }
+        )
+    return {
+        "stocktake_id": str(s.id),
+        "title": s.name,
+        "cutoff": s.cutoff.isoformat(),
+        "date": datetime.now(UTC).date().isoformat(),
+        "synced_at": fmt_date(s.source_synced_at) if s.source_synced_at else "",
+        "totals": {
+            "book": totals["book"],
+            "found": totals["found"],
+            "missing": totals["missing"],
+            "extra": totals["extra"],
+            "damaged": sum(
+                1 for i in items if i["count"] == "found" and i.get("condition") in ("damaged", "broken")
+            ),
+            "differences": totals["differences"],
+        },
+        "zones": [
+            {
+                "name": z["name"],
+                "assignee": z.get("assignee_name") or "",
+                "book": z["book"],
+                "found": z["found"],
+                "missing": z["missing"],
+                "extra": z["extra"],
+            }
+            for z in zone_progress(zones, items)
+        ],
+        "differences": diffs,
+        **body.model_dump(),
+    }
+
+
+@router.post("/stocktakes/{stocktake_id}/record")
+async def make_record(
+    stocktake_id: uuid.UUID,
+    body: RecordIn,
+    user: CurrentUser = Depends(manage_perm),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Draft (or refresh the draft of) the stocktake record from the closed stocktake. It is then numbered
+    (Chốt biên bản), printed, signed by IT and Kế toán, and the signed scan uploaded (core document endpoints)."""
+    from app.modules.lifecycle.stocktake_record import STOCKTAKE_RECORD
+
+    s = await _get(session, stocktake_id, lock=True)
+    if s.status != "closed":
+        raise Conflict(
+            "Đóng kỳ kiểm kê (mọi chênh lệch đã có hướng xử lý) trước khi lập biên bản.", code="not_closed"
+        )
+    items = [_item_out(i) for i in await _items(session, stocktake_id)]
+    data = _record_data(s, await _zones(session, stocktake_id), items, body)
+    doc = await session.get(Document, s.record_document_id) if s.record_document_id else None
+    if doc is not None and doc.status == "void":
+        doc = None
+    if doc is None:
+        doc = await documents.create_draft(session, user.actor, STOCKTAKE_RECORD, MODULE_ID, data)
+        s.record_document_id = doc.id
+    elif doc.status == "draft":
+        await documents.update_draft(session, user.actor, doc, STOCKTAKE_RECORD, data, doc.version)
+    else:
+        raise Conflict("Biên bản đã chốt số – huỷ biên bản trước nếu cần lập lại.", code="record_finalized")
+    await session.commit()
+    return _record_out(doc)  # type: ignore[return-value]
 
 
 @router.get("/stocktake-meta")
