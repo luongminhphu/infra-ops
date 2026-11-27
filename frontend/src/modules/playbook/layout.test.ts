@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { layoutTree } from "./layout";
-import { removeStep, type Tree } from "./api";
+import { pruneUnreachable, removeStep, unreachableSteps, type Tree } from "./api";
 
 const tree: Tree = {
   root: "a",
@@ -22,6 +22,13 @@ describe("mind map layout", () => {
     const kids = boxes.filter((b) => b.key === "r/0" || b.key === "r/1");
     expect(a.y).toBe((kids[0]!.y + kids[1]!.y) / 2);
     expect(links.find((l) => l.jump)?.label).toBe("Chưa được");
+  });
+
+  it("lists and prunes steps no branch leads to", () => {
+    const t = { ...tree, nodes: { ...tree.nodes, a: { ...tree.nodes.a!, children: [] } } };
+    expect(unreachableSteps(t).length).toBeGreaterThan(0);
+    expect(unreachableSteps(pruneUnreachable(t))).toEqual([]);
+    expect(Object.keys(pruneUnreachable(t).nodes)).toEqual(["a"]);
   });
 
   it("removing a step drops branches to it and steps left unreachable", () => {

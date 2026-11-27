@@ -113,13 +113,23 @@ export function reachable(tree: Tree): Set<string> {
   return seen;
 }
 
+/** Steps no branch leads to any more (e.g. a branch was pointed past them); they are not drawn on the map. */
+export function unreachableSteps(tree: Tree): string[] {
+  const keep = reachable(tree);
+  return Object.keys(tree.nodes).filter((k) => !keep.has(k));
+}
+
+/** Drop the steps that hang nowhere. */
+export function pruneUnreachable(tree: Tree): Tree {
+  const keep = reachable(tree);
+  return { root: tree.root, nodes: Object.fromEntries(Object.entries(tree.nodes).filter(([k]) => keep.has(k))) };
+}
+
 /** Remove a step, every branch to it, and the steps that then hang nowhere. */
 export function removeStep(tree: Tree, id: string): Tree {
   const nodes: Record<string, StepNode> = {};
   for (const [k, n] of Object.entries(tree.nodes)) {
     if (k !== id) nodes[k] = { ...n, children: n.children.filter((b) => b.to !== id) };
   }
-  const next = { root: tree.root, nodes };
-  const keep = reachable(next);
-  return { root: tree.root, nodes: Object.fromEntries(Object.entries(nodes).filter(([k]) => keep.has(k))) };
+  return pruneUnreachable({ root: tree.root, nodes });
 }
