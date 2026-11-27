@@ -262,3 +262,52 @@ async def test_onboard_template_is_a_valid_connected_guide(admin) -> None:  # ty
     assert (
         await admin.post("/api/playbook/guides", json={"title": "x", "template": "nope"})
     ).status_code == 404
+
+
+async def test_job_steps_link_playbook_and_jobs(admin, client) -> None:  # type: ignore[no-untyped-def]
+    """A "Bước của Job" points at a workflow step (no copied checklist); publishing refuses a step that does not
+    exist; a Job step finds the published guide that explains it."""
+    from app.modules.playbook.templates import TEMPLATES
+
+    for key in ("onboard", "offboard"):
+        jobs = [n for n in TEMPLATES[key]["tree"]["nodes"].values() if n["kind"] == "job"]
+        assert len(jobs) >= 3, key
+    with pytest.raises(ValidationError):
+        Tree.model_validate({"root": "a", "nodes": {"a": {"title": "A", "kind": "job"}}})
+
+    r = await admin.post("/api/playbook/guides", json={"title": "Offboard (Job)", "template": "offboard"})
+    gid = r.json()["id"]
+    d = (await admin.get(f"/api/playbook/guides/{gid}", params={"version": "draft"})).json()
+    bad = {**d["tree"], "nodes": {**d["tree"]["nodes"]}}
+    bad["nodes"]["close"] = {
+        **bad["nodes"]["close"],
+        "job": {"workflow": "lifecycle.offboard", "step": "gone_step"},
+    }
+    saved = await admin.put(f"/api/playbook/guides/{gid}/draft", json={"title": d["title"], "tree": bad,
+                                                                       "base_updated_at": d["draft_updated_at"]})  # fmt: skip
+    assert saved.status_code == 200, saved.text
+    r = await admin.post(f"/api/playbook/guides/{gid}/publish", json={})
+    assert r.status_code == 400 and r.json()["error"]["code"] == "unknown_job_step", r.text
+    await admin.put(f"/api/playbook/guides/{gid}/draft", json={"title": d["title"], "tree": d["tree"],
+                                                               "base_updated_at": saved.json()["draft_updated_at"]})  # fmt: skip
+    assert (await admin.post(f"/api/playbook/guides/{gid}/publish", json={})).status_code == 201
+
+    found = await admin.get(
+        "/api/playbook/step-guide", params={"workflow": "lifecycle.offboard", "step": "collect_assets"}
+    )
+    assert found.status_code == 200 and found.json()["node_id"] == "collect", found.text
+    none = await admin.get(
+        "/api/playbook/step-guide", params={"workflow": "lifecycle.offboard", "step": "nothing"}
+    )
+    assert none.status_code == 404
+
+    # Lưu đồ quy trình is configuration: checklist managers see it, operators do not (they read the Job and Playbook).
+    paths = lambda me: {i["path"] for g in me["nav"] for i in g["items"]}  # noqa: E731
+    assert "/lifecycle/flows" in paths((await admin.get("/api/core/me")).json())
+    roles = {x["code"]: x["id"] for x in (await admin.get("/api/core/roles")).json()}
+    await admin.post("/api/core/users", json={"upn": "pb-flows-op@test.local", "display_name": "Op",
+                                              "role_ids": [roles["operator"]]})  # fmt: skip
+    await client.login("pb-flows-op@test.local")
+    assert "/lifecycle/flows" not in paths((await client.get("/api/core/me")).json())
+    # They still read the workflows a "Bước của Job" shows.
+    assert any(w["key"] == "lifecycle.offboard" for w in (await client.get("/api/core/workflows")).json())

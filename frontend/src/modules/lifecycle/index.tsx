@@ -24,7 +24,7 @@ export const lifecycleModule: FrontendModule = {
   id: "lifecycle",
   routes: [
     { path: "lifecycle/jobs", element: <RequirePermission permission="lifecycle.job.view"><JobsPage /></RequirePermission> },
-    { path: "lifecycle/flows", element: <RequirePermission permission="lifecycle.job.view"><FlowsPage /></RequirePermission> },
+    { path: "lifecycle/flows", element: <RequirePermission permission="core.workflow.checklist.manage"><FlowsPage /></RequirePermission> },
     // The allocation and stock pages are one page now: keep old links working.
     { path: "lifecycle/inventory", element: <Navigate to="/lifecycle/stock?tab=onboard" replace /> },
     { path: "lifecycle/stock", element: <RequirePermission permission="lifecycle.job.view"><StockPage /></RequirePermission> },

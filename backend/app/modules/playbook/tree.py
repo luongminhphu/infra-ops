@@ -50,18 +50,29 @@ class Outcome(BaseModel):
     approval: str = Field("", max_length=200)  # who approves / what happens next
 
 
+class JobRef(BaseModel):
+    """A step of a Job the app runs (``WorkflowDefinition.key`` + step key), shown with its live checklist."""
+
+    workflow: str = Field(pattern=r"^[a-z0-9_.-]{1,64}$")
+    step: str = Field(pattern=r"^[a-z0-9_]{1,64}$")
+
+
 class Node(BaseModel):
-    # step: read and act; check: the app tests a condition (branch 1 = Đúng, branch 2 = Sai); outcome: classification
-    kind: Literal["step", "check", "outcome"] = "step"
+    # step: read and act; check: the app tests a condition (branch 1 = Đúng, branch 2 = Sai); outcome: classification;
+    # job: a step the app's Job runs – its title and checklist come from the workflow, not copied here
+    kind: Literal["step", "check", "outcome", "job"] = "step"
     title: str = Field(min_length=1, max_length=200)
     note: str = Field("", max_length=20_000)  # light markdown: **bold**, lists, [links](…), ![images](…)
     children: list[Branch] = Field(default_factory=list, max_length=20)
     actions: list[Action] = Field(default_factory=list, max_length=6)
     check: Check | None = None
     outcome: Outcome | None = None
+    job: JobRef | None = None
 
     @model_validator(mode="after")
     def _kind(self) -> Node:
+        if self.kind == "job" and self.job is None:
+            raise ValueError(f"Bước “{self.title}” chưa chọn bước của Job.")
         if self.kind == "check":
             if self.check is None:
                 raise ValueError(f"Bước kiểm tra “{self.title}” chưa có điều kiện.")
@@ -95,6 +106,11 @@ class Tree(BaseModel):
                 if b.to == nid:
                     raise ValueError(f"Bước “{n.title}” không thể rẽ về chính nó.")
         return self
+
+
+def job_refs(tree: Tree) -> list[tuple[str, JobRef]]:
+    """(node id, reference) of every "Bước của Job" in the map."""
+    return [(k, n.job) for k, n in tree.nodes.items() if n.kind == "job" and n.job]
 
 
 def unreachable(tree: Tree) -> list[str]:

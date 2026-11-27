@@ -13,8 +13,9 @@ export interface Operand {
 export type Op = ">=" | ">" | "<=" | "<" | "==" | "!=";
 export type OutcomeResult = "standard" | "adhoc" | "exception";
 export interface StepNode {
-  /** step: read and act; check: the app tests a condition (branch 1 = Đúng, 2 = Sai); outcome: classification. */
-  kind?: "step" | "check" | "outcome";
+  /** step: read and act; check: the app tests a condition (branch 1 = Đúng, 2 = Sai); outcome: classification;
+   * job: a step the app's Job runs – title and checklist shown live from the workflow (Lưu đồ quy trình). */
+  kind?: "step" | "check" | "outcome" | "job";
   title: string;
   /** Light markdown: **bold**, `code`, lists, [links](url), ![images](url). */
   note: string;
@@ -23,7 +24,19 @@ export interface StepNode {
   actions?: { tool: string; label: string }[];
   check?: { left: Operand; op: Op; right: Operand } | null;
   outcome?: { result: OutcomeResult; approval: string } | null;
+  job?: JobRef | null;
 }
+export interface JobRef {
+  workflow: string;
+  step: string;
+}
+/** A workflow as /api/core/workflows returns it (only what the Playbook shows). */
+export interface WorkflowLite {
+  key: string;
+  title: string;
+  steps: { key: string; title: string; kind: "auto" | "manual"; description: string; checklist: { items: { id: string; text: string }[]; evidence_required: boolean } }[];
+}
+export const WORKFLOWS_KEY = ["workflows", "all"] as const;
 export interface Fact {
   key: string;
   label: string;

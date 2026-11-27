@@ -20,7 +20,7 @@ from app.core.storage.service import check_size, read_file, save_file, sniff
 from app.modules.playbook.models import Guide, GuideImage, GuideVersion
 from app.modules.playbook.run import run_tree
 from app.modules.playbook.templates import TEMPLATES
-from app.modules.playbook.tree import Tree, starter, unreachable
+from app.modules.playbook.tree import Tree, job_refs, starter, unreachable
 
 MODULE_ID = "playbook"
 VIEW, EDIT, PUBLISH = "playbook.guides.view", "playbook.guides.edit", "playbook.guides.publish"
@@ -187,6 +187,11 @@ async def publish(
             f"Có {len(lost)} bước không nối với sơ đồ: {', '.join(lost[:5])}. Nối hoặc xoá trước khi xuất bản.",
             code="unreachable_steps",
         )
+    if broken := unknown_job_steps(tree):
+        raise AppError(
+            f"Bước của Job không còn tồn tại: {', '.join(broken[:5])}. Chọn lại bước Job trước khi xuất bản.",
+            code="unknown_job_step",
+        )
     number = (
         await session.scalar(select(func.max(GuideVersion.version)).where(GuideVersion.guide_id == g.id)) or 0
     ) + 1
@@ -199,6 +204,40 @@ async def publish(
                  before={"version": before}, after={"version": number}, message=body.note.strip() or None)  # fmt: skip
     await session.commit()
     return _summary(g, True)
+
+
+def unknown_job_steps(tree: Tree) -> list[str]:
+    """Titles of "Bước của Job" steps pointing to a workflow / step the app no longer has (or whose module is off)."""
+    steps = {w.key: {s.key for s in w.steps} for _, w in get_registry().workflows()}
+    return [
+        tree.nodes[k].title for k, ref in job_refs(tree) if ref.step not in steps.get(ref.workflow, set())
+    ]
+
+
+@router.get("/step-guide")
+async def step_guide(
+    workflow: str = Query(..., max_length=64),
+    step: str = Query(..., max_length=64),
+    _: CurrentUser = Depends(view),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """The published Playbook step that explains a Job step (Job page → "Hướng dẫn"): the first guide, by title,
+    whose published map has a "Bước của Job" for it."""
+    rows = (
+        await session.execute(
+            select(Guide, GuideVersion)
+            .join(
+                GuideVersion,
+                (GuideVersion.guide_id == Guide.id) & (GuideVersion.version == Guide.published_version),
+            )
+            .order_by(Guide.title)
+        )
+    ).all()
+    for g, v in rows:
+        for node_id, ref in job_refs(Tree.model_validate(v.tree)):
+            if (ref.workflow, ref.step) == (workflow, step):
+                return {"guide_id": str(g.id), "title": g.title, "node_id": node_id}
+    raise NotFound("Chưa có Playbook hướng dẫn bước này.")
 
 
 @router.get("/facts")

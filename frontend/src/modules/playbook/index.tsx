@@ -4,6 +4,7 @@ import type { FrontendModule } from "@/core/modules";
 import { GuideEditorPage } from "./pages/GuideEditorPage";
 import { GuidePage } from "./pages/GuidePage";
 import { GuidesPage } from "./pages/GuidesPage";
+import { StepGuidePage } from "./pages/StepGuidePage";
 import { PlaybookHome } from "./Home";
 
 /** Infra Playbook: rules and how-to guides for IT Support as branching mind maps. */
@@ -12,6 +13,7 @@ export const playbookModule: FrontendModule = {
   home: PlaybookHome,
   routes: [
     { path: "playbook", element: <RequirePermission permission="playbook.guides.view"><GuidesPage /></RequirePermission> },
+    { path: "playbook/for-step", element: <RequirePermission permission="playbook.guides.view"><StepGuidePage /></RequirePermission> },
     { path: "playbook/:id", element: <RequirePermission permission="playbook.guides.view"><GuidePage /></RequirePermission> },
     // Links saved before the rename (bookmarks, notes) keep working.
     { path: "handbook/*", element: <LegacyRedirect /> },

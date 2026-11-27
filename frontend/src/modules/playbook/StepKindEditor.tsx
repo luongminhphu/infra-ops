@@ -2,6 +2,7 @@ import { Plus, X } from "lucide-react";
 import { Button } from "@/core/ui/button";
 import { Field, Input, Select } from "@/core/ui/field";
 import { OP_LABEL, OUTCOME, type Fact, type Op, type Operand, type OutcomeResult, type StepNode } from "./api";
+import { findJobStep, useWorkflows } from "./JobStep";
 import { useTools } from "./Tools";
 
 const OPS = Object.keys(OP_LABEL) as Op[];
@@ -41,9 +42,11 @@ function OperandEditor({ label, value, facts, onChange, allowValue }: { label: s
 export function StepKindEditor({ node, facts, onChange }: { node: StepNode; facts: Fact[]; onChange: (patch: Partial<StepNode>) => void }) {
   const kind = node.kind ?? "step";
   const tools = useTools();
-  const setKind = (k: "step" | "check" | "outcome") =>
+  const workflows = useWorkflows();
+  const setKind = (k: "step" | "check" | "outcome" | "job") =>
     onChange({
       kind: k,
+      job: k === "job" ? node.job ?? (workflows.data?.[0] ? { workflow: workflows.data[0].key, step: workflows.data[0].steps[0]?.key ?? "" } : null) : null,
       check: k === "check" ? node.check ?? { left: { fact: facts[0]?.key ?? "", param: "", value: null }, op: "<", right: { fact: null, param: "", value: "1" } } : null,
       outcome: k === "outcome" ? node.outcome ?? { result: "standard", approval: "" } : null,
       children: k === "check" ? node.children.slice(0, 2).map((b, i) => ({ ...b, label: i === 0 ? "Đúng" : "Sai" })) : node.children,
@@ -53,8 +56,9 @@ export function StepKindEditor({ node, facts, onChange }: { node: StepNode; fact
   return (
     <div className="grid gap-3">
       <Field label="Loại bước">
-        <Select value={kind} onChange={(e) => setKind(e.target.value as "step" | "check" | "outcome")}>
+        <Select value={kind} onChange={(e) => setKind(e.target.value as "step" | "check" | "outcome" | "job")}>
           <option value="step">Bước hướng dẫn – người đọc và làm</option>
+          <option value="job" disabled={!workflows.data?.length}>Bước của Job – app chạy, checklist lấy từ Lưu đồ quy trình</option>
           <option value="check" disabled={!facts.length}>Kiểm tra – app tự so sánh dữ liệu</option>
           <option value="outcome">Kết luận – Tiêu chuẩn / Adhoc / Exception</option>
         </Select>
@@ -69,6 +73,34 @@ export function StepKindEditor({ node, facts, onChange }: { node: StepNode; fact
           </Field>
           <OperandEditor label="Vế phải" value={node.check.right} facts={facts} allowValue onChange={(right) => onChange({ check: { ...node.check!, right } })} />
           <p className="text-sm text-muted">Nhánh 1 = Đúng, nhánh 2 = Sai. Thiếu dữ liệu thì app dừng và báo “Chưa đủ dữ liệu”.</p>
+        </div>
+      )}
+      {kind === "job" && (
+        <div className="grid gap-2">
+          <Field label="Quy trình (Job)">
+            <Select
+              value={node.job?.workflow ?? ""}
+              onChange={(e) => {
+                const wf = workflows.data?.find((w) => w.key === e.target.value);
+                onChange({ job: { workflow: e.target.value, step: wf?.steps[0]?.key ?? "" } });
+              }}
+            >
+              {node.job && !workflows.data?.some((w) => w.key === node.job!.workflow) && <option value={node.job.workflow}>{node.job.workflow} (không còn)</option>}
+              {workflows.data?.map((w) => <option key={w.key} value={w.key}>{w.title}</option>)}
+            </Select>
+          </Field>
+          <Field label="Bước trong Job" hint="Người đọc thấy tên bước, mô tả và checklist hiện hành của bước này – sửa checklist ở Lưu đồ quy trình, không chép vào ghi chú.">
+            <Select
+              value={node.job?.step ?? ""}
+              onChange={(e) => {
+                const step = workflows.data?.find((w) => w.key === node.job?.workflow)?.steps.find((s) => s.key === e.target.value);
+                onChange({ job: { workflow: node.job?.workflow ?? "", step: e.target.value }, ...(step && !node.title.trim() ? { title: step.title } : {}) });
+              }}
+            >
+              {node.job && !findJobStep(workflows.data, node.job) && <option value={node.job.step}>{node.job.step} (không còn)</option>}
+              {workflows.data?.find((w) => w.key === node.job?.workflow)?.steps.map((s) => <option key={s.key} value={s.key}>{s.title}</option>)}
+            </Select>
+          </Field>
         </div>
       )}
       {kind === "outcome" && node.outcome && (

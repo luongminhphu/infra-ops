@@ -8,7 +8,7 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 - `backend/app/core/*` – platform core. `backend/app/modules/<id>/` – modules (manifest.py required).
 - `frontend/src/core/*` – shell, design system (`ui/`), core pages. `frontend/src/modules/<id>/` – module UI.
 - `backend/migrations/<branch>/versions` – one Alembic branch per module (`core`, `lifecycle`, `workload`, `playbook`).
-- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §61).
+- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §62).
 
 ## Conventions
 
@@ -42,6 +42,8 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 - Playbook is the entry point (`/`): module pages are tools a step opens (key = page path without slashes, keep
   paths stable). Data a check step tests is a `FactSource` in the module manifest (read from synced data, None when
   unknown). Only Administrator / Manager / Supervisor design playbooks.
+  A step the app's Job runs is a `job` step (`{workflow, step}`): its title/checklist come from the workflow – never
+  copy a Job checklist into a Playbook note.
 - Operating guidance in the UI: core `HelpTip` next to the heading/field (phrasing content only: use
   `<span className="block">` for paragraphs). Cross-module UI handoffs go through URLs (e.g. purchases `?new=1&…`).
 - Printable records: declare a `DocumentKind` in the manifest (pydantic data model + `build_context`);

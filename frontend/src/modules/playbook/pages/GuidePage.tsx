@@ -24,9 +24,10 @@ export function GuidePage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [path, setPath] = useState<Set<string>>(new Set());
   const g = q.data;
+  const wanted = params.get("step"); // from a Job's "Hướng dẫn trong Playbook"
   useEffect(() => {
-    if (g) setSelected((s) => (s && g.tree.nodes[s] ? s : g.tree.root));
-  }, [g]);
+    if (g) setSelected((s) => (s && g.tree.nodes[s] ? s : wanted && g.tree.nodes[wanted] ? wanted : g.tree.root));
+  }, [g, wanted]);
 
   const back = (
     <Link to="/playbook" className="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-ink">
