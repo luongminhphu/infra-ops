@@ -217,7 +217,7 @@ manifest = ModuleManifest(
             "lifecycle.sync",
             "Đọc SDP + BioStar và đối soát theo Mã NV",
             _sync,
-            interval_seconds=1800,
+            interval_seconds=4 * 3600,  # every 4 hours; "Đồng bộ ngay" for anything sooner
             timeout_seconds=1800,
         ),
     ],

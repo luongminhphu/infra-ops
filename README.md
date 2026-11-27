@@ -399,7 +399,7 @@ Lưu ý:
    → Thuyên chuyển; gán tay ở Cấu hình module để đổi. Request Thuyên chuyển / đổi cấp trên có **Job thuyên chuyển**:
    các bước làm tay có checklist và bằng chứng – *Gỡ khỏi nhóm cũ* và *Thêm vào nhóm mới* (quyền thư mục share, nhóm
    email theo phòng/bộ phận mới trong RTR); app không tự sửa AD (tích hợp Microsoft đang hoãn).
-4. Xem **Đối soát theo Mã NV**. Worker tự đồng bộ mỗi 30 phút.
+4. Xem **Đối soát theo Mã NV**. Worker tự đồng bộ mỗi 4 giờ (bấm “Đồng bộ ngay” khi cần sớm hơn).
 5. **Nhiều hệ thống BioStar** (vd. *BioStar 2 - Office* là hệ thống chính, *BioStar 2 - Server* là nguồn phụ): ở **Cấu hình
    module → Kết nối sử dụng**, chọn hệ thống chính ở ô *BioStar* (Job tạo/khoá user ở đây), rồi **Thêm hệ thống
    BioStar** cho nguồn phụ. **SDP là chuẩn**: Mã NV trên mọi BioStar và SDP được so theo **5 số cuối** (vd. user
