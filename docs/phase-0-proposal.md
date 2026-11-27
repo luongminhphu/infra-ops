@@ -1378,3 +1378,15 @@ Nguyên tắc (product owner): user quyền nào chỉ thấy nội dung và ch�
 - Lỗi 404 ở trang đầu Playbook: máy chủ chạy với `INFRAOPS_ENABLED_MODULES` thiếu `playbook` (hướng dẫn cài Ubuntu và
   Helm values cũ ghi `lifecycle,workload`). Đã sửa hai chỗ đó; trang đầu báo rõ “module Playbook chưa bật” (Administrator
   thấy cách sửa) thay vì lỗi 404 chung.
+
+## 58. Mẫu Playbook: Offboard, Cấp phát bổ sung, Thu hồi thiết bị (27/11/2026)
+
+- Thư viện Playbook › Tạo Playbook › “Bắt đầu từ” có thêm 3 mẫu (cùng cách viết với mẫu Onboard: bước theo quy định
+  công ty ghi “Điều chỉnh”, AD / Exchange / M365 là hướng dẫn làm tay):
+  - **Offboard nhân viên nghỉ việc**: đối soát → khoá BioStar → AD, mailbox, license → kiểm tra laptop đang giữ →
+    thu hồi, về kho, biên bản thu hồi → đóng request → rà soát ISO cuối tháng.
+  - **Cấp phát bổ sung thiết bị**: loại thiết bị → so số màn hình đang dùng với tiêu chuẩn band → vượt thì Function
+    Head duyệt → kho hoặc đề xuất mua → gán SDP → biên bản bàn giao.
+  - **Thu hồi thiết bị**: lý do (nghỉ việc chuyển sang Job offboard) → sao lưu dữ liệu / kiểm tra dư tiêu chuẩn → nhận
+    lại, tình trạng Tốt / Hỏng / Thiếu phụ kiện → kho → biên bản thu hồi.
+- Trình soạn Playbook: cảnh báo “bước không nối với sơ đồ” ghi tên bước và có nút xoá các bước đó.

@@ -237,14 +237,26 @@ async def test_onboard_template_is_a_valid_connected_guide(admin) -> None:  # ty
         assert unreachable(t) == [], key
         tools = {a.tool for n in t.nodes.values() for a in n.actions}
         assert tools <= {"lifecycle.requests", "lifecycle.reconciliation", "lifecycle.jobs", "lifecycle.stock",
-                         "lifecycle.documents", "workload.purchases"}, tools  # fmt: skip
+                         "lifecycle.documents", "lifecycle.offboard-review", "workload.purchases",
+                         "workload.tickets"}, (key, tools)  # fmt: skip
+        assert any(n.kind == "outcome" for n in t.nodes.values()), key
+        # Every check reads a fact the lifecycle module provides.
+        facts = {o.fact for n in t.nodes.values() if n.check for o in (n.check.left, n.check.right) if o.fact}
+        assert facts <= {"lifecycle.band", "lifecycle.assets_in_use", "lifecycle.standard_quantity"}, (
+            key,
+            facts,
+        )
     listed = (await admin.get("/api/playbook/templates")).json()
-    assert [t["key"] for t in listed] == ["onboard"] and listed[0]["steps"] > 20
+    assert [t["key"] for t in listed] == ["onboard", "offboard", "extra_device", "recall_device"]
+    assert listed[0]["steps"] > 20
     r = await admin.post("/api/playbook/guides", json={"title": "Onboard (mẫu)", "template": "onboard"})
     assert r.status_code == 201, r.text
     d = (await admin.get(f"/api/playbook/guides/{r.json()['id']}", params={"version": "draft"})).json()
     assert d["category"] == "Vòng đời nhân sự" and d["tree"]["root"] == "receive"
     assert d["tree"]["nodes"]["rehire"]["kind"] == "check"
+    for key in ("offboard", "extra_device", "recall_device"):
+        r = await admin.post("/api/playbook/guides", json={"title": f"{key} (mẫu)", "template": key})
+        assert r.status_code == 201, r.text
     assert (
         await admin.post("/api/playbook/guides", json={"title": "x", "template": "nope"})
     ).status_code == 404
