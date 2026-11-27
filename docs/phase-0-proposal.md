@@ -1460,3 +1460,7 @@ Kho thiết bị chỉ liệt kê tài sản chưa gán người. Mọi trạng 
   biên bản, đóng request) dùng bước Job; ghi chú chỉ giữ điều Job không nói.
 - **Giai đoạn 3:** mỗi bước trong trang Job có link “Hướng dẫn trong Playbook” → `/playbook/for-step?workflow&step` mở
   Playbook đã xuất bản tại đúng bước (`GET /api/playbook/step-guide`); chưa có thì báo “Chưa có Playbook hướng dẫn”.
+- Mẫu Playbook **Thay thế thiết bị (Green Policy)**: loại thiết bị → PC / Laptop: đánh giá Green Policy (sửa / nâng cấp
+  trước, thay là lựa chọn cuối) → Function Head tự đề xuất thì đi tiếp, người khác đề xuất thì cần Function Head duyệt;
+  thiết bị khác: IT kiểm tra, có ảnh / ghi tình trạng trên request là hợp lệ → ưu tiên máy thu hồi, kho không có thì đề
+  xuất mua → đổi máy, chuyển dữ liệu, biên bản → thiết bị cũ về kho / sửa / chờ thanh lý → đóng request.

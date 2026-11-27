@@ -248,7 +248,13 @@ async def test_onboard_template_is_a_valid_connected_guide(admin) -> None:  # ty
             facts,
         )
     listed = (await admin.get("/api/playbook/templates")).json()
-    assert [t["key"] for t in listed] == ["onboard", "offboard", "extra_device", "recall_device"]
+    assert [t["key"] for t in listed] == [
+        "onboard",
+        "offboard",
+        "extra_device",
+        "recall_device",
+        "replace_device",
+    ]
     assert 15 < listed[0]["steps"] < 21
     r = await admin.post("/api/playbook/guides", json={"title": "Onboard (mẫu)", "template": "onboard"})
     assert r.status_code == 201, r.text
@@ -256,7 +262,7 @@ async def test_onboard_template_is_a_valid_connected_guide(admin) -> None:  # ty
     assert d["category"] == "Vòng đời nhân sự" and d["tree"]["root"] == "receive"
     # Onboard always means a new employee ID and new accounts: no rehire / duplicate branch.
     assert "rehire" not in d["tree"]["nodes"] and d["tree"]["nodes"]["license_level"]["kind"] == "step"
-    for key in ("offboard", "extra_device", "recall_device"):
+    for key in ("offboard", "extra_device", "recall_device", "replace_device"):
         r = await admin.post("/api/playbook/guides", json={"title": f"{key} (mẫu)", "template": key})
         assert r.status_code == 201, r.text
     assert (
@@ -311,3 +317,18 @@ async def test_job_steps_link_playbook_and_jobs(admin, client) -> None:  # type:
     assert "/lifecycle/flows" not in paths((await client.get("/api/core/me")).json())
     # They still read the workflows a "Bước của Job" shows.
     assert any(w["key"] == "lifecycle.offboard" for w in (await client.get("/api/core/workflows")).json())
+
+
+def test_replace_device_template_routes_approval_by_device_and_requester() -> None:
+    """Green Policy: PC / Laptop need the Function Head unless they asked; other devices need IT's evidence only."""
+    from app.modules.playbook.templates import REPLACE_DEVICE
+
+    n = Tree.model_validate(REPLACE_DEVICE["tree"]).nodes
+    to = lambda k: {b.label: b.to for b in n[k].children}  # noqa: E731
+    assert to("kind") == {"PC / Laptop": "assess", "Thiết bị khác": "other_check"}
+    assert to("assess")["Cần thay thế"] == "requester"
+    assert to("requester") == {"Function Head tự đề xuất": "source", "Người khác đề xuất": "fh_approval"}
+    assert to("fh_approval") == {"Đã duyệt": "source", "Không duyệt": "rejected"}
+    assert to("other_check")["Hỏng – cần thay"] == "source"  # no approval step on this path
+    assert to("source") == {"Kho có máy phù hợp": "swap", "Kho không có": "purchase"}
+    assert n["rejected"].kind == n["done"].kind == n["repaired"].kind == "outcome"

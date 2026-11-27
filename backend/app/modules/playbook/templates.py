@@ -528,6 +528,130 @@ RECALL_DEVICE: dict[str, Any] = {
     },
 }
 
+REPLACE_DEVICE: dict[str, Any] = {
+    "title": "Thay thế thiết bị (Green Policy)",
+    "category": "Thiết bị",
+    "description": "Thiết bị hỏng / xuống cấp: ưu tiên sửa và tận dụng máy thu hồi. PC, Laptop cần Function Head duyệt "
+    "(Function Head tự đề xuất thì không cần); thiết bị khác IT kiểm tra, có bằng chứng là hợp lệ.",
+    "tree": {
+        "root": "receive",
+        "nodes": {
+            "receive": _step(
+                "Tiếp nhận yêu cầu thay thế",
+                "Request trên SDP (vd. *máy chậm*, *hỏng màn hình*). Xác định người dùng (Mã NV), thiết bị (mã tài sản / "
+                "serial) và tình trạng người dùng mô tả.",
+                [("", "kind")],
+                [("workload.tickets", "Công việc")],
+            ),
+            "kind": _step(
+                "Thiết bị cần thay là gì?",
+                "PC và Laptop là **thiết bị giá trị** – cần phê duyệt. Thiết bị khác (màn hình, bàn phím, chuột, headset, "
+                "điện thoại bàn, UPS…) IT kiểm tra và xác nhận.",
+                [("PC / Laptop", "assess"), ("Thiết bị khác", "other_check")],
+            ),
+            "assess": _step(
+                "Đánh giá theo Green Policy",
+                f"{ADJUST}\n\n"
+                "Thay mới là lựa chọn cuối cùng:\n\n"
+                "- Còn bảo hành / sửa được với chi phí hợp lý → sửa\n"
+                "- Nâng cấp (RAM, SSD) đáp ứng được → nâng cấp\n"
+                "- Chỉ thay khi hỏng không sửa được, hết vòng đời (vd. trên 5 năm) hoặc chi phí sửa vượt ngưỡng công ty "
+                "quy định\n\n"
+                "Ghi kết luận và ảnh / log kiểm tra vào request SDP.",
+                [("Sửa / nâng cấp được", "repair"), ("Cần thay thế", "requester")],
+                [("workload.tickets", "Công việc")],
+            ),
+            "requester": _step(
+                "Người đề xuất là Function Head?",
+                "Function Head tự đề xuất cho chính mình hoặc cho phòng ban mình phụ trách thì **không cần** phê duyệt "
+                "thêm. Người khác đề xuất cần Function Head duyệt.",
+                [("Function Head tự đề xuất", "source"), ("Người khác đề xuất", "fh_approval")],
+            ),
+            "fh_approval": _step(
+                "Function Head phê duyệt",
+                "Gửi đề nghị thay thế kèm kết quả đánh giá Green Policy cho **Function Head** (phê duyệt trên SDP hoặc "
+                "email). Đính kèm bằng chứng duyệt vào request.",
+                [("Đã duyệt", "source"), ("Không duyệt", "rejected")],
+            ),
+            "rejected": _step(
+                "Không thay thế",
+                "Ghi lý do trên request SDP; nếu sửa được thì đi lại nhánh sửa chữa.",
+                kind="outcome",
+                outcome={"result": "exception", "approval": "Function Head không duyệt"},
+            ),
+            "other_check": _step(
+                "IT kiểm tra và lập bằng chứng",
+                "IT kiểm tra trực tiếp: thử thiết bị khác cùng loại, xác định lỗi do thiết bị. **Chụp ảnh / ghi tình "
+                "trạng** và đính kèm vào request SDP – có bằng chứng là đủ điều kiện thay, không cần phê duyệt thêm.",
+                [("Hỏng – cần thay", "source"), ("Còn dùng được / sửa được", "repair")],
+                [("workload.tickets", "Công việc")],
+            ),
+            "repair": _step(
+                "Sửa chữa / bảo hành",
+                "Gửi sửa hoặc bảo hành; trong lúc chờ, cấp máy tạm từ kho nếu cần. Trên Kho thiết bị: “Gửi sửa / bảo "
+                "hành”, sửa xong “Sửa xong – về kho” hoặc trả lại người dùng.",
+                [("", "repaired")],
+                [("lifecycle.stock", "Kho thiết bị")],
+            ),
+            "repaired": _step(
+                "Sửa chữa thay cho thay mới",
+                "Đúng Green Policy: không phát sinh thiết bị mới.",
+                kind="outcome",
+                outcome={"result": "standard", "approval": "Không cần duyệt thêm"},
+            ),
+            "source": _step(
+                "Chọn thiết bị thay thế – ưu tiên máy thu hồi",
+                "Theo Green Policy dùng **máy thu hồi còn tốt** trước, máy mới sau. Cấu hình không thấp hơn máy cũ và "
+                "đúng Ma trận cấp phát của người dùng.",
+                [("Kho có máy phù hợp", "swap"), ("Kho không có", "purchase")],
+                [("lifecycle.stock", "Kho thiết bị")],
+            ),
+            "purchase": _step(
+                "Đề xuất mua",
+                "Lập đề xuất mua từ request, kèm bằng chứng: phê duyệt Function Head (PC / Laptop) hoặc ảnh kiểm tra của "
+                "IT (thiết bị khác).",
+                [("Hàng đã về", "swap")],
+                [("workload.purchases", "Đề xuất mua thiết bị")],
+            ),
+            "swap": _step(
+                "Đổi thiết bị và chuyển dữ liệu",
+                f"{ADJUST}\n\n"
+                "- Sao lưu và chuyển dữ liệu, cài phần mềm trên máy thay thế trước\n"
+                "- Gán thiết bị mới cho người dùng trên SDP, thu lại thiết bị cũ\n"
+                "- Lập biên bản bàn giao (máy mới) và thu hồi (máy cũ)",
+                [("", "old_device")],
+                [("lifecycle.documents", "Biên bản")],
+            ),
+            "old_device": _step(
+                "Xử lý thiết bị cũ theo Green Policy",
+                "Không bỏ thiết bị cũ:\n\n"
+                "- Còn dùng được → về kho (**In Store**), cấp lại cho nhu cầu thấp hơn\n"
+                "- Hỏng, sửa được → **In Repair**\n"
+                "- Không còn dùng được → **chờ thanh lý** (Expired), thanh lý / tái chế qua đơn vị được cấp phép; xoá "
+                "dữ liệu trước khi giao",
+                [("", "close")],
+                [("lifecycle.stock", "Kho thiết bị")],
+            ),
+            "close": _step(
+                "Đóng request SDP",
+                "Ghi chú thiết bị đã thay, nguồn (thu hồi / mới), bằng chứng duyệt hoặc kiểm tra, xử lý thiết bị cũ; "
+                "đính kèm biên bản và đóng request.",
+                [("", "done")],
+                [("workload.tickets", "Công việc")],
+            ),
+            "done": _step(
+                "Thay thế hoàn tất",
+                "Thiết bị thay thế đã bàn giao; thiết bị cũ đã về kho / sửa / chờ thanh lý.",
+                kind="outcome",
+                outcome={
+                    "result": "adhoc",
+                    "approval": "PC / Laptop: Function Head duyệt hoặc tự đề xuất · thiết bị khác: IT xác nhận có bằng chứng",
+                },
+            ),
+        },
+    },
+}
+
 # Steps the app's Job runs are "Bước của Job": the reader sees the Job step and its current checklist (Lưu đồ quy
 # trình), so the template never repeats – and never drifts from – what the Job checks.
 # node: (workflow step, note kept – only what the Job itself does not say)
@@ -561,4 +685,5 @@ TEMPLATES: dict[str, dict[str, Any]] = {
     "offboard": OFFBOARD,
     "extra_device": EXTRA_DEVICE,
     "recall_device": RECALL_DEVICE,
+    "replace_device": REPLACE_DEVICE,
 }
