@@ -59,8 +59,10 @@ class JobRef(BaseModel):
 
 class Node(BaseModel):
     # step: read and act; check: the app tests a condition (branch 1 = Đúng, branch 2 = Sai); outcome: classification;
-    # job: a step the app's Job runs – its title and checklist come from the workflow, not copied here
-    kind: Literal["step", "check", "outcome", "job"] = "step"
+    # job: a step the app's Job runs – its title and checklist come from the workflow, not copied here;
+    # switch: the app reads one fact and takes the branch whose label is that value (any number of branches;
+    # a branch labelled "Khác" takes every other value)
+    kind: Literal["step", "check", "outcome", "job", "switch"] = "step"
     title: str = Field(min_length=1, max_length=200)
     note: str = Field("", max_length=20_000)  # light markdown: **bold**, lists, [links](…), ![images](…)
     children: list[Branch] = Field(default_factory=list, max_length=20)
@@ -68,6 +70,7 @@ class Node(BaseModel):
     check: Check | None = None
     outcome: Outcome | None = None
     job: JobRef | None = None
+    switch: Operand | None = None
 
     @model_validator(mode="after")
     def _kind(self) -> Node:
@@ -78,6 +81,9 @@ class Node(BaseModel):
                 raise ValueError(f"Bước kiểm tra “{self.title}” chưa có điều kiện.")
             if len(self.children) > 2:
                 raise ValueError(f"Bước kiểm tra “{self.title}” chỉ có nhánh Đúng và Sai.")
+        if self.kind == "switch":
+            if self.switch is None or self.switch.fact is None:
+                raise ValueError(f"Bước rẽ nhánh “{self.title}” chưa chọn dữ liệu.")
         if self.kind == "outcome" and self.outcome is None:
             raise ValueError(f"Bước kết luận “{self.title}” chưa chọn kết luận.")
         return self
@@ -111,6 +117,15 @@ class Tree(BaseModel):
 def job_refs(tree: Tree) -> list[tuple[str, JobRef]]:
     """(node id, reference) of every "Bước của Job" in the map."""
     return [(k, n.job) for k, n in tree.nodes.items() if n.kind == "job" and n.job]
+
+
+def unnamed_switch_branches(tree: Tree) -> list[str]:
+    """Titles of "rẽ nhánh theo dữ liệu" steps with a branch that has no value to match (refused at publish)."""
+    return [
+        n.title
+        for n in tree.nodes.values()
+        if n.kind == "switch" and any(not b.label.strip() for b in n.children)
+    ]
 
 
 def unreachable(tree: Tree) -> list[str]:

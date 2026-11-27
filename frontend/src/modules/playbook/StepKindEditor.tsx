@@ -43,9 +43,10 @@ export function StepKindEditor({ node, facts, onChange }: { node: StepNode; fact
   const kind = node.kind ?? "step";
   const tools = useTools();
   const workflows = useWorkflows();
-  const setKind = (k: "step" | "check" | "outcome" | "job") =>
+  const setKind = (k: "step" | "check" | "outcome" | "job" | "switch") =>
     onChange({
       kind: k,
+      switch: k === "switch" ? node.switch ?? { fact: (facts.find((f) => f.key === "lifecycle.level") ?? facts[0])?.key ?? "", param: "", value: null } : null,
       job: k === "job" ? node.job ?? (workflows.data?.[0] ? { workflow: workflows.data[0].key, step: workflows.data[0].steps[0]?.key ?? "" } : null) : null,
       check: k === "check" ? node.check ?? { left: { fact: facts[0]?.key ?? "", param: "", value: null }, op: "<", right: { fact: null, param: "", value: "1" } } : null,
       outcome: k === "outcome" ? node.outcome ?? { result: "standard", approval: "" } : null,
@@ -56,10 +57,11 @@ export function StepKindEditor({ node, facts, onChange }: { node: StepNode; fact
   return (
     <div className="grid gap-3">
       <Field label="Loại bước">
-        <Select value={kind} onChange={(e) => setKind(e.target.value as "step" | "check" | "outcome" | "job")}>
+        <Select value={kind} onChange={(e) => setKind(e.target.value as "step" | "check" | "outcome" | "job" | "switch")}>
           <option value="step">Bước hướng dẫn – người đọc và làm</option>
           <option value="job" disabled={!workflows.data?.length}>Bước của Job – app chạy, checklist lấy từ Lưu đồ quy trình</option>
-          <option value="check" disabled={!facts.length}>Kiểm tra – app tự so sánh dữ liệu</option>
+          <option value="check" disabled={!facts.length}>Kiểm tra – app tự so sánh dữ liệu (Đúng / Sai)</option>
+          <option value="switch" disabled={!facts.length}>Rẽ nhánh theo dữ liệu – app chọn 1 trong nhiều nhánh</option>
           <option value="outcome">Kết luận – Tiêu chuẩn / Adhoc / Exception</option>
         </Select>
       </Field>
@@ -73,6 +75,14 @@ export function StepKindEditor({ node, facts, onChange }: { node: StepNode; fact
           </Field>
           <OperandEditor label="Vế phải" value={node.check.right} facts={facts} allowValue onChange={(right) => onChange({ check: { ...node.check!, right } })} />
           <p className="text-sm text-muted">Nhánh 1 = Đúng, nhánh 2 = Sai. Thiếu dữ liệu thì app dừng và báo “Chưa đủ dữ liệu”.</p>
+        </div>
+      )}
+      {kind === "switch" && node.switch && (
+        <div className="grid gap-2">
+          <OperandEditor label="Dữ liệu dùng để rẽ nhánh" value={node.switch} facts={facts} allowValue={false} onChange={(sw) => onChange({ switch: sw })} />
+          <p className="text-sm text-muted text-pretty">
+            Đặt <b className="font-medium">tên mỗi nhánh đúng bằng một giá trị</b> của dữ liệu (không phân biệt hoa thường) – vd. với “Cấp bậc theo ma trận cấp phát”: Lãnh đạo cấp cao, Quản lý, Nhân viên kỹ thuật. Thêm nhánh tên <b className="font-medium">“Khác”</b> cho mọi giá trị còn lại. Không có nhánh khớp và không có “Khác” thì app dừng.
+          </p>
         </div>
       )}
       {kind === "job" && (

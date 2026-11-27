@@ -14,8 +14,9 @@ export type Op = ">=" | ">" | "<=" | "<" | "==" | "!=";
 export type OutcomeResult = "standard" | "adhoc" | "exception";
 export interface StepNode {
   /** step: read and act; check: the app tests a condition (branch 1 = Đúng, 2 = Sai); outcome: classification;
-   * job: a step the app's Job runs – title and checklist shown live from the workflow (Lưu đồ quy trình). */
-  kind?: "step" | "check" | "outcome" | "job";
+   * job: a step the app's Job runs – title and checklist shown live from the workflow (Lưu đồ quy trình);
+   * switch: the app reads one fact and takes the branch named after its value ("Khác" for the rest). */
+  kind?: "step" | "check" | "outcome" | "job" | "switch";
   title: string;
   /** Light markdown: **bold**, `code`, lists, [links](url), ![images](url). */
   note: string;
@@ -25,6 +26,7 @@ export interface StepNode {
   check?: { left: Operand; op: Op; right: Operand } | null;
   outcome?: { result: OutcomeResult; approval: string } | null;
   job?: JobRef | null;
+  switch?: Operand | null;
 }
 export interface JobRef {
   workflow: string;
@@ -51,7 +53,7 @@ export interface TraceValue {
 }
 export interface TraceEntry {
   id: string;
-  kind: "step" | "check" | "outcome";
+  kind: "step" | "check" | "outcome" | "job" | "switch";
   title: string;
   left?: TraceValue | null;
   right?: TraceValue | null;
@@ -62,7 +64,7 @@ export interface TraceEntry {
   chosen?: number;
 }
 export interface RunResult {
-  status: "outcome" | "needs_choice" | "missing_data" | "end" | "loop";
+  status: "outcome" | "needs_choice" | "missing_data" | "end" | "loop" | "no_branch";
   trace: TraceEntry[];
   outcome?: { result: OutcomeResult; approval: string; label: string };
   employee_id: string;
