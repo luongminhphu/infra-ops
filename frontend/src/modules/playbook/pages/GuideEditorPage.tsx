@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { api, ApiError, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { Button } from "@/core/ui/button";
+import { ConfirmDangerDialog } from "@/core/ui/confirm-danger-dialog";
 import { Dialog } from "@/core/ui/dialog";
 import { ErrorState, LoadingRows, PageHeader, Panel } from "@/core/ui/feedback";
 import { Field, Input, Select, Textarea } from "@/core/ui/field";
@@ -30,6 +31,7 @@ export function GuideEditorPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishNote, setPublishNote] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [preview, setPreview] = useState(false);
   const [path, setPath] = useState<Set<string>>(new Set());
@@ -59,6 +61,17 @@ export function GuideEditorPage() {
   const save = useMutation({
     mutationFn: () => api<GuideDetail>(`/api/playbook/guides/${id}/draft`, { method: "PUT", json: { ...meta, tree, base_updated_at: base } }),
     onSuccess: (g) => { load(g); toast.success("Đã lưu bản nháp. Người đọc vẫn thấy bản đã xuất bản cho đến khi xuất bản lại."); },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  const remove = useMutation({
+    mutationFn: () => api(`/api/playbook/guides/${id}`, { method: "DELETE" }),
+    onSuccess: async () => {
+      setDirty(false);
+      toast.success("Đã xoá Playbook.");
+      navigate("/playbook");
+      qc.removeQueries({ queryKey: ["playbook", "guide", id] });
+      await qc.invalidateQueries({ queryKey: ["playbook", "guides"] });
+    },
     onError: (e) => toast.error(errorMessage(e)),
   });
   const publish = useMutation({
@@ -123,6 +136,11 @@ export function GuideEditorPage() {
             {can("playbook.guides.publish") && (
               <Button variant={dirty ? "secondary" : "primary"} disabled={dirty} title={dirty ? "Lưu nháp trước khi xuất bản" : undefined} onClick={() => { setPublishNote(""); setPublishOpen(true); }}>
                 <Send className="size-4" aria-hidden="true" />Xuất bản
+              </Button>
+            )}
+            {can("playbook.guides.publish") && (
+              <Button variant="ghost" onClick={() => setDeleteOpen(true)}>
+                <Trash2 className="size-4" aria-hidden="true" />Xoá Playbook
               </Button>
             )}
           </span>
@@ -242,6 +260,22 @@ export function GuideEditorPage() {
           <>
             <Button onClick={() => setRemoveOpen(false)}>Giữ lại</Button>
             <Button variant="danger" onClick={() => { change(afterRemove); setSelected(tree.root); setRemoveOpen(false); }}>Xoá {removing} bước</Button>
+          </>
+        }
+      />
+      <ConfirmDangerDialog
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={() => remove.mutate()}
+        loading={remove.isPending}
+        title="Xoá Playbook?"
+        confirmText={q.data?.title ?? ""}
+        confirmLabel="Xoá Playbook"
+        inputLabel={<>Nhập tên <strong>{q.data?.title}</strong> để xác nhận</>}
+        consequences={
+          <>
+            <p>Xoá hẳn bản nháp, mọi phiên bản đã xuất bản và ảnh minh hoạ – không khôi phục được. IT Support không còn thấy hướng dẫn này.</p>
+            <p>Nhật ký kiểm tra vẫn ghi lại việc xoá.</p>
           </>
         }
       />
