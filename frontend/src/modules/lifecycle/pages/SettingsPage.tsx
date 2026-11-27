@@ -29,6 +29,9 @@ interface Values {
   asset_state_in_store: string;
   asset_state_pending_disposal: string;
   asset_state_disposed: string;
+  asset_state_inventory: string;
+  asset_state_in_repair: string;
+  asset_state_to_be_returned: string;
   asset_fa_code_field: string;
   onboard_grace_days: number;
   offboard_grace_days: number;
@@ -295,11 +298,20 @@ export function SettingsPage() {
             <Field label="Trạng thái “trong kho”">
               <Input value={v.asset_state_in_store} onChange={(e) => set("asset_state_in_store", e.target.value)} />
             </Field>
-            <Field label="Trạng thái “chờ thanh lý”" hint="Tên trạng thái tài sản đã tạo trên SDP (trang Tồn kho).">
+            <Field label="Trạng thái “chờ thanh lý”" hint="Tên trạng thái trên SDP cho máy chờ thanh lý, thường là Expired.">
               <Input value={v.asset_state_pending_disposal} onChange={(e) => set("asset_state_pending_disposal", e.target.value)} />
             </Field>
             <Field label="Trạng thái “đã thanh lý”" hint="Thường là Disposed trên SDP.">
               <Input value={v.asset_state_disposed} onChange={(e) => set("asset_state_disposed", e.target.value)} />
+            </Field>
+            <Field label="Trạng thái “mới nhập – chưa kiểm”" hint="Thường là Inventory. Hiện ở Kho thiết bị nhưng không được gợi ý cấp cho tới khi chuyển về “trong kho”.">
+              <Input value={v.asset_state_inventory} onChange={(e) => set("asset_state_inventory", e.target.value)} />
+            </Field>
+            <Field label="Trạng thái “đang sửa / bảo hành”" hint="Thường là In Repair. Không được gợi ý cấp; đang gán người thì đối soát không báo lệch.">
+              <Input value={v.asset_state_in_repair} onChange={(e) => set("asset_state_in_repair", e.target.value)} />
+            </Field>
+            <Field label="Trạng thái “chờ trả lại”" hint="Thường là To Be Returned – nhân viên còn giữ nhưng phải trả; đối soát không báo lệch.">
+              <Input value={v.asset_state_to_be_returned} onChange={(e) => set("asset_state_to_be_returned", e.target.value)} />
             </Field>
             <Field label="Trường SDP chứa Mã TSCĐ" hint="Khoá của trường tuỳ chỉnh trên tài sản SDP (vd. udf_char1) – dùng khi Kiểm kê để khớp với sổ Kế toán. Để trống nếu chưa có.">
               <Input value={v.asset_fa_code_field} onChange={(e) => set("asset_fa_code_field", e.target.value.trim())} className="font-mono" />

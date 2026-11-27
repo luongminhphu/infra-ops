@@ -147,7 +147,13 @@ def reconcile(
     for a in assets:
         if a.get("user_id"):
             assets_by_user[a["user_id"]].append(a)
-            if a.get("state") and a["state"] != settings.asset_state_in_use:
+            # In repair / to be returned stay assigned on purpose.
+            allowed = {
+                settings.asset_state_in_use,
+                settings.asset_state_in_repair,
+                settings.asset_state_to_be_returned,
+            }
+            if a.get("state") and a["state"] not in allowed:
                 notes.append(
                     {
                         "rule": "asset_state_mismatch",

@@ -112,14 +112,21 @@ ASSET_DISPOSE = _definition("lifecycle.asset_dispose", "Thanh lý tài sản", D
 
 
 # ------------------------------------------------------------------ API
-STATUS_LABEL = {"new": "Mới", "returned": "Thu hồi", "pending": "Chờ thanh lý"}
+STATUS_LABEL = {
+    "new": "Mới",
+    "returned": "Thu hồi",
+    "pending": "Chờ thanh lý",
+    "inventory": "Mới nhập – chưa kiểm",
+    "repair": "Đang sửa / bảo hành",
+}
 
 
 @router.get("")
 async def stock(
     user: CurrentUser = Depends(require(VIEW)), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
-    """Assets in stock from the latest sync: new, returned (thu hồi) and waiting for disposal."""
+    """Assets in stock from the latest sync: new, returned (thu hồi), unchecked (Inventory), in repair and waiting
+    for disposal."""
     s = await load_module_settings(session)
     run = await latest_run(session)
     if run is None:
@@ -141,6 +148,10 @@ async def stock(
             continue
         if a.get("state") == s.asset_state_pending_disposal:
             status = "pending"
+        elif a.get("state") == s.asset_state_inventory:
+            status = "inventory"
+        elif a.get("state") == s.asset_state_in_repair:
+            status = "repair"
         elif a.get("state") == s.asset_state_in_store:
             status = "returned" if a["id"] in marks else "new"
         else:
@@ -173,6 +184,8 @@ def _states(s: LifecycleSettings) -> dict[str, str]:
         "in_store": s.asset_state_in_store,
         "pending": s.asset_state_pending_disposal,
         "disposed": s.asset_state_disposed,
+        "inventory": s.asset_state_inventory,
+        "in_repair": s.asset_state_in_repair,
     }
 
 
@@ -215,7 +228,7 @@ async def mark_returned(
 
 class StateIn(BaseModel):
     assets: list[dict[str, str]] = Field(min_length=1, max_length=MAX_ASSETS)  # {id, tag, name}
-    to: Literal["pending", "in_store", "disposed"]
+    to: Literal["pending", "in_store", "disposed", "in_repair"]
 
 
 @router.post("/state", status_code=201)
@@ -260,6 +273,7 @@ async def change_state(
         "pending": s.asset_state_pending_disposal,
         "in_store": s.asset_state_in_store,
         "disposed": s.asset_state_disposed,
+        "in_repair": s.asset_state_in_repair,
     }[body.to]
     wf = "lifecycle.asset_dispose" if body.to == "disposed" else "lifecycle.asset_state"
     job, _ = await create_job(

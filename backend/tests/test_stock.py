@@ -45,6 +45,18 @@ async def test_stock_statuses_and_state_changes(admin, client, configured, respx
     a1 = {i["id"]: i for i in (await admin.get("/api/lifecycle/stock")).json()["items"]}["a1"]
     assert a1["status"] == "returned" and a1["returned_from"] == "Phạm Thị Bình"
 
+    # Inventory (received, not checked) and In Repair show up in stock but are never suggested for a hire.
+    odd = [{**a, "state": {"name": {"a2": "Inventory", "a4": "In Repair"}[a["id"]]}} if a["id"] in ("a2", "a4") else a
+           for a in back]  # fmt: skip
+    routes["assets"].mock(return_value=httpx.Response(200, json=sdp_ok("assets", odd)))
+    await _sync()
+    by_id = {i["id"]: i for i in (await admin.get("/api/lifecycle/stock")).json()["items"]}
+    assert (by_id["a2"]["status"], by_id["a4"]["status"]) == ("inventory", "repair")
+    plan = (await admin.get("/api/lifecycle/allocation")).json()
+    assert all(i["id"] not in ("a2", "a4") for s in plan["stock"] if s["standard"] for i in s["items"])
+    routes["assets"].mock(return_value=httpx.Response(200, json=sdp_ok("assets", back)))
+    await _sync()
+
     # Manual mark / unmark (infra-ops only).
     r = await admin.post("/api/lifecycle/stock/returned", json={"asset_ids": ["a2"], "returned": True})
     assert r.status_code == 200
@@ -52,7 +64,7 @@ async def test_stock_statuses_and_state_changes(admin, client, configured, respx
         "status"
     ] == "returned"
 
-    # Roles: operators view only; supervisors move to "Chờ thanh lý" but never dispose.
+    # Roles: operators view only; supervisors move to "Expired" but never dispose.
     await _user(admin, "operator", "stock-op@test.local")
     await _user(admin, "supervisor", "stock-sup@test.local")
     await client.login("stock-op@test.local")
@@ -85,11 +97,11 @@ async def test_stock_statuses_and_state_changes(admin, client, configured, respx
     j = (await admin.get(f"/api/core/jobs/{job}")).json()
     assert j["status"] == "completed", [(x["status"], x["message"]) for x in j["steps"]]
     assert puts == [
-        {"auth": "key-admin@test.local", "state": {"name": "Chờ thanh lý"}}
+        {"auth": "key-admin@test.local", "state": {"name": "Expired"}}
     ]  # state only, user untouched
 
     # After the next sync it shows as waiting; a manager/admin disposes it.
-    pending = [{**a, "state": {"name": "Chờ thanh lý"}} if a["id"] == "a2" else a for a in back]
+    pending = [{**a, "state": {"name": "Expired"}} if a["id"] == "a2" else a for a in back]
     routes["assets"].mock(return_value=httpx.Response(200, json=sdp_ok("assets", pending)))
     await _sync()
     assert {i["id"]: i for i in (await admin.get("/api/lifecycle/stock")).json()["items"]}["a2"][

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Archive, ArchiveRestore, CircleAlert, PackageCheck, PackageX, Undo2, UserCheck, UserRound } from "lucide-react";
+import { Archive, ArchiveRestore, CircleAlert, PackageCheck, PackageX, Undo2, UserCheck, UserRound, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
@@ -23,7 +23,7 @@ import { isSettled } from "@/core/lib/jobs";
 import { useDebounced } from "@/core/lib/useDebounced";
 import { OnboardTab, type Allocation, type PurchaseLite } from "./InventoryPage";
 
-type Origin = "new" | "returned" | "pending";
+type Origin = "new" | "returned" | "pending" | "inventory" | "repair";
 interface StockItem {
   id: string;
   name: string | null;
@@ -40,18 +40,21 @@ interface StockItem {
 interface Stock {
   as_of: string | null;
   items: StockItem[];
-  states: { in_store: string; pending: string; disposed: string };
+  states: { in_store: string; pending: string; disposed: string; inventory: string; in_repair: string };
   can: { manage: boolean; dispose: boolean };
 }
 
 /**
- * Two axes, never mixed: allocation (Sẵn sàng cấp / Đã phân bổ / Chờ thanh lý – they add up to Tất cả)
- * and origin (Mới / Thu hồi). "Thiếu" only ever means a quantity short; missing data is "Chưa có …".
+ * Two axes, never mixed: allocation (Sẵn sàng cấp / Đã phân bổ / Chưa kiểm / Đang sửa / Chờ thanh lý – they add up to
+ * Tất cả) and origin (Mới / Thu hồi). "Thiếu" only ever means a quantity short; missing data is "Chưa có …".
  */
-type View = "free" | "reserved" | "pending" | "all";
+type View = "free" | "reserved" | "inventory" | "repair" | "pending" | "all";
+const IN_STORE = (i: StockItem) => i.status === "new" || i.status === "returned";
 const VIEWS: { v: View; label: string; test: (i: StockItem) => boolean }[] = [
-  { v: "free", label: "Sẵn sàng cấp", test: (i) => i.status !== "pending" && !i.reserved_for },
-  { v: "reserved", label: "Đã phân bổ", test: (i) => i.status !== "pending" && !!i.reserved_for },
+  { v: "free", label: "Sẵn sàng cấp", test: (i) => IN_STORE(i) && !i.reserved_for },
+  { v: "reserved", label: "Đã phân bổ", test: (i) => IN_STORE(i) && !!i.reserved_for },
+  { v: "inventory", label: "Mới nhập – chưa kiểm", test: (i) => i.status === "inventory" },
+  { v: "repair", label: "Đang sửa", test: (i) => i.status === "repair" },
   { v: "pending", label: "Chờ thanh lý", test: (i) => i.status === "pending" },
   { v: "all", label: "Tất cả", test: () => true },
 ];
@@ -70,6 +73,8 @@ function Availability({ i, updating }: { i: StockItem; updating?: "running" | "s
   if (updating === "running") return <StatusBadge status="in_progress" label="Đang cập nhật trên SDP…" />;
   if (updating === "sync") return <StatusBadge status="pending" label="Đã ghi SDP – chờ đồng bộ" />;
   if (i.status === "pending") return <StatusBadge status="warning" label="Chờ thanh lý" />;
+  if (i.status === "inventory") return <StatusBadge status="pending" label="Mới nhập – chưa kiểm" />;
+  if (i.status === "repair") return <StatusBadge status="in_progress" label="Đang sửa / bảo hành" />;
   if (i.reserved_for) {
     const who = i.reserved_for.name ?? `#${i.reserved_for.display_id}`;
     const Icon = i.reserved_for.chosen ? UserCheck : UserRound;
@@ -110,6 +115,7 @@ function AssetsTab({ d }: { d: Stock }) {
   const [search, setSearch] = useState(params.get("q") ?? "");
   const [picked, setPicked] = useState<string[]>([]);
   const [confirm, setConfirm] = useState<"pending" | "disposed" | null>(null);
+  const only = (st: Origin) => selected.length > 0 && selected.every((i) => i.status === st);
   // asset id → job id of an SDP change started here; shown until the next sync refreshes the list.
   const [jobs, setJobs] = useState<Record<string, string>>({});
   const setParam = (k: string, v: string) => {
@@ -176,13 +182,18 @@ function AssetsTab({ d }: { d: Stock }) {
     },
   });
   const change = useMutation({
-    mutationFn: (to: "pending" | "in_store" | "disposed") =>
+    mutationFn: (to: "pending" | "in_store" | "disposed" | "in_repair") =>
       api<{ job_id: string }>("/api/lifecycle/stock/state", {
         method: "POST",
         json: { to, assets: selected.map((i) => ({ id: i.id, tag: i.asset_tag ?? "", name: i.name ?? "" })) },
       }),
     onSuccess: (r, to) => {
-      const what = to === "disposed" ? "Thanh lý" : to === "pending" ? "Chuyển sang Chờ thanh lý" : "Bỏ chờ thanh lý";
+      const what = {
+        disposed: "Thanh lý",
+        pending: "Chuyển sang Chờ thanh lý",
+        in_repair: "Gửi sửa / bảo hành",
+        in_store: `Nhập kho (“${d.states.in_store}”)`,
+      }[to];
       setJobs((j) => ({ ...j, ...Object.fromEntries(picked.map((id) => [id, r.job_id])) }));
       toast.success(`${what}: đang ghi ${selected.length} tài sản lên SDP.`, {
         action: { label: "Xem Job", onClick: () => navigate(`/lifecycle/jobs/${r.job_id}`) },
@@ -319,9 +330,24 @@ function AssetsTab({ d }: { d: Stock }) {
               <PackageX className="size-4" aria-hidden="true" />Chuyển sang Chờ thanh lý…
             </Button>
           )}
-          {d.can.manage && selected.every((i) => i.status === "pending") && (
+          {d.can.manage && only("pending") && (
             <Button size="sm" onClick={() => change.mutate("in_store")} loading={change.isPending}>
               <PackageCheck className="size-4" aria-hidden="true" />Bỏ chờ thanh lý
+            </Button>
+          )}
+          {d.can.manage && only("inventory") && (
+            <Button size="sm" variant="primary" onClick={() => change.mutate("in_store")} loading={change.isPending}>
+              <PackageCheck className="size-4" aria-hidden="true" />Đã kiểm – nhập kho
+            </Button>
+          )}
+          {d.can.manage && only("repair") && (
+            <Button size="sm" onClick={() => change.mutate("in_store")} loading={change.isPending}>
+              <PackageCheck className="size-4" aria-hidden="true" />Sửa xong – về kho
+            </Button>
+          )}
+          {d.can.manage && selected.length > 0 && selected.every(IN_STORE) && (
+            <Button size="sm" onClick={() => change.mutate("in_repair")} loading={change.isPending}>
+              <Wrench className="size-4" aria-hidden="true" />Gửi sửa / bảo hành
             </Button>
           )}
           {d.can.dispose && selected.every((i) => i.status === "pending") && (
@@ -330,8 +356,8 @@ function AssetsTab({ d }: { d: Stock }) {
             </Button>
           )}
           <Button size="sm" variant="ghost" onClick={() => setPicked([])}>Bỏ chọn</Button>
-          {selected.some((i) => i.status === "pending") && selected.some((i) => i.status !== "pending") && (
-            <span className="basis-full text-muted">Chọn riêng hàng Chờ thanh lý để thanh lý hoặc bỏ chờ thanh lý.</span>
+          {new Set(selected.map((i) => (IN_STORE(i) ? "store" : i.status))).size > 1 && (
+            <span className="basis-full text-muted">Chọn riêng từng nhóm (trong kho, chưa kiểm, đang sửa, chờ thanh lý) để thấy thao tác của nhóm đó.</span>
           )}
         </div>
       )}
@@ -445,7 +471,8 @@ export function StockPage() {
               <span className="block"><b>Trong kho = Sẵn sàng cấp + Đã phân bổ.</b> Sẵn sàng cấp: chưa dành cho ai. Đã phân bổ: dành cho một nhân viên sắp onboard – <i>Đã chọn</i> (đã ghi vào Job) hoặc <i>Dự kiến</i> (hệ thống gợi ý, còn đổi được).</span>
               <span className="block"><b>Thiếu</b>: số thiết bị theo tiêu chuẩn cấp phát mà kho không đủ → Lập đề xuất mua. Nhân viên chưa có band chưa được tính.</span>
               <span className="block"><b>Dự kiến</b> lấy tài sản đúng loại theo band – <b>hàng Thu hồi trước, hàng Mới sau</b>; ai bắt đầu sớm hơn được ưu tiên.</span>
-              <span className="block"><b>Nguồn:</b> Mới hoặc Thu hồi (đồng bộ tự nhận ra hoặc đánh dấu tay). <b>Chờ thanh lý</b> (“{s?.states.pending ?? "Chờ thanh lý"}” trên SDP) không tính vào Trong kho; thanh lý đổi sang “{s?.states.disposed ?? "Disposed"}” – chỉ Manager và Administrator.</span>
+              <span className="block"><b>Nguồn:</b> Mới hoặc Thu hồi (đồng bộ tự nhận ra hoặc đánh dấu tay). <b>Chờ thanh lý</b> (“{s?.states.pending ?? "Expired"}” trên SDP) không tính vào Trong kho; thanh lý đổi sang “{s?.states.disposed ?? "Disposed"}” – chỉ Manager và Administrator.</span>
+              <span className="block"><b>Mới nhập – chưa kiểm</b> (“{s?.states.inventory ?? "Inventory"}”) và <b>Đang sửa</b> (“{s?.states.in_repair ?? "In Repair"}”) không được gợi ý cấp; kiểm xong / sửa xong thì chuyển về “{s?.states.in_store ?? "In Store"}”.</span>
               <span className="block">Thay đổi trên SDP chạy bằng API key của chính bạn (Khoá API của tôi). Mã tài sản và serial là bắt buộc – tài sản thiếu được đánh dấu đỏ.</span>
             </HelpTip>
           </>

@@ -515,3 +515,26 @@ def test_reuse_only_line_takes_returned_devices_and_waits() -> None:
     assert [a["id"] for a in first.reuse] == ["old1"] and first.buy == first.wait == 0
     # Only a new laptop is left: never offered, never bought – the second hire waits for a returned one.
     assert second.reuse == [] and second.buy == 0 and second.wait == 1
+
+
+def test_assets_in_repair_or_due_back_are_not_a_state_mismatch() -> None:
+    requests, users, assets, bs = _data()
+    assigned = next(a for a in assets if a.get("user_id"))
+    for state, flagged in (("In Repair", False), ("To Be Returned", False), ("Inventory", True)):
+        changed = [{**a, "state": state} if a is assigned else a for a in assets]
+        notes = reconcile(requests, users, changed, bs, S, date(2026, 11, 16)).notes
+        hit = [
+            n for n in notes if n["rule"] == "asset_state_mismatch" and n.get("asset_id") == assigned["id"]
+        ]
+        assert bool(hit) is flagged, state
+
+
+def test_old_pending_disposal_default_becomes_expired() -> None:
+    from app.modules.lifecycle.settings import LifecycleSettings
+
+    assert LifecycleSettings().asset_state_pending_disposal == "Expired"
+    assert (
+        LifecycleSettings(asset_state_pending_disposal="Chờ thanh lý").asset_state_pending_disposal
+        == "Expired"
+    )
+    assert LifecycleSettings(asset_state_pending_disposal="Retired").asset_state_pending_disposal == "Retired"
