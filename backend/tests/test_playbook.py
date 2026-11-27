@@ -332,3 +332,49 @@ def test_replace_device_template_routes_approval_by_device_and_requester() -> No
     assert to("other_check")["Hỏng – cần thay"] == "source"  # no approval step on this path
     assert to("source") == {"Kho có máy phù hợp": "swap", "Kho không có": "purchase"}
     assert n["rejected"].kind == n["done"].kind == n["repaired"].kind == "outcome"
+
+
+async def test_switch_step_takes_the_branch_named_after_the_value() -> None:
+    """ "Rẽ nhánh theo dữ liệu": any number of branches, one per value, "Khác" for the rest."""
+    from app.core.modules.manifest import FactValue
+    from app.modules.playbook.run import run_tree
+    from app.modules.playbook.tree import unnamed_switch_branches
+
+    def end(title: str) -> dict:  # type: ignore[type-arg]
+        return {"kind": "outcome", "title": title, "outcome": {"result": "standard", "approval": ""}}
+
+    tree = Tree.model_validate({
+        "root": "lv",
+        "nodes": {
+            "lv": {"kind": "switch", "title": "Office Tools theo cấp bậc", "switch": {"fact": "lifecycle.level", "value": None},
+                   "children": [{"label": "Lãnh đạo cấp cao", "to": "top"}, {"label": "Quản lý", "to": "mgr"},
+                                {"label": "Nhân viên kỹ thuật", "to": "tech"}, {"label": "Khác", "to": "std"}]},
+            "top": end("Bộ đầy đủ"), "mgr": end("Bộ quản lý"), "tech": end("Bộ kỹ thuật"), "std": end("Bộ chuẩn"),
+        },
+    })  # fmt: skip
+    for level, outcome in (("quản lý", "mgr"), ("Nhân viên kỹ thuật", "tech"), ("Intern / Vendor", "std")):
+
+        async def load(k: str, p: str, level: str = level) -> FactValue | None:
+            return FactValue(level, "Request RTR #1: chức danh có …")
+
+        r = await run_tree(tree, load, {}, {})
+        assert r["status"] == "outcome" and r["trace"][-1]["id"] == outcome, level
+        assert r["trace"][0]["left"]["value"] == level and r["trace"][0]["chosen"] is not None
+
+    async def none(k: str, p: str) -> FactValue | None:
+        return None
+
+    assert (await run_tree(tree, none, {}, {}))["status"] == "missing_data"
+    no_other = tree.model_copy(deep=True)
+    no_other.nodes["lv"].children = no_other.nodes["lv"].children[:3]
+
+    async def odd(k: str, p: str) -> FactValue | None:
+        return FactValue("Thực tập", "x")
+
+    assert (await run_tree(no_other, odd, {}, {}))["status"] == "no_branch"
+    assert unnamed_switch_branches(tree) == []
+    blank = tree.model_copy(deep=True)
+    blank.nodes["lv"].children[0].label = " "
+    assert unnamed_switch_branches(blank) == ["Office Tools theo cấp bậc"]
+    with pytest.raises(ValidationError):  # a switch needs a fact
+        Tree.model_validate({"root": "a", "nodes": {"a": {"kind": "switch", "title": "A"}}})

@@ -28,6 +28,11 @@ export function StepView({ tree, node, facts, onSelect }: { tree: Tree; node: St
         </p>
       )}
       {kind === "job" && node.job && <JobStepInfo job={node.job} />}
+      {kind === "switch" && node.switch && (
+        <p className="mb-3 rounded-sm bg-surface-2 px-3 py-2 text-sm">
+          <span className="font-medium">App chọn nhánh theo:</span> {operandText(node.switch, facts)}
+        </p>
+      )}
       <Note text={node.note} />
       <StepActions node={node} />
       {node.children.length > 0 && (

@@ -20,7 +20,7 @@ from app.core.storage.service import check_size, read_file, save_file, sniff
 from app.modules.playbook.models import Guide, GuideImage, GuideVersion
 from app.modules.playbook.run import run_tree
 from app.modules.playbook.templates import TEMPLATES
-from app.modules.playbook.tree import Tree, job_refs, starter, unreachable
+from app.modules.playbook.tree import Tree, job_refs, starter, unnamed_switch_branches, unreachable
 
 MODULE_ID = "playbook"
 VIEW, EDIT, PUBLISH = "playbook.guides.view", "playbook.guides.edit", "playbook.guides.publish"
@@ -186,6 +186,12 @@ async def publish(
         raise AppError(
             f"Có {len(lost)} bước không nối với sơ đồ: {', '.join(lost[:5])}. Nối hoặc xoá trước khi xuất bản.",
             code="unreachable_steps",
+        )
+    if unnamed := unnamed_switch_branches(tree):
+        raise AppError(
+            f"Bước rẽ nhánh chưa đặt tên nhánh: {', '.join(unnamed[:5])}. Tên nhánh là giá trị dữ liệu, vd. Quản lý, "
+            "hoặc “Khác” cho các giá trị còn lại.",
+            code="unnamed_switch_branch",
         )
     if broken := unknown_job_steps(tree):
         raise AppError(

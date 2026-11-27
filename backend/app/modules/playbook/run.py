@@ -10,6 +10,7 @@ from app.core.modules.manifest import FactValue
 from app.modules.playbook.tree import Operand, Tree
 
 MAX_STEPS = 100
+OTHER = "khác"  # a switch branch with this label takes every value no other branch names
 Loader = Callable[[str, str], Awaitable[FactValue | None]]
 OUTCOME_LABEL = {"standard": "Tiêu chuẩn", "adhoc": "Adhoc", "exception": "Exception"}
 
@@ -68,6 +69,22 @@ async def run_tree(
             idx = 0 if ok else 1
             if idx >= len(node.children):
                 return {"status": "end", "trace": trace}
+            node_id = node.children[idx].to
+            continue
+        if node.kind == "switch" and node.switch:
+            got = await value(node.switch)
+            entry["left"] = got
+            if got is None:
+                entry["missing"] = labels.get(node.switch.fact or "", node.switch.fact or "")
+                return {"status": "missing_data", "trace": trace}
+            idx = next((i for i, b in enumerate(node.children) if compare(got["value"], "==", b.label)), None)
+            if idx is None:
+                idx = next(
+                    (i for i, b in enumerate(node.children) if b.label.strip().casefold() == OTHER), None
+                )
+            if idx is None:
+                return {"status": "no_branch", "trace": trace}
+            entry["chosen"] = idx
             node_id = node.children[idx].to
             continue
         if not node.children:

@@ -1474,3 +1474,7 @@ Kho thiết bị chỉ liệt kê tài sản chưa gán người. Mọi trạng 
   dưới trạng thái, kèm liên kết mở / tạo Job.
 - Email nháp viết lại ngắn: mục đích, tình trạng một câu, 2 điểm cần xác nhận, cách phản hồi, bảng. Mã hoá base64 + CRLF
   (trước đây quoted-printable dòng dài làm Outlook vỡ dấu, lộ “=C3”, “<td …”).
+- **Rẽ nhánh theo dữ liệu** (`kind: switch`, `switch: {fact, param}`): app đọc một dữ liệu (vd. Cấp bậc theo ma trận cấp
+  phát) và đi vào nhánh có **tên trùng giá trị** (không phân biệt hoa thường) – không giới hạn 2 nhánh; nhánh “Khác” nhận
+  mọi giá trị còn lại; thiếu dữ liệu → “Chưa đủ dữ liệu”, không có nhánh khớp → `no_branch`. Xuất bản từ chối nhánh chưa
+  đặt tên (`unnamed_switch_branch`). Bước hướng dẫn (người chọn) vẫn rẽ được tới 20 nhánh; bước Kiểm tra giữ Đúng / Sai.

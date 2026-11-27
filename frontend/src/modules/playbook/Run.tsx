@@ -61,6 +61,9 @@ export function RunPanel({ guideId, tree, version, onPath, onSelect }: {
             <p className="mb-3 flex items-start gap-1.5 text-sm text-waiting"><CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />Chưa đủ dữ liệu: {last?.missing ?? "không rõ"} của Mã NV {r.employee_id}. Đồng bộ lại hoặc xử lý thủ công theo hướng dẫn.</p>
           )}
           {r.status === "end" && <p className="mb-3 text-sm text-muted">Đã đi hết nhánh, không có bước kết luận.</p>}
+          {r.status === "no_branch" && (
+            <p className="mb-3 flex items-start gap-1.5 text-sm text-waiting"><CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />Không có nhánh cho giá trị “{last?.left ? show(last.left) : "?"}” – thêm nhánh tên đó hoặc nhánh “Khác” ở bước “{last?.title}”.</p>
+          )}
           <ol className="space-y-2 border-l border-line pl-4 text-sm">
             {r.trace.map((t) => (
               <li key={t.id}>
@@ -71,6 +74,12 @@ export function RunPanel({ guideId, tree, version, onPath, onSelect }: {
                     {t.right ? <>{t.right.label} = <b className="text-ink">{show(t.right)}</b></> : <i>{t.missing}: chưa có dữ liệu</i>}
                     {t.result !== undefined && <> → <b className={t.result ? "text-done" : "text-failed"}>{t.result ? "Đúng" : "Sai"}</b></>}
                     {[t.left, t.right].filter((v) => v && v.source !== "Nhập trong Playbook").map((v) => <span key={v!.label} className="block text-xs">Nguồn: {v!.source}</span>)}
+                  </span>
+                )}
+                {t.kind === "switch" && t.left && (
+                  <span className="mt-0.5 block text-muted">
+                    {t.left.label} = <b className="text-ink">{show(t.left)}</b>
+                    <span className="block text-xs">Nguồn: {t.left.source}</span>
                   </span>
                 )}
                 {t.chosen !== undefined && <span className="block text-muted">Đã chọn: {tree.nodes[t.id]?.children[t.chosen]?.label || tree.nodes[tree.nodes[t.id]?.children[t.chosen]?.to ?? ""]?.title}</span>}

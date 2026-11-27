@@ -243,7 +243,7 @@ export function GuideEditorPage() {
               {node.children.map((b, i) => (
                 <div key={i} className="grid grid-cols-[1fr_1.4fr_auto] items-end gap-2">
                   <Field label={`Lựa chọn ${i + 1}`}>
-                    <Input value={node.kind === "check" ? (i === 0 ? "Đúng" : "Sai") : b.label} readOnly={node.kind === "check"} maxLength={100} placeholder="Có / Không…" onChange={(e) => setNode({ children: node.children.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })} />
+                    <Input value={node.kind === "check" ? (i === 0 ? "Đúng" : "Sai") : b.label} readOnly={node.kind === "check"} maxLength={100} placeholder={node.kind === "switch" ? "Giá trị, vd. Quản lý – hoặc Khác" : "Có / Không…"} onChange={(e) => setNode({ children: node.children.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })} />
                   </Field>
                   <Field label="Tới bước">
                     <Select value={b.to} onChange={(e) => setNode({ children: node.children.map((x, j) => (j === i ? { ...x, to: e.target.value } : x)) })}>
