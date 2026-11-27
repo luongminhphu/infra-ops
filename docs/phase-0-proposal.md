@@ -1487,3 +1487,6 @@ Kho thiết bị chỉ liệt kê tài sản chưa gán người. Mọi trạng 
 - Sau mỗi lần đồng bộ, **Job nháp** (chưa bắt đầu, chưa ghi gì) của request đã đóng **tự huỷ** kèm lý do
   (“Request #… đã đóng trên SDP”), có nhật ký kiểm tra, mở lại được nếu request mở lại. Job đã bắt đầu không bị đụng tới –
   bước kiểm tra request dừng như trước.
+- Đồng bộ dữ liệu (`lifecycle.sync`) chạy **mỗi 4 giờ** thay vì 30 phút; migration `0008_lifecycle` chuyển máy đã cài
+  đang ở 30 phút sang 4 giờ (chu kỳ đã chỉnh khác giữ nguyên). Cần sớm hơn thì bấm “Đồng bộ ngay”. Đồng bộ công việc
+  (`workload.sync`, 10 phút) không đổi.

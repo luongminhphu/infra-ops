@@ -38,7 +38,7 @@ export function SyncPage() {
         <Panel title="Lịch đồng bộ" className="mb-4">
           <dl className="grid gap-x-8 gap-y-2 text-base sm:grid-cols-[max-content_1fr_max-content_1fr]">
             <dt className="text-muted">Chu kỳ</dt>
-            <dd>{Math.round(task.interval_seconds / 60)} phút{task.enabled ? "" : " (đang tắt)"}</dd>
+            <dd>{task.interval_seconds % 3600 === 0 ? `${task.interval_seconds / 3600} giờ` : `${Math.round(task.interval_seconds / 60)} phút`}{task.enabled ? "" : " (đang tắt)"}</dd>
             <dt className="text-muted">Lần tới</dt>
             <dd>{task.running ? "Đang chạy" : formatDateTime(task.next_run_at)}</dd>
             <dt className="text-muted">Lần gần nhất</dt>
