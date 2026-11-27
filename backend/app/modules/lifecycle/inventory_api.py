@@ -115,7 +115,7 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
     for r in reqs:
         job = jobs.get(r.id)
         picked = [{**a, **assets.get(a["id"], {})} for a in (job.params.get("assets", []) if job else [])]
-        needs.append(Need(r.id, r.effective_date, band_of(r)[0], picked))
+        needs.append(Need(r.id, r.effective_date, band_of(r)[0], picked, (r.fields or {}).get("department")))
     plan = allocate(needs, settings.allocation_standard, stock)
 
     # Which upcoming onboard each stock asset is set aside for: chosen on its job draft, or only suggested.
@@ -130,7 +130,8 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
                 )
     in_stock = {a["id"] for a in stock}
     summary = []
-    for item in settings.allocation_standard:
+    # One stock row per label: matrix rows can give the same device under the same name.
+    for item in {i.label: i for i in settings.allocation_standard}.values():
         lines = [ln for lines in plan.values() for ln in lines if ln.label == item.label]
         summary.append(
             {

@@ -1405,3 +1405,18 @@ Nguyên tắc (product owner): user quyền nào chỉ thấy nội dung và ch�
   mới, tài khoản mới**, không dùng lại tài khoản / mailbox / thiết bị cũ. Bỏ nhánh kiểm tra tái tuyển / trùng Mã NV và
   bước kiểm tra laptop đã đủ (Mã NV mới chưa có thiết bị): đối soát → tài khoản AD → … → lấy thiết bị trong kho.
   Playbook đã tạo từ mẫu cũ không đổi – sửa tay hoặc tạo lại từ mẫu.
+
+## 60. Ma trận cấp phát thiết bị và cấu hình tham chiếu (27/11/2026)
+
+- Cấu hình module › **Ma trận cấp phát thiết bị** thay danh sách dòng: hàng = cấp bậc (band trong RTR – số hoặc chức
+  danh đúng như HR ghi, vd. `7, 8, 9` hay `Manager / Senior Manager`; tuỳ chọn giới hạn phòng ban), cột = thiết bị (loại
+  tài sản SDP, model chứa, tên bảng giá, ghi chú chính sách), ô = tích cấp + số lượng + cấu hình tham chiếu.
+  - Hàng để trống band nhận mọi band chưa có ở hàng khác (Intern / Vendor); hàng giới hạn phòng ban thay hàng chung
+    cùng band (vd. Band 4–6 kỹ thuật IT / DTI / DATA dùng PC - Performance và 2 màn hình).
+  - Lưu ma trận → `allocation_standard` được suy ra (Kho thiết bị, đề xuất mua, fact Playbook dùng như cũ); dòng mang
+    tên cấu hình khi có (vd. “PC - Performance”). Chưa lưu ma trận lần nào: màn hình dựng ma trận từ danh sách cũ.
+  - “Nạp ma trận mẫu”: 5 cấp bậc × 8 thiết bị theo file Ma trận cấp phát Office Tools V2 (band là ví dụ – sửa đúng RTR).
+- **Cấu hình thiết bị tham chiếu** (PC / Laptop Standard / Performance: CPU tối thiểu, RAM, ổ cứng, mục đích, tên bảng
+  giá – tên bảng giá của cấu hình được ưu tiên khi đề xuất mua). Đổi tên cấu hình thì ma trận đổi theo; cấu hình đang
+  dùng không xoá được.
+- Bảng “Loại cấp phát” (Onboarding / Adhoc / Utilization / Exception, cấp duyệt, bằng chứng) trong file chưa đưa vào app.

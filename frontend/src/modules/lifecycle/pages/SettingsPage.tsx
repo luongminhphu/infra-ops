@@ -11,6 +11,7 @@ import { DateInput } from "@/core/ui/date-input";
 import { announce } from "@/core/ui/live-region";
 import type { Kind } from "../api";
 import { KIND_LABEL } from "../labels";
+import { AllocationMatrixEditor, TiersEditor, type DeviceTier, type Matrix } from "./AllocationMatrix";
 
 interface Values {
   sdp_profile_id: string | null;
@@ -46,6 +47,8 @@ interface Values {
   sdp_attach_path: string;
   sdp_attach_field: string;
   allocation_standard: StandardItem[];
+  allocation_matrix: Matrix;
+  device_tiers: DeviceTier[];
   allocation_past_days: number;
 }
 
@@ -62,8 +65,6 @@ interface StandardItem {
   quantity: number;
   catalog_name: string;
 }
-type StdRow = Omit<StandardItem, "bands" | "product_types"> & { bands: string; product_types: string };
-const toRows = (items: StandardItem[]): StdRow[] => items.map((i) => ({ ...i, bands: i.bands.join(", "), product_types: i.product_types.join(", ") }));
 
 interface SettingsResponse {
   values: Values;
@@ -86,7 +87,6 @@ export function SettingsPage() {
   const [serverError, setServerError] = useState("");
   const [closedStatuses, setClosedStatuses] = useState("");
   const [excludedGroups, setExcludedGroups] = useState("");
-  const [std, setStd] = useState<StdRow[]>([]);
   const [loadGroups, setLoadGroups] = useState(false);
   const groups = useQuery({
     queryKey: ["lifecycle", "biostar-groups"],
@@ -102,7 +102,6 @@ export function SettingsPage() {
       setExcludedGroups(q.data.values.biostar_excluded_groups.join(", "));
       setHrTo(q.data.values.hr_review_to.join(", "));
       setHrCc(q.data.values.hr_review_cc.join(", "));
-      setStd(toRows(q.data.values.allocation_standard));
     }
   }, [q.data]);
 
@@ -134,9 +133,7 @@ export function SettingsPage() {
       biostar_excluded_groups: list(excludedGroups),
       hr_review_to: list(hrTo),
       hr_review_cc: list(hrCc),
-      allocation_standard: std
-        .filter((r) => r.label.trim())
-        .map((r) => ({ ...r, label: r.label.trim(), bands: list(r.bands), product_types: list(r.product_types), quantity: Math.max(1, r.quantity || 1) })),
+      device_tiers: v.device_tiers.filter((t) => t.name.trim()).map((t) => ({ ...t, name: t.name.trim() })),
     });
   };
   const profileOptions = (type: string) => d.profiles.filter((p) => p.system_type === type);
@@ -401,46 +398,43 @@ export function SettingsPage() {
         <Panel
           title={
             <span className="inline-flex items-center gap-1">
-              Tiêu chuẩn cấp phát thiết bị theo band
-              <HelpTip title="Tiêu chuẩn cấp phát">
-                <span className="block">Mỗi dòng là một thiết bị nhân viên mới được nhận. <b>Band</b> để trống = áp dụng mọi band; nhiều band cách nhau dấu phẩy (vd. B4, B5).</span>
-                <span className="block"><b>Loại tài sản SDP</b>: product type trên ServiceDesk Plus được tính là đáp ứng dòng này (vd. Laptop). <b>Model chứa</b> (tuỳ chọn) lọc thêm theo tên model, vd. “XPS”.</span>
-                <span className="block"><b>Tên trong bảng giá</b>: thiết bị được điền sẵn khi đề xuất mua mới.</span>
-                <span className="block">Band của nhân viên lấy từ dòng “{v.field_labels.band || "Band"}” trong request RTR (đổi nhãn ở mục Request RTR).</span>
+              Ma trận cấp phát thiết bị
+              <HelpTip title="Ma trận cấp phát">
+                <span className="block"><b>Hàng</b> là cấp bậc (nhóm band), <b>cột</b> là thiết bị. Tích ô để cấp thiết bị đó cho cấp bậc đó, chọn số lượng và cấu hình tham chiếu.</span>
+                <span className="block">Bấm tên hàng / cột để sửa: band đúng như HR ghi ở dòng “{v.field_labels.band || "Band"}” trong request RTR, loại tài sản SDP, tên trong bảng giá. Hàng để trống band nhận mọi band chưa có ở hàng khác; hàng giới hạn phòng ban thay cho hàng chung cùng band.</span>
+                <span className="block">Trang Kho thiết bị dùng ma trận để gợi ý lấy tài sản trong kho (hàng thu hồi trước) hoặc đề xuất mua; Playbook dùng để so “số lượng theo tiêu chuẩn band”.</span>
               </HelpTip>
             </span>
           }
-          description="Dùng ở trang Kho thiết bị để gợi ý lấy tài sản trong kho (hàng thu hồi trước) hoặc đề xuất mua mới."
+          description="Tiêu chuẩn cho nhân viên mới (Onboarding). Thiết bị ngoài ô đã tích đi theo Adhoc / Exception và cần phê duyệt."
         >
-          <div className="space-y-3">
-            {std.map((r, i) => {
-              const upd = (patch: Partial<StdRow>) => setStd((cur) => cur.map((x, j) => (j === i ? { ...x, ...patch } : x)));
-              return (
-                <fieldset key={i} className="grid gap-2 rounded-sm border border-line p-3 sm:grid-cols-[1.2fr_1fr_1fr_1fr_5rem_1.2fr_auto]">
-                  <legend className="sr-only">Dòng tiêu chuẩn {i + 1}</legend>
-                  <Field label="Thiết bị"><Input value={r.label} maxLength={100} onChange={(e) => upd({ label: e.target.value })} /></Field>
-                  <Field label="Band"><Input value={r.bands} placeholder="Mọi band" onChange={(e) => upd({ bands: e.target.value })} /></Field>
-                  <Field label="Loại tài sản SDP"><Input value={r.product_types} onChange={(e) => upd({ product_types: e.target.value })} /></Field>
-                  <Field label="Model chứa"><Input value={r.product_contains} maxLength={100} onChange={(e) => upd({ product_contains: e.target.value })} /></Field>
-                  <Field label="SL"><Input type="number" min={1} max={10} value={r.quantity} onChange={(e) => upd({ quantity: Number(e.target.value) })} /></Field>
-                  <Field label="Tên trong bảng giá"><Input value={r.catalog_name} maxLength={300} onChange={(e) => upd({ catalog_name: e.target.value })} /></Field>
-                  <div className="flex items-end">
-                    <Button size="icon" variant="ghost" aria-label={`Xoá dòng ${r.label || i + 1}`} onClick={() => setStd((cur) => cur.filter((_, j) => j !== i))}>
-                      <Trash2 className="size-4" aria-hidden="true" />
-                    </Button>
-                  </div>
-                </fieldset>
+          <AllocationMatrixEditor value={v.allocation_matrix} tiers={v.device_tiers} onChange={(m) => set("allocation_matrix", m)} />
+          <Field label="Bỏ qua onboard có ngày hiệu lực cũ hơn (ngày)" className="mt-4 w-64">
+            <Input type="number" min={0} max={365} value={v.allocation_past_days} onChange={num("allocation_past_days")} />
+          </Field>
+        </Panel>
+
+        <Panel
+          title="Cấu hình thiết bị tham chiếu"
+          description="Cấu hình tối thiểu cho từng loại máy; ô trong ma trận chọn theo tên ở đây. Đổi tên cấu hình thì ma trận đổi theo."
+        >
+          <TiersEditor
+            value={v.device_tiers}
+            used={new Set(v.allocation_matrix.cells.flat().filter((c) => c.on && c.tier).map((c) => c.tier))}
+            onChange={(next) => {
+              // A renamed tier keeps the matrix cells that use it.
+              const renamed = new Map(next.length !== v.device_tiers.length ? [] : v.device_tiers.map((t, i) => [t.name, next[i]?.name]).filter(([a, b]) => b !== undefined && a !== b) as [string, string][]);
+              setV((cur) =>
+                cur && {
+                  ...cur,
+                  device_tiers: next,
+                  allocation_matrix: renamed.size
+                    ? { ...cur.allocation_matrix, cells: cur.allocation_matrix.cells.map((r) => r.map((c) => (renamed.has(c.tier) ? { ...c, tier: renamed.get(c.tier)! } : c))) }
+                    : cur.allocation_matrix,
+                },
               );
-            })}
-            <div className="flex flex-wrap items-end gap-4">
-              <Button onClick={() => setStd((cur) => [...cur, { label: "", bands: "", product_types: "", product_contains: "", quantity: 1, catalog_name: "" }])}>
-                <Plus className="size-4" aria-hidden="true" />Thêm dòng
-              </Button>
-              <Field label="Bỏ qua onboard có ngày hiệu lực cũ hơn (ngày)" className="w-64">
-                <Input type="number" min={0} max={365} value={v.allocation_past_days} onChange={num("allocation_past_days")} />
-              </Field>
-            </div>
-          </div>
+            }}
+          />
         </Panel>
 
         <Panel title="Biên bản" description="Dùng khi lập Biên bản Bàn giao / Thu hồi.">
@@ -462,7 +456,7 @@ export function SettingsPage() {
 
         {serverError && <p role="alert" className="rounded-sm bg-failed-soft px-3 py-2 text-sm text-failed">{serverError}</p>}
         <div className="sticky bottom-0 -mx-4 sm:-mx-5 flex justify-end gap-2 border-t border-line bg-paper/95 px-5 py-3 backdrop-blur">
-          <Button onClick={() => { setV(d.values); setProductTypes(d.values.asset_product_types.join(", ")); setClosedStatuses(d.values.sdp_closed_statuses.join(", ")); setExcludedGroups(d.values.biostar_excluded_groups.join(", ")); setHrTo(d.values.hr_review_to.join(", ")); setHrCc(d.values.hr_review_cc.join(", ")); setStd(toRows(d.values.allocation_standard)); }}>Hoàn tác thay đổi</Button>
+          <Button onClick={() => { setV(d.values); setProductTypes(d.values.asset_product_types.join(", ")); setClosedStatuses(d.values.sdp_closed_statuses.join(", ")); setExcludedGroups(d.values.biostar_excluded_groups.join(", ")); setHrTo(d.values.hr_review_to.join(", ")); setHrCc(d.values.hr_review_cc.join(", ")); }}>Hoàn tác thay đổi</Button>
           <Button type="submit" variant="primary" loading={save.isPending}>Lưu cấu hình</Button>
         </div>
       </form>

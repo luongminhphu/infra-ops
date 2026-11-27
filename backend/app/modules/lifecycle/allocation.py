@@ -18,6 +18,7 @@ class Need:
     effective_date: date | None
     band: str | None
     picked: list[dict[str, Any]] = field(default_factory=list)  # assets already chosen on the job draft
+    department: str | None = None
 
 
 @dataclass
@@ -34,9 +35,25 @@ def norm_band(band: str | None) -> str:
     return fold(band or "").replace(" ", "")
 
 
-def items_for(band: str | None, standard: list[StandardItem]) -> list[StandardItem]:
-    b = norm_band(band)
-    return [i for i in standard if not i.bands or b in {norm_band(x) for x in i.bands}]
+def items_for(
+    band: str | None, standard: list[StandardItem], department: str | None = None
+) -> list[StandardItem]:
+    """The lines a band receives. Matrix rows limited to departments win over the general row of the same band
+    (e.g. "Band 4–6, IT" over "Band 1–6"); the "other bands" row only covers bands no other row lists."""
+    b, dept = norm_band(band), fold(department or "")
+
+    def band_ok(i: StandardItem) -> bool:
+        if i.bands:
+            return b in {norm_band(x) for x in i.bands}
+        return b not in {norm_band(x) for x in i.except_bands}
+
+    def dept_ok(i: StandardItem) -> bool:
+        return not i.departments or dept in {fold(d) for d in i.departments}
+
+    hits = [i for i in standard if band_ok(i) and dept_ok(i)]
+    if any(i.departments for i in hits):
+        return [i for i in hits if i.departments or not i.level]
+    return hits
 
 
 def matches(asset: dict[str, Any], item: StandardItem) -> bool:
@@ -71,7 +88,7 @@ def allocate(
             continue
         picked = list(n.picked)
         lines = []
-        for item in items_for(n.band, standard):
+        for item in items_for(n.band, standard, n.department):
             line = Line(item.label, item.quantity, item.catalog_name)
             for pool, dest in ((picked, line.picked), (free, line.reuse)):
                 for a in [a for a in pool if matches(a, item)][

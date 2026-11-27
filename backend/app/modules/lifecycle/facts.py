@@ -27,6 +27,11 @@ async def _row(session: AsyncSession, emp: str) -> tuple[Any, dict[str, Any] | N
 
 
 async def _band(session: AsyncSession, emp: str) -> tuple[str | None, str]:
+    value, source, _ = await _band_dept(session, emp)
+    return value, source
+
+
+async def _band_dept(session: AsyncSession, emp: str) -> tuple[str | None, str, str | None]:
     reqs = (
         await session.scalars(
             select(LifecycleRequest)
@@ -37,10 +42,12 @@ async def _band(session: AsyncSession, emp: str) -> tuple[str | None, str]:
     for r in reqs:
         band = r.band_override or (r.fields or {}).get("band")
         if band:
-            return str(band), f"Request RTR #{r.display_id or r.id}" + (
-                " (nhập tay)" if r.band_override else ""
+            return (
+                str(band),
+                f"Request RTR #{r.display_id or r.id}" + (" (nhập tay)" if r.band_override else ""),
+                (r.fields or {}).get("department"),
             )
-    return None, ""
+    return None, "", None
 
 
 async def band(session: AsyncSession, emp: str, _: str) -> FactValue | None:
@@ -76,11 +83,11 @@ async def assets_in_use(session: AsyncSession, emp: str, product_type: str) -> F
 
 async def standard_quantity(session: AsyncSession, emp: str, product_type: str) -> FactValue | None:
     """How many of that product type the allocation standard gives the employee's band."""
-    value, source = await _band(session, emp)
+    value, source, dept = await _band_dept(session, emp)
     if not value:
         return None
     settings = await load_settings(session)
-    lines = [i for i in items_for(value, settings.allocation_standard)
+    lines = [i for i in items_for(value, settings.allocation_standard, dept)
              if fold(product_type) in {fold(t) for t in i.product_types}]  # fmt: skip
     qty = sum(i.quantity for i in lines)
     return FactValue(qty, f"Tiêu chuẩn cấp phát band {value}: {qty} {product_type} ({source})")

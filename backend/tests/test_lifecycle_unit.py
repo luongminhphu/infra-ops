@@ -402,3 +402,76 @@ def test_old_retired_groups_setting_joins_the_excluded_groups() -> None:
     )
     assert s.biostar_excluded_groups == ["0.NGHIVIEC", "3. VENDOR"]
     assert "biostar_retired_groups" not in s.model_dump()
+
+
+def test_allocation_matrix_rows_columns_and_department_rows() -> None:
+    from app.modules.lifecycle.allocation import items_for
+    from app.modules.lifecycle.settings import (
+        AllocationMatrix,
+        LifecycleSettings,
+        MatrixCell,
+        MatrixDevice,
+        MatrixLevel,
+        StandardItem,
+        matrix_from_standard,
+    )
+
+    on = lambda q=1, tier="": MatrixCell(on=True, quantity=q, tier=tier)  # noqa: E731
+    off = MatrixCell()
+    devices = [MatrixDevice(label="PC", product_types=["Desktop"]), MatrixDevice(label="Laptop", product_types=["Laptop"]),
+               MatrixDevice(label="Màn hình", product_types=["Monitor"])]  # fmt: skip
+    levels = [
+        MatrixLevel(name="Band 1–6", bands=["1", "2", "3", "4", "5", "6"]),
+        MatrixLevel(name="Band 4–6 kỹ thuật", bands=["4", "5", "6"], departments=["IT", "DATA"]),
+        MatrixLevel(name="Band 7–9", bands=["7", "8", "9"]),
+        MatrixLevel(name="Intern / Vendor"),  # every band no general row lists
+    ]
+    cells = [
+        [on(tier="PC - Standard"), off, on(1)],
+        [on(tier="PC - Performance"), off, on(2)],
+        [on(tier="PC - Performance"), on(tier="Laptop - Standard"), on(2)],
+        [on(tier="PC - Standard"), off, on(1)],
+    ]
+    s = LifecycleSettings(allocation_matrix=AllocationMatrix(devices=devices, levels=levels, cells=cells))
+    std = s.allocation_standard
+    assert {i.label for i in std} >= {"PC - Standard", "PC - Performance", "Laptop - Standard", "Màn hình"}
+
+    def got(band: str, dept: str | None = None) -> list[tuple[str, int, str]]:
+        return sorted((i.product_types[0], i.quantity, i.tier) for i in items_for(band, std, dept))
+
+    assert got("3") == [("Desktop", 1, "PC - Standard"), ("Monitor", 1, "")]
+    assert got("5", "IT") == [("Desktop", 1, "PC - Performance"), ("Monitor", 2, "")]  # department row wins
+    assert got("5", "Kế toán") == [("Desktop", 1, "PC - Standard"), ("Monitor", 1, "")]
+    assert got("8") == [
+        ("Desktop", 1, "PC - Performance"),
+        ("Laptop", 1, "Laptop - Standard"),
+        ("Monitor", 2, ""),
+    ]
+    assert got("Intern") == [("Desktop", 1, "PC - Standard"), ("Monitor", 1, "")]  # the "other bands" row
+    # Bands can be titles, as HR writes them in the RTR (case, accents and spaces ignored).
+    titled = AllocationMatrix(
+        devices=devices[1:2],
+        levels=[MatrixLevel(name="Quản lý", bands=["Manager / Senior Manager", "Director", "C-level"])],
+        cells=[[on(tier="Laptop - Standard")]],
+    ).standard()
+    assert [i.label for i in items_for("manager/senior manager", titled)] == ["Laptop - Standard"]
+    assert [i.label for i in items_for("C-Level", titled)] == ["Laptop - Standard"]
+    assert items_for("Senior Manager", titled) == []
+
+    # Cells must name a tier from the reference table; one "other bands" row at most.
+    bad = [[MatrixCell(on=True, tier="PC - Ultra")]]
+    with pytest.raises(ValueError, match="PC - Ultra"):
+        LifecycleSettings(
+            allocation_matrix=AllocationMatrix(devices=devices[:1], levels=levels[:1], cells=bad)
+        )
+    with pytest.raises(ValueError, match="Chỉ một hàng"):
+        AllocationMatrix(devices=[], levels=[MatrixLevel(name="a"), MatrixLevel(name="b")], cells=[[], []])
+
+    # Hand-written lines become a first matrix that allocates the same.
+    legacy = [StandardItem(label="Laptop", bands=["B5", "B6"], product_types=["Laptop"]),
+              StandardItem(label="Màn hình", product_types=["Monitor"], quantity=2)]  # fmt: skip
+    derived = matrix_from_standard(legacy).standard()
+    for band in ("B5", "b 6", "B1"):
+        assert sorted((i.label, i.quantity) for i in items_for(band, derived)) == sorted(
+            (i.label, i.quantity) for i in items_for(band, legacy)
+        ), band
