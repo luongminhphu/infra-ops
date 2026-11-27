@@ -106,6 +106,44 @@ describe("DateInput helpers", () => {
     expect(formatTyped("01/1", false)).toBe("01/1");
     expect(toVnDate("2026-11-01")).toBe("01/11/2026");
   });
+
+  it("builds Monday-first month grids and shifts by day and month", async () => {
+    const { monthGrid, shiftDate } = await import("./date-input");
+    const nov = monthGrid(2026, 10); // November 2026 starts on a Sunday
+    expect(nov[0]).toBe("2026-10-26");
+    expect(nov[6]).toBe("2026-11-01");
+    expect(nov).toHaveLength(42);
+    expect(shiftDate("2026-11-30", 1)).toBe("2026-12-01");
+    expect(shiftDate("2026-01-31", 0, 1)).toBe("2026-02-28"); // clamped to the month's last day
+    expect(shiftDate("2026-03-01", -7)).toBe("2026-02-22");
+  });
+
+  it("picks a date on the calendar and still accepts typing", async () => {
+    const { DateInput } = await import("./date-input");
+    const seen: string[] = [];
+    function Host() {
+      const [v, setV] = useState("2026-11-01");
+      return (
+        <Field label="Từ ngày">
+          <DateInput value={v} onChange={(d) => { setV(d); seen.push(d); }} />
+        </Field>
+      );
+    }
+    const user = userEvent.setup();
+    render(<Host />);
+    await user.click(screen.getByRole("button", { name: "Chọn ngày trên lịch" }));
+    expect(screen.getByText("Tháng 11/2026")).toBeInTheDocument();
+    await user.click(screen.getByRole("gridcell", { name: /^15\/11\/2026/ }));
+    expect(screen.getByLabelText("Từ ngày")).toHaveValue("15/11/2026");
+    expect(screen.queryByRole("dialog", { name: "Chọn ngày" })).not.toBeInTheDocument();
+    // Keyboard: open, move a week down, pick with Enter.
+    await user.click(screen.getByRole("button", { name: "Chọn ngày trên lịch" }));
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(seen.at(-1)).toBe("2026-11-22");
+    await user.clear(screen.getByLabelText("Từ ngày"));
+    await user.type(screen.getByLabelText("Từ ngày"), "03122026");
+    expect(seen.at(-1)).toBe("2026-12-03");
+  });
 });
 
 

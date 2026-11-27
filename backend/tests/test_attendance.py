@@ -6,6 +6,7 @@ import io
 import json
 import uuid
 from datetime import date
+from urllib.parse import unquote
 
 import httpx
 import respx
@@ -72,7 +73,7 @@ async def test_export_reads_biostar_and_is_audited(admin, client, configured, re
                 "UserCollection": {
                     "total": "2",
                     "rows": [
-                        {"user_id": "003551", "name": "Nguyễn Văn An"},
+                        {"user_id": "1003551", "name": "Nguyễn Văn An"},  # BioStar Office: prefix 1
                         {"user_id": "009999", "name": "Khác"},
                     ],
                 }
@@ -81,7 +82,7 @@ async def test_export_reads_biostar_and_is_audited(admin, client, configured, re
     )
     search = respx_mock.post(f"{BS}/api/events/search").mock(
         return_value=httpx.Response(
-            200, json={"EventCollection": {"rows": [ev("003551", "2026-11-02T01:00:00.00Z")]}}
+            200, json={"EventCollection": {"rows": [ev("1003551", "2026-11-02T01:00:00.00Z")]}}
         )
     )
     body = {"employee_ids": "003551\n003475", "date_from": "2026-11-02", "date_to": "2026-11-03"}
@@ -97,9 +98,12 @@ async def test_export_reads_biostar_and_is_audited(admin, client, configured, re
         resp.headers["x-read-errors"],
         resp.headers["x-read-error-detail"],
     ) == ("1", "0", "")
+    # Matched on the last 5 digits; the result panel shows it per system.
+    detail = unquote(resp.headers["x-source-detail"])
+    assert "1/2 Mã NV khớp theo 5 số cuối (vd. 003551↔1003551), 1 lượt quẹt" in detail, detail
     assert (await admin.get("/api/lifecycle/attendance/status")).json() == {"ready": True, "message": None}
     query = json.loads(search.calls[0].request.content)["Query"]
-    assert query["conditions"][1]["values"] == ["003551"]  # only matched users are searched
+    assert query["conditions"][1]["values"] == ["1003551"]  # only matched users, by their BioStar ID
     assert query["conditions"][0]["values"] == ["2026-11-01T17:00:00.000Z", "2026-11-03T17:00:00.000Z"]
     wb = load_workbook(io.BytesIO(resp.content))
     daily = list(wb["Tổng hợp theo ngày"].iter_rows(min_row=2, values_only=True))

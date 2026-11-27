@@ -80,6 +80,8 @@ interface Result {
   notFoundIds: string[];
   readOk: number;
   readErrors: string[];
+  sources: string[]; // per BioStar: IDs matched on the last 5 digits and scans read
+  error?: string; // the export failed: nothing was downloaded
 }
 
 export function AttendancePage() {
@@ -168,12 +170,14 @@ export function AttendancePage() {
         notFoundIds: (h.get("X-Not-Found-Ids") ?? "").split(",").filter(Boolean),
         readOk: Number(h.get("X-Read-Ok") ?? 0),
         readErrors: detail ? detail.split("\n") : [],
+        sources: decodeURIComponent(h.get("X-Source-Detail") ?? "").split("\n").filter(Boolean),
       };
       setResult(r);
       if (r.readErrors.length) toast.warning("Đã xuất file, nhưng chưa đủ dữ liệu – xem kết quả.");
       else toast.success("Đã xuất báo cáo chấm công.");
     } catch (e) {
       toast.error(errorMessage(e));
+      setResult({ file: "", from, to, requested: count ?? 0, notFound: 0, notFoundIds: [], readOk: 0, readErrors: [], sources: [], error: errorMessage(e) });
     } finally {
       setBusy(false);
     }
@@ -331,6 +335,19 @@ function ResultPanel({ result, busy, onAgain }: { result: Result | null; busy: b
         </p>
       </Panel>
     );
+  if (result.error)
+    return (
+      <Panel
+        title="Kết quả lần xuất"
+        actions={<Button size="sm" onClick={onAgain} loading={busy}>{!busy && <Download className="size-4" aria-hidden="true" />}Thử lại</Button>}
+      >
+        <div role="alert" className="grid gap-2 text-sm">
+          <StatusBadge status="failed" label="Không xuất được" />
+          <p className="text-pretty">{result.error}</p>
+          <p className="text-muted text-pretty">Chưa có file nào được tải về. Kiểm tra kết nối BioStar ở Hệ thống › Kết nối hệ thống rồi thử lại.</p>
+        </div>
+      </Panel>
+    );
   const partial = result.readErrors.length > 0;
   const foundCount = result.requested - result.notFound;
   return (
@@ -351,6 +368,11 @@ function ResultPanel({ result, busy, onAgain }: { result: Result | null; busy: b
           <dt className="text-muted">BioStar đã đọc</dt>
           <dd className="tabular">{result.readOk} hệ thống{partial && `, ${result.readErrors.length} lỗi`}</dd>
         </dl>
+        {result.sources.length > 0 && (
+          <ul className="grid gap-1 rounded-md bg-surface-2 px-3 py-2" aria-label="Chi tiết từng hệ thống BioStar">
+            {result.sources.map((src) => <li key={src} className="text-pretty">{src}</li>)}
+          </ul>
+        )}
         {partial && (
           <div className="rounded-md border border-waiting bg-waiting-soft px-3 py-2">
             <p className="font-medium">File thiếu log của các hệ thống sau – đừng gửi HR như bản đầy đủ:</p>
