@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, BookOpen, ChevronRight, Search } from "lucide-react";
-import { api } from "@/core/api/client";
+import { api, ApiError } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { EmptyState, ErrorState, LoadingRows } from "@/core/ui/feedback";
 import { FROM_QUEUE, LEVEL, useNextActions } from "@/core/lib/nextActions";
@@ -24,6 +24,8 @@ export function PlaybookHome() {
   const hits = q.trim() ? guides.filter((g) => fold(`${g.title} ${g.category} ${g.description}`).includes(fold(q.trim()))) : guides;
   const groups = [...new Set(hits.map((g) => g.category || "Chung"))];
   const first = me?.display_name?.split(" ").at(-1);
+  // 404 on the list = the server runs without the playbook module (INFRAOPS_ENABLED_MODULES).
+  const off = list.error instanceof ApiError && list.error.status === 404;
   return (
     <div className="mx-auto max-w-5xl">
       <section aria-labelledby="home-title" className="pt-6 pb-8">
@@ -53,8 +55,19 @@ export function PlaybookHome() {
 
       <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_20rem] [&>*]:min-w-0">
         <section aria-label="Tình huống">
-          {list.isError && <ErrorState error={list.error} onRetry={() => list.refetch()} />}
-          {list.isLoading ? (
+          {off ? (
+            <div role="alert" className="flex items-start gap-3 rounded-sm border border-waiting/40 bg-waiting-soft p-3 text-sm">
+              <StatusBadge status="warning" label="Chưa bật" />
+              <p className="flex-1">
+                Máy chủ đang chạy mà không bật module Playbook.{" "}
+                {can("core.rbac.manage")
+                  ? <>Thêm <code className="font-mono">playbook</code> vào <code className="font-mono">INFRAOPS_ENABLED_MODULES</code> trong file <code className="font-mono">.env</code> (vd. <code className="font-mono">lifecycle,workload,playbook</code>) rồi chạy lại <code className="font-mono">docker compose up -d</code>.</>
+                  : "Báo Administrator bật module Playbook."}
+              </p>
+            </div>
+          ) : list.isError ? (
+            <ErrorState error={list.error} onRetry={() => list.refetch()} />
+          ) : list.isLoading ? (
             <LoadingRows rows={5} />
           ) : hits.length === 0 ? (
             <EmptyState icon={BookOpen} title={q ? "Chưa có Playbook cho tình huống này" : "Chưa có Playbook nào được xuất bản"}>

@@ -98,7 +98,7 @@ Mở `.env` (`sudo nano .env`) và điền:
 | `INFRAOPS_SIGNING_SECRET` | chuỗi hex vừa sinh (≥ 32 ký tự) |
 | `POSTGRES_PASSWORD` | chuỗi hex vừa sinh |
 | `INFRAOPS_AUTH_MODE` | `local` (tài khoản trong app) – chuyển sang `oidc` khi bật SSO Entra (mục 9.3) |
-| `INFRAOPS_ENABLED_MODULES` | `lifecycle,workload` |
+| `INFRAOPS_ENABLED_MODULES` | `lifecycle,workload,playbook` (thiếu `playbook` thì trang đầu Playbook báo lỗi 404) |
 | `INFRAOPS_HTTP_BIND` / `INFRAOPS_HTTPS_BIND` | `80` / `443` (mặc định). Chỉ khi dùng nginx riêng trên máy chủ (mục 8.2): `127.0.0.1:8080` / `127.0.0.1:8443` |
 
 > **Cất giữ master key ở nơi an toàn ngoài máy chủ** (két mật khẩu của phòng IT). Mất key = mất toàn bộ

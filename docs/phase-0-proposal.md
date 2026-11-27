@@ -1370,3 +1370,11 @@ Nguyên tắc (product owner): user quyền nào chỉ thấy nội dung và ch�
   này để hiện “Đã đề xuất”.
 - API chặn tạo trùng: đề xuất onboard cùng request + cùng thiết bị (không phân biệt hoa thường) khi bản cũ chưa bị từ
   chối → 409 `purchase_duplicate`, báo người lập bản cũ. Bị từ chối thì lập lại được.
+
+## 57. Logo trên thanh điều hướng, màu chủ đạo theo logo, Playbook chưa bật (27/11/2026)
+
+- Góc trái trên cùng hiện logo đã tải ở Hệ thống › Logo báo cáo (chưa có thì giữ biểu tượng app); đổi logo là đổi ngay.
+- Màu `primary` lấy theo xanh logo công ty: `#074B9B` (nền sáng, 8,4:1 với chữ trắng), `#79AEF0` (nền tối).
+- Lỗi 404 ở trang đầu Playbook: máy chủ chạy với `INFRAOPS_ENABLED_MODULES` thiếu `playbook` (hướng dẫn cài Ubuntu và
+  Helm values cũ ghi `lifecycle,workload`). Đã sửa hai chỗ đó; trang đầu báo rõ “module Playbook chưa bật” (Administrator
+  thấy cách sửa) thay vì lỗi 404 chung.

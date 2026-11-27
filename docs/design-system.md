@@ -7,14 +7,14 @@ Single reference for every module, current and future. Tokens live in
 
 The app opens on Infra Playbook ("Bạn cần xử lý việc gì?"); module pages are *tools* opened from playbook steps or
 from Công cụ. The page is white (`paper` = `surface`), structure is drawn with hairlines (`line`) rather than boxes,
-shadows are near-invisible, and cobalt `primary` is the only accent – reserved for the main action and links. Status
+shadows are near-invisible, and logo-blue `primary` is the only accent – reserved for the main action and links. Status
 colours appear only when something needs attention (always with an icon and a label). Lists are rows with
 dividers, not grids of same-size cards.
 
 ## Previous direction: "Phòng điều khiển" (control room) – Phase 7
 
 Chosen by the product owner from two directions (mockup `docs/design/redesign-mockup.html`, direction B).
-Cool slate neutrals, one cobalt accent, an **icon rail** of modules and a **sub-navigation** for the pages of
+Cool slate neutrals, one logo-blue accent (the company logo colour), an **icon rail** of modules and a **sub-navigation** for the pages of
 the active module, KPI cards with a soft shadow, pill status badges. The **System Rail**
 (`ui/system-rail.tsx`) keeps the fixed system order (SDP · Tài sản · BioStar · Biên bản) wherever a person's
 state across systems is shown. Still quiet: no gradients, no card-in-card, colour only for meaning.
@@ -34,13 +34,13 @@ All colours use `light-dark()`; never hard-code hex in components – use Tailwi
 | `rail` | #FAFBFC | #0E1626 | Module rail |
 | `line` / `line-strong` | #E4E8EE / #C2CCDA | #233049 / #33425F | Dividers (decorative) |
 | `control-border` | #74819A | #6F7D97 | Form control borders (≥ 3:1) |
-| `primary` (cobalt) | #2F5BD3 | #7C9DFF | Primary buttons, links, active nav |
+| `primary` (logo blue) | #074B9B | #79AEF0 | Primary buttons, links, active nav |
 | `focus` | #2F5BD3 | #A1B8FF | Focus ring (2px outline, offset 2) |
 | `shadow-card` | slate 7 % | none | Cards and panels (light theme only) |
 
 Status colours (`done` #166534 / #4ADE80, `progress` #1D4ED8 / #93B4FF, `waiting` #92400E / #FBBF24,
 `failed` #B91C1C / #F87171, `skipped`, `mismatch`) each have a `-soft` background; *In Progress* is a deeper
-blue than the cobalt primary and always carries its spinner icon and label, so a button never reads as a status.
+blue than the logo-blue primary and always carries its spinner icon and label, so a button never reads as a status.
 
 ### Charts
 
