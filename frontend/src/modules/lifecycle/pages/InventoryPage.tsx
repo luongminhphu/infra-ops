@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Boxes, CheckCircle2, PackageOpen, PackageSearch, Pencil, ShoppingCart, Wand2 } from "lucide-react";
+import { Boxes, CheckCircle2, Hourglass, PackageOpen, PackageSearch, Pencil, ShoppingCart, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
@@ -29,6 +29,7 @@ interface Line {
   picked: Asset[];
   reuse: Asset[];
   buy: number;
+  wait: number; // reuse-only line: waiting for a returned device, never bought
 }
 export interface PlanRequest {
   id: string;
@@ -43,7 +44,7 @@ export interface PlanRequest {
   level: string | null; // allocation-matrix row (cấp bậc), from the job title
   level_reason: string;
   job: { id: string; status: string; version: number } | null;
-  status: "no_band" | "buy" | "covered";
+  status: "no_band" | "buy" | "wait" | "covered";
   lines: Line[];
 }
 export interface Allocation {
@@ -63,6 +64,7 @@ export interface PurchaseLite {
 const REQ_STATUS: Record<PlanRequest["status"], { status: Status; label: string }> = {
   covered: { status: "done", label: "Đủ thiết bị" },
   buy: { status: "warning", label: "Thiếu thiết bị" },
+  wait: { status: "waiting", label: "Chờ máy cũ" },
   no_band: { status: "waiting", label: "Chưa có band" },
 };
 
@@ -78,6 +80,7 @@ export interface StockLine {
   planned: number; // in stock and allocated to an upcoming hire (chosen on a job + suggested)
   chosen: number;
   to_buy: number;
+  waiting: number; // reuse-only lines waiting for a returned device
   items: StockItem[];
   standard: boolean; // false: In Store device type outside the allocation standard (PC, UPS, …)
 }
@@ -234,6 +237,11 @@ export function RequestCard({ r, purchases, bands, matrix = false }: { r: PlanRe
                   ))}
                   {l.buy > 0 && (
                     <span className="inline-flex items-center gap-1 rounded-sm bg-waiting-soft px-1.5 py-0.5 text-waiting"><ShoppingCart className="size-3.5" aria-hidden="true" />Thiếu {l.buy}</span>
+                  )}
+                  {l.wait > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-sm bg-waiting-soft px-1.5 py-0.5 text-waiting" title="Chỉ cấp máy thu hồi còn trong kho – không đề xuất mua mới">
+                      <Hourglass className="size-3.5" aria-hidden="true" />Chờ máy cũ {l.wait}
+                    </span>
                   )}
                 </span>
                 {l.buy > 0 &&

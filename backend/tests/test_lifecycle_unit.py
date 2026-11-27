@@ -481,3 +481,37 @@ def test_allocation_matrix_rows_by_job_title() -> None:
         assert sorted((i.label, i.quantity) for i in got) == sorted(
             (i.label, i.quantity) for i in items_for(band, legacy)
         ), band
+
+
+def test_reuse_only_line_takes_returned_devices_and_waits() -> None:
+    from datetime import date
+
+    from app.modules.lifecycle.allocation import Need, allocate, returned_first
+    from app.modules.lifecycle.settings import (
+        AllocationMatrix,
+        LifecycleSettings,
+        MatrixCell,
+        MatrixDevice,
+        MatrixLevel,
+    )
+
+    m = AllocationMatrix(
+        devices=[MatrixDevice(label="Laptop", product_types=["Laptop"])],
+        levels=[MatrixLevel(name="Kỹ thuật", departments=["IT"])],
+        cells=[[MatrixCell(on=True, reuse_only=True)]],
+    )
+    s = LifecycleSettings(allocation_matrix=m)
+    items, level, _ = s.items_for_employee("Kỹ sư", None, "IT")
+    assert level == "Kỹ thuật" and [i.label for i in items] == ["Laptop (máy cũ)"]
+    stock = returned_first(
+        [{"id": "new1", "product_type": "Laptop"}, {"id": "old1", "product_type": "Laptop"}], {"old1"}
+    )
+    needs = [
+        Need("r1", date(2026, 12, 1), None, items=items),
+        Need("r2", date(2026, 12, 2), None, items=items),
+    ]
+    plan = allocate(needs, s.allocation_standard, stock)
+    [first], [second] = plan["r1"], plan["r2"]
+    assert [a["id"] for a in first.reuse] == ["old1"] and first.buy == first.wait == 0
+    # Only a new laptop is left: never offered, never bought – the second hire waits for a returned one.
+    assert second.reuse == [] and second.buy == 0 and second.wait == 1

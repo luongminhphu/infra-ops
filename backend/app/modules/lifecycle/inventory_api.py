@@ -50,6 +50,7 @@ def _line(line: Line) -> dict[str, Any]:
         "picked": [_asset(a) for a in line.picked],
         "reuse": [_asset(a) for a in line.reuse],
         "buy": line.buy,
+        "wait": line.wait,
     }
 
 
@@ -149,6 +150,7 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
                 "planned": sum(a["id"] in in_stock for ln in lines for a in [*ln.picked, *ln.reuse]),
                 "chosen": sum(a["id"] in in_stock for ln in lines for a in ln.picked),
                 "to_buy": sum(ln.buy for ln in lines),
+                "waiting": sum(ln.wait for ln in lines),  # reuse-only lines with no returned device free
                 # Stock detail: every matching In Store asset and who it is set aside for.
                 "items": sorted(
                     (
@@ -178,6 +180,7 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
                 "planned": 0,
                 "chosen": 0,
                 "to_buy": 0,
+                "waiting": 0,
                 "items": sorted(
                     ({**_asset(a), "serial": a.get("serial"), "reserved_for": None} for a in found),
                     key=lambda x: ((x["product"] or ""), (x["name"] or "")),
@@ -206,7 +209,11 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
                 "job": {"id": str(job.id), "status": job.status, "version": job.version} if job else None,
                 "status": "no_band"
                 if (levels[r.id][0] is None if settings.allocation_matrix else band is None)
-                else ("buy" if any(ln.buy for ln in lines) else "covered"),
+                else (
+                    "buy"
+                    if any(ln.buy for ln in lines)
+                    else ("wait" if any(ln.wait for ln in lines) else "covered")
+                ),
                 "lines": [_line(ln) for ln in lines],
             }
         )

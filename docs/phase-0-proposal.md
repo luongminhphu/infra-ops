@@ -1429,3 +1429,7 @@ Nguyên tắc (product owner): user quyền nào chỉ thấy nội dung và ch�
 - Mẫu Playbook: Onboard bỏ bước kiểm tra “Band từ B5” (luôn thiếu dữ liệu khi HR không ghi band) – thay bằng bước chọn
   license theo cấp bậc; các mẫu khác ghi “tiêu chuẩn cấp phát” thay cho “tiêu chuẩn band”. Bảng “Loại cấp phát” trong
   file (Onboarding / Adhoc / Utilization / Exception) chưa đưa vào app.
+- **Chỉ máy cũ** (ô ma trận, cột có cấu hình PC / Laptop): dòng đó chỉ lấy máy **thu hồi** còn trong kho; không có thì
+  “Chờ máy cũ” – không tính vào số Thiếu, không đề xuất mua (dòng mang hậu tố “(máy cũ)”). Trang Kho: nhãn “Chờ máy cũ
+  N”, thẻ thiết bị ghi số người chờ; Job wizard nhắc “Thêm từ kho” khi có máy thu hồi. Mẫu ma trận: Nhân viên kỹ thuật
+  được Laptop chỉ máy cũ.

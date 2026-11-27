@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LayoutGrid, Pencil, Plus, Trash2 } from "lucide-react";
+import { LayoutGrid, Pencil, Plus, Recycle, Trash2 } from "lucide-react";
 import { Button } from "@/core/ui/button";
 import { Dialog } from "@/core/ui/dialog";
 import { Field, Input, Select } from "@/core/ui/field";
@@ -31,6 +31,7 @@ export interface MatrixCell {
   on: boolean;
   quantity: number;
   tier: string;
+  reuse_only: boolean; // tận dụng máy cũ trong kho; none free = wait, never buy
 }
 export interface Matrix {
   devices: MatrixDevice[];
@@ -40,7 +41,7 @@ export interface Matrix {
 
 const list = (text: string) => text.split(",").map((s) => s.trim()).filter(Boolean);
 const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/\s+/g, "");
-const emptyCell = (): MatrixCell => ({ on: false, quantity: 1, tier: "" });
+const emptyCell = (): MatrixCell => ({ on: false, quantity: 1, tier: "", reuse_only: false });
 
 /** Tiers offered in a column: those named after the device (e.g. "PC - Standard" under PC); none for a monitor. */
 export function tiersFor(device: MatrixDevice, tiers: DeviceTier[]): DeviceTier[] {
@@ -58,7 +59,7 @@ export function overlappingKeys(levels: MatrixLevel[]): string[] {
 /** The row with no title, band or department: everyone no other row takes. */
 export const isPlain = (lv: MatrixLevel) => !lv.titles.length && !lv.bands.length && !lv.departments.length;
 
-const on = (tier = "", quantity = 1): MatrixCell => ({ on: true, quantity, tier });
+const on = (tier = "", quantity = 1, reuse_only = false): MatrixCell => ({ on: true, quantity, tier, reuse_only });
 const no = emptyCell;
 const device = (label: string, product_types: string[], note = ""): MatrixDevice => ({ label, product_types, product_contains: "", catalog_name: "", note });
 
@@ -85,7 +86,7 @@ export const PRESET: Matrix = {
   cells: [
     [on("PC - Standard"), no(), on(), on(), on(), on(), on(), no()],
     [on("PC - Standard"), no(), on(), on(), on(), on(), on(), no()],
-    [on("PC - Performance"), no(), on("", 2), on(), on(), on(), on(), no()],
+    [on("PC - Performance"), on("", 1, true), on("", 2), on(), on(), on(), on(), no()], // laptop: reuse a returned one
     [on("PC - Performance"), on("Laptop - Standard"), on("", 2), on(), on(), on(), on(), no()],
     [on("PC - Performance"), on("Laptop - Standard"), on("", 2), on(), on(), on(), on(), no()],
   ],
@@ -192,6 +193,19 @@ export function AllocationMatrixEditor({ value, tiers, onChange }: { value: Matr
                           {options.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
                           {cell.tier && !options.some((t) => t.name === cell.tier) && <option value={cell.tier}>{cell.tier}</option>}
                         </Select>
+                      )}
+                      {cell.on && (options.length > 0 || cell.reuse_only) && (
+                        <label className="mt-1 flex cursor-pointer items-center gap-1.5 text-xs" title="Chỉ lấy máy thu hồi còn trong kho; kho không có thì chờ, không đề xuất mua mới.">
+                          <input
+                            type="checkbox"
+                            className="size-3.5 accent-primary"
+                            checked={cell.reuse_only}
+                            onChange={(e) => setCell(r, c, { reuse_only: e.target.checked })}
+                            aria-label={`${lv.name}: ${d.label} chỉ tận dụng máy cũ trong kho, không mua mới`}
+                          />
+                          <Recycle className="size-3.5 text-muted" aria-hidden="true" />
+                          <span className={cell.reuse_only ? "font-medium" : "text-muted"}>Chỉ máy cũ</span>
+                        </label>
                       )}
                     </td>
                   );

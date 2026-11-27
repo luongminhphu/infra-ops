@@ -66,6 +66,8 @@ class StandardItem(BaseModel):
     # Derived from the allocation matrix (empty for hand-written lines): the matrix row and tier it comes from.
     level: str = Field("", max_length=32)
     tier: str = Field("", max_length=100)
+    # Only returned (thu hồi) devices in stock: never proposed for purchase; with none in stock the line waits.
+    reuse_only: bool = False
 
 
 class DeviceTier(BaseModel):
@@ -110,6 +112,7 @@ class MatrixCell(BaseModel):
     on: bool = False
     quantity: int = Field(1, ge=1, le=10)
     tier: str = Field("", max_length=100)
+    reuse_only: bool = False  # tận dụng máy cũ trong kho: no purchase, wait when none is free
 
 
 def fold(text: str) -> str:
@@ -191,10 +194,12 @@ class AllocationMatrix(BaseModel):
         for lv, row in zip(self.levels, self.cells, strict=True):
             for dev, cell in zip(self.devices, row, strict=True):
                 if cell.on:
+                    label = cell.tier or dev.label
                     out.append(StandardItem(
-                        label=cell.tier or dev.label, bands=list(lv.bands), product_types=dev.product_types,
-                        product_contains=dev.product_contains, quantity=cell.quantity, catalog_name=dev.catalog_name,
-                        level=lv.name, tier=cell.tier,
+                        label=f"{label} (máy cũ)" if cell.reuse_only else label, bands=list(lv.bands),
+                        product_types=dev.product_types, product_contains=dev.product_contains,
+                        quantity=cell.quantity, catalog_name=dev.catalog_name, level=lv.name, tier=cell.tier,
+                        reuse_only=cell.reuse_only,
                     ))  # fmt: skip
         return out
 
