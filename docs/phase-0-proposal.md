@@ -1390,3 +1390,14 @@ Nguyên tắc (product owner): user quyền nào chỉ thấy nội dung và ch�
   - **Thu hồi thiết bị**: lý do (nghỉ việc chuyển sang Job offboard) → sao lưu dữ liệu / kiểm tra dư tiêu chuẩn → nhận
     lại, tình trạng Tốt / Hỏng / Thiếu phụ kiện → kho → biên bản thu hồi.
 - Trình soạn Playbook: cảnh báo “bước không nối với sơ đồ” ghi tên bước và có nút xoá các bước đó.
+
+## 59. Soạn Playbook: xoá bước giữa giữ các bước sau, kéo thả trên sơ đồ (27/11/2026)
+
+- **Xoá và nối thẳng**: xoá một bước có đúng một bước tiếp theo – mọi nhánh trỏ tới nó chuyển sang bước tiếp theo
+  (giữ nhãn nhánh), các bước phía sau giữ nguyên. Vẫn có “Xoá cả nhánh”. Bước rẽ nhiều nhánh không nối thẳng được
+  (không biết bước trước nên đi nhánh nào) – hộp thoại hướng dẫn đổi “Tới bước” trước.
+- **Kéo thả**: kéo một bước thả lên bước khác → bước đó cùng các bước phía sau chuyển sang nối sau bước được thả lên
+  (bỏ nhánh từ bước cha đang vẽ; các nhánh “Đi tới” khác giữ nguyên). Từ chối: bước gốc, thả vào chính các bước phía
+  sau nó, bước kết luận, bước kiểm tra đã đủ Đúng/Sai. Bàn phím: dùng “Tới bước” trong khung bên phải.
+- “Chạy với Mã NV” chỉ đọc dữ liệu đã đồng bộ (đối soát gần nhất, request RTR) để quyết định bước kiểm tra – không ghi
+  vào SDP / BioStar / AD, không tạo Job (dry run).

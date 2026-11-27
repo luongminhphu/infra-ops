@@ -1,4 +1,4 @@
-import type { Tree } from "./api";
+import { drawnParents, type Tree } from "./api";
 
 export const BOX_W = 200;
 export const BOX_H = 60;
@@ -27,17 +27,7 @@ export interface Link {
  * the middle of their children.
  */
 export function layoutTree(tree: Tree): { boxes: Box[]; links: Link[]; width: number; height: number } {
-  const parent = new Map<string, string>([[tree.root, ""]]);
-  const queue = [tree.root];
-  while (queue.length) {
-    const id = queue.shift()!;
-    for (const b of tree.nodes[id]?.children ?? []) {
-      if (!parent.has(b.to) && tree.nodes[b.to]) {
-        parent.set(b.to, id);
-        queue.push(b.to);
-      }
-    }
-  }
+  const parent = drawnParents(tree);
   const boxes: Box[] = [];
   const links: Link[] = [];
   let row = 0;

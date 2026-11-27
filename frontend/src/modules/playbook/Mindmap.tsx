@@ -1,15 +1,36 @@
-import { useMemo } from "react";
+import { useMemo, useState, type DragEvent } from "react";
 import { CircleCheck, CornerDownRight, Flag, Split } from "lucide-react";
 import { cn } from "@/core/lib/cn";
-import { OUTCOME, type Tree } from "./api";
+import { moveStep, OUTCOME, type Tree } from "./api";
 import { BOX_H, BOX_W, layoutTree } from "./layout";
 
 /**
  * The guide as a left-to-right mind map. Every step is a button (Tab order follows the map); a branch that goes
- * back to a step drawn elsewhere is a small "→ step" box that selects that step.
+ * back to a step drawn elsewhere is a small "→ step" box that selects that step. With `onMove` (the editor) a step can
+ * be dragged onto another to move it, with the steps after it, behind that step (mouse; the form's "Tới bước" is the
+ * keyboard way).
  */
-export function Mindmap({ tree, selected, onSelect, label, path }: { tree: Tree; selected: string | null; onSelect: (id: string) => void; label: string; path?: Set<string> }) {
+export function Mindmap({ tree, selected, onSelect, label, path, onMove }: { tree: Tree; selected: string | null; onSelect: (id: string) => void; label: string; path?: Set<string>; onMove?: (id: string, target: string) => void }) {
   const { boxes, links, width, height } = useMemo(() => layoutTree(tree), [tree]);
+  const [drag, setDrag] = useState<string | null>(null);
+  const [over, setOver] = useState<{ id: string; ok: boolean } | null>(null);
+  const dnd = (id: string) =>
+    onMove
+      ? {
+          draggable: id !== tree.root,
+          onDragStart: (e: DragEvent) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", id); setDrag(id); },
+          onDragEnd: () => { setDrag(null); setOver(null); },
+          onDragOver: (e: DragEvent) => {
+            if (!drag || drag === id) return;
+            e.preventDefault();
+            const ok = typeof moveStep(tree, drag, id) !== "string";
+            e.dataTransfer.dropEffect = ok ? "move" : "none";
+            if (over?.id !== id || over.ok !== ok) setOver({ id, ok });
+          },
+          onDragLeave: () => setOver((o) => (o?.id === id ? null : o)),
+          onDrop: (e: DragEvent) => { e.preventDefault(); if (drag && drag !== id) onMove(drag, id); setDrag(null); setOver(null); },
+        }
+      : {};
   const pad = 16;
   return (
     <div className="overflow-auto rounded-md border border-line bg-surface-2" tabIndex={-1}>
@@ -57,12 +78,16 @@ export function Mindmap({ tree, selected, onSelect, label, path }: { tree: Tree;
               type="button"
               aria-pressed={on}
               onClick={() => onSelect(b.id)}
+              {...dnd(b.id)}
               className={cn(
                 "absolute flex items-start gap-1.5 rounded-sm border px-2.5 py-1.5 text-left text-sm leading-snug transition-colors",
                 kind === "check" && "border-dashed",
                 tone === "done" && "bg-done-soft", tone === "warning" && "bg-waiting-soft", tone === "failed" && "bg-failed-soft",
                 !tone && "bg-surface",
                 on ? "border-primary ring-2 ring-primary/30" : walked ? "border-primary" : "border-line-strong hover:border-primary",
+                onMove && b.id !== tree.root && "cursor-grab",
+                drag === b.id && "opacity-50",
+                over?.id === b.id && (over.ok ? "border-primary bg-primary-soft ring-2 ring-primary/40" : "border-failed ring-2 ring-failed/30"),
                 path && path.size > 0 && !walked && "opacity-55",
                 b.id === tree.root && "font-semibold",
               )}
