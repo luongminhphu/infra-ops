@@ -121,14 +121,44 @@ async def auto_create_jobs(session: AsyncSession) -> int:
     existing = set(
         (await session.scalars(select(Job.idempotency_key).where(Job.module_id == MODULE_ID))).all()
     )
-    closed = {s.lower() for s in settings.sdp_closed_statuses}
     created = 0
     for r in reqs:
-        if r.parse_errors or (r.status or "").lower() in closed or f"lifecycle:{r.kind}:{r.id}" in existing:
+        if r.parse_errors or settings.is_closed(r.status) or f"lifecycle:{r.kind}:{r.id}" in existing:
             continue
         _, new = await create_job_for_request(session, Actor(None, "system (đồng bộ)"), r)
         created += int(new)
     return created
+
+
+async def cancel_closed_drafts(session: AsyncSession) -> int:
+    """Called after a sync: a draft Job (never started, nothing written anywhere) whose RTR request is now closed on
+    SDP leaves the queues – cancelled with the reason and audited, so it can be reopened if the request reopens."""
+    settings = await load_module_settings(session)
+    drafts = (
+        await session.scalars(
+            select(Job).where(
+                Job.module_id == MODULE_ID, Job.status == "draft", Job.external_ref.is_not(None)
+            )
+        )
+    ).all()
+    reqs = {
+        r.id: r
+        for r in (
+            await session.scalars(
+                select(LifecycleRequest).where(LifecycleRequest.id.in_([j.external_ref for j in drafts]))
+            )
+        ).all()
+    }
+    cancelled = 0
+    for job in drafts:
+        req = reqs.get(job.external_ref or "")
+        if req is not None and settings.is_closed(req.status):
+            reason = (
+                f"Request #{req.display_id or req.id} đã đóng trên SDP (“{req.status}”) – Job nháp tự huỷ."
+            )
+            await engine.cancel_job(session, Actor(None, "system (đồng bộ)"), job, reason)
+            cancelled += 1
+    return cancelled
 
 
 class CreateIn(BaseModel):

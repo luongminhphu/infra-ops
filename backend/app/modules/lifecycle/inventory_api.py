@@ -84,7 +84,6 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
     stock = returned_first(stock, set((await session.scalars(select(AssetReturn.asset_id))).all()))
 
     since = today_vn() - timedelta(days=settings.allocation_past_days)
-    closed = {s.lower() for s in settings.sdp_closed_statuses}
     reqs = [
         r
         for r in (
@@ -94,7 +93,7 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
                 .order_by(LifecycleRequest.effective_date)
             )
         ).all()
-        if (r.status or "").lower() not in closed
+        if not settings.is_closed(r.status)
     ]
     jobs: dict[str, Job] = {}
     if reqs:

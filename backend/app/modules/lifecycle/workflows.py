@@ -84,7 +84,7 @@ async def check_request(ctx: StepContext) -> StepOutcome:
         return StepOutcome("failed", f"Không đọc được request #{rid} trên SDP: {_err(exc)}")
     status = ((req.get("status") or {}).get("name")) or ""
     out = {"status": status, "subject": req.get("subject")}
-    if status in s.sdp_closed_statuses:
+    if s.is_closed(status):
         return StepOutcome(
             "failed",
             f"Request #{ctx.params.get('request_display_id') or rid} đang ở trạng thái “{status}” trên SDP. "

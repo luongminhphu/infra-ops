@@ -689,6 +689,42 @@ async def test_auto_create_jobs_and_list(admin) -> None:  # type: ignore[no-unty
     assert (await admin.get("/api/core/jobs", params={"q": "004445"})).json()["total"] == 0
 
 
+async def test_requests_closed_in_vietnamese_drop_their_draft_jobs(admin) -> None:  # type: ignore[no-untyped-def]
+    """A Vietnamese SDP reports "Đã đóng" / "Đã xử lý": no draft is created for it, and a draft made while the
+    request was open is cancelled (with its reason) once the request closes – it leaves the team queue."""
+    from app.modules.lifecycle.jobs_api import auto_create_jobs, cancel_closed_drafts
+    from app.modules.lifecycle.settings import LifecycleSettings
+
+    s0 = LifecycleSettings()
+    assert s0.is_closed("Đã đóng") and s0.is_closed("da xu ly") and s0.is_closed("Closed")
+    assert not s0.is_closed("Đang mở") and not s0.is_closed(None)
+    old = LifecycleSettings(sdp_closed_statuses=["Closed", "Resolved", "Cancelled", "Canceled"])
+    assert old.is_closed("Đã đóng")  # the old English-only default is upgraded
+
+    async with get_sessionmaker()() as s:
+        for rid, emp, status in (("9479", "004450", "Đang mở"), ("9478", "004451", "Đã xử lý")):
+            s.add(LifecycleRequest(id=rid, display_id=f"7{rid[1:]}", subject="x", employee_id=emp, full_name="Lê E",
+                                   kind="offboard", status=status, effective_date=date(2026, 10, 1), fields={},
+                                   parse_errors=[], description_text=""))  # fmt: skip
+        await s.commit()
+        await auto_create_jobs(s)
+        await s.commit()
+    assert (await admin.get("/api/core/jobs", params={"q": "004451"})).json()[
+        "total"
+    ] == 0  # closed: no draft
+    job = (await admin.get("/api/core/jobs", params={"q": "004450"})).json()["items"][0]
+    assert job["status"] == "draft"
+
+    async with get_sessionmaker()() as s:  # HR / IT closed it on SDP; the next sync reads "Đã đóng"
+        (await s.get(LifecycleRequest, "9479")).status = "Đã đóng"  # type: ignore[union-attr]
+        await s.commit()
+        assert await cancel_closed_drafts(s) >= 1
+        await s.commit()
+        assert await cancel_closed_drafts(s) == 0  # idempotent
+    got = (await admin.get(f"/api/core/jobs/{job['id']}")).json()
+    assert got["status"] == "cancelled" and "đã đóng trên SDP" in got["close_reason"]
+
+
 async def test_transfer_request_gets_a_manual_group_job(admin) -> None:  # type: ignore[no-untyped-def]
     """RTR "Thay đổi cấp trên trực tiếp" / "Thuyên chuyển": a job with verified manual AD group steps."""
     from app.modules.lifecycle.jobs_api import auto_create_jobs

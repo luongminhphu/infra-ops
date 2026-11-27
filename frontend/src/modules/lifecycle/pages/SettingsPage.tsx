@@ -348,7 +348,7 @@ export function SettingsPage() {
               <Field label="Trạng thái request khi đóng Job" hint="Tên trạng thái trên SDP, ví dụ Resolved hoặc Closed.">
                 <Input value={v.sdp_close_status} onChange={(e) => set("sdp_close_status", e.target.value)} />
               </Field>
-              <Field label="Trạng thái được coi là đã đóng" hint="Cách nhau bằng dấu phẩy. Job dừng nếu request đang ở các trạng thái này.">
+              <Field label="Trạng thái được coi là đã đóng" hint="Đúng như SDP hiển thị (SDP tiếng Việt: Đã đóng, Đã xử lý…), cách nhau dấu phẩy, không phân biệt hoa thường / dấu. Request ở các trạng thái này: không tạo Job nháp, Job nháp có sẵn tự huỷ khi đồng bộ, Job đang chạy dừng ở bước kiểm tra request.">
                 <Input value={closedStatuses} onChange={(e) => setClosedStatuses(e.target.value)} />
               </Field>
             </div>
