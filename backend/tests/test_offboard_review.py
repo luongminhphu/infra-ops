@@ -24,10 +24,15 @@ def test_conclusion_and_email_text() -> None:
     )  # type: ignore[arg-type]
     assert done.done and done.conclusion == "Đã thu hồi quyền truy cập và tài sản"
     assert todo.conclusion == "Cần xử lý: Job offboard chưa hoàn tất, còn 2 tài sản, BioStar còn hoạt động"
+    # HR sees only what they can check: no Job / BioStar jargon, the open items in plain words.
+    assert done.hr_status == "Đã thu hồi"
+    assert todo.hr_status == "Đang xử lý (còn 2 tài sản, thẻ / vân tay ra vào còn hiệu lực)"
     subject, body, html = render_email([done, todo], date(2026, 10, 1), "An")
-    assert subject == "[ISO 27001] Rà soát nhân sự nghỉ việc tháng 10/2026"
-    assert "từ 01/10/2026 đến 31/10/2026" in body and "Còn 1 trường hợp IT đang xử lý." in body
-    assert "<table" in html and "&lt;" not in "Phạm Thị Bình"
+    assert subject == "[ISO 27001] Xác nhận danh sách nhân sự nghỉ việc tháng 10/2026"
+    assert "Tình trạng: 1 đã thu hồi quyền truy cập và tài sản, 1 đang xử lý." in body
+    assert "Cả 1 trường hợp IT đang xử lý." in render_email([todo], date(2026, 10, 1), "An")[1]
+    assert "Request ITSM" in html and "Job offboard" not in html and "BioStar" not in html
+    assert "<table" in html and "Phạm Thị Bình" in html
 
 
 async def test_review_lists_month_offboards_and_drafts_the_email(admin) -> None:  # type: ignore[no-untyped-def]
@@ -54,12 +59,18 @@ async def test_review_lists_month_offboards_and_drafts_the_email(admin) -> None:
         assert await next_action(s, None)  # reminder until the draft is downloaded
     resp = await admin.get("/api/lifecycle/offboard-review/export", params={"month": f"{m:%Y-%m}"})
     assert resp.status_code == 200 and resp.headers["content-type"].startswith("message/rfc822")
+    # Outlook-safe: CRLF lines no longer than 998 bytes, bodies base64 (no quoted-printable "=C3" debris).
+    assert b"\r\n" in resp.content and all(len(line) <= 998 for line in resp.content.split(b"\r\n"))
+    assert b"quoted-printable" not in resp.content
     msg = email.message_from_bytes(resp.content, policy=policy.default)
     assert msg["To"] == "hr@congty.local" and msg["X-Unsent"] == "1"
+    html = msg.get_body(("html",)).get_content()
+    assert "Kính gửi phòng Nhân sự," in html and "NV 777001" in html and "Đang xử lý" in html
     assert f"tháng {m:%m/%Y}" in msg["Subject"]
     att = next(p for p in msg.iter_attachments())
     ws = load_workbook(io.BytesIO(att.get_content())).active
-    assert ws is not None and ws["B2"].value == "777001" and ws["K1"].value == "HR xác nhận"
+    assert ws is not None and ws["B2"].value == "777001" and ws["F1"].value == "Request ITSM"
+    assert ws["I1"].value == "HR xác nhận (Đúng / Sai)" and ws["G2"].value == "Đang xử lý"
     async with get_sessionmaker()() as s:
         assert await next_action(s, None) == []
 
