@@ -1401,3 +1401,7 @@ Nguyên tắc (product owner): user quyền nào chỉ thấy nội dung và ch�
   sau nó, bước kết luận, bước kiểm tra đã đủ Đúng/Sai. Bàn phím: dùng “Tới bước” trong khung bên phải.
 - “Chạy với Mã NV” chỉ đọc dữ liệu đã đồng bộ (đối soát gần nhất, request RTR) để quyết định bước kiểm tra – không ghi
   vào SDP / BioStar / AD, không tạo Job (dry run).
+- Mẫu **Onboard** gọn lại (23 → 19 bước) theo quy tắc công ty: mỗi lần onboard – kể cả người từng làm – là **Mã NV
+  mới, tài khoản mới**, không dùng lại tài khoản / mailbox / thiết bị cũ. Bỏ nhánh kiểm tra tái tuyển / trùng Mã NV và
+  bước kiểm tra laptop đã đủ (Mã NV mới chưa có thiết bị): đối soát → tài khoản AD → … → lấy thiết bị trong kho.
+  Playbook đã tạo từ mẫu cũ không đổi – sửa tay hoặc tạo lại từ mẫu.
