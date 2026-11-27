@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
 import uuid
 from typing import Any, Literal
 
@@ -61,11 +63,8 @@ class StandardItem(BaseModel):
     product_contains: str = Field("", max_length=100)  # optional: model must contain this text
     quantity: int = Field(1, ge=1, le=10)
     catalog_name: str = Field("", max_length=300)  # price-list item to propose when buying new
-    # Derived from the allocation matrix (empty for hand-written lines): the matrix row it comes from, the
-    # departments that row is limited to, and for the "other bands" row the bands other rows already cover.
-    level: str = Field("", max_length=100)
-    departments: list[str] = Field(default_factory=list)
-    except_bands: list[str] = Field(default_factory=list)
+    # Derived from the allocation matrix (empty for hand-written lines): the matrix row and tier it comes from.
+    level: str = Field("", max_length=32)
     tier: str = Field("", max_length=100)
 
 
@@ -91,12 +90,20 @@ class MatrixDevice(BaseModel):
 
 
 class MatrixLevel(BaseModel):
-    """A matrix row: a band group (bands as written in the RTR request), optionally limited to departments."""
+    """A matrix row (cấp bậc). An employee lands in the row whose job-title keywords (or bands) match the RTR request
+    best; a row without keywords takes everyone its departments cover, and one plain row takes everyone else."""
 
-    name: str = Field(min_length=1, max_length=100)
-    bands: list[str] = Field(default_factory=list, max_length=40)  # empty = every band no other row lists
+    name: str = Field(min_length=1, max_length=32)  # also what IT picks by hand on the stock page
+    titles: list[str] = Field(default_factory=list, max_length=60)  # words of the job title, e.g. "Manager"
+    bands: list[str] = Field(
+        default_factory=list, max_length=40
+    )  # optional: band exactly as the RTR writes it
     departments: list[str] = Field(default_factory=list, max_length=40)  # empty = every department
     group: str = Field("", max_length=200)  # who this is, e.g. "Manager / Senior Manager"
+
+    @property
+    def plain(self) -> bool:
+        return not (self.titles or self.bands or self.departments)
 
 
 class MatrixCell(BaseModel):
@@ -105,8 +112,19 @@ class MatrixCell(BaseModel):
     tier: str = Field("", max_length=100)
 
 
+def fold(text: str) -> str:
+    """Lower-case without Vietnamese diacritics (same rule as ``parsing.fold``, which imports this module)."""
+    text = text.replace("đ", "d").replace("Đ", "D")
+    decomposed = unicodedata.normalize("NFD", text)
+    return re.sub(r"\s+", " ", "".join(c for c in decomposed if not unicodedata.combining(c))).strip().lower()
+
+
+def _words(text: str) -> str:
+    return f" {re.sub(r'[^0-9a-z]+', ' ', fold(text))} "
+
+
 class AllocationMatrix(BaseModel):
-    """Rows = band groups, columns = devices, cells = what that group receives (cells[row][column])."""
+    """Rows = cấp bậc, columns = devices, cells = what that row receives (cells[row][column])."""
 
     devices: list[MatrixDevice] = Field(default_factory=list, max_length=30)
     levels: list[MatrixLevel] = Field(default_factory=list, max_length=30)
@@ -116,50 +134,83 @@ class AllocationMatrix(BaseModel):
     def _shape(self) -> AllocationMatrix:
         if len(self.cells) != len(self.levels) or any(len(r) != len(self.devices) for r in self.cells):
             raise ValueError("Ma trận cấp phát không khớp số hàng / cột.")
-        fallback = [lv.name for lv in self.levels if not lv.bands]
-        if len(fallback) > 1:
+        plain = [lv.name for lv in self.levels if lv.plain]
+        if len(plain) > 1:
             raise ValueError(
-                f"Chỉ một hàng được để trống band (áp dụng cho band còn lại): {', '.join(fallback)}."
+                f"Chỉ một hàng được để trống chức danh, band và phòng ban (hàng mặc định): {', '.join(plain)}."
             )
+        names = [fold(lv.name) for lv in self.levels]
+        if len(set(names)) != len(names):
+            raise ValueError("Tên cấp bậc trong ma trận phải khác nhau.")
         return self
 
+    def level_for(
+        self,
+        title: str | None,
+        band: str | None = None,
+        department: str | None = None,
+        chosen: str | None = None,
+    ) -> tuple[MatrixLevel | None, str]:
+        """The row for one employee and why. A row IT picked by hand wins; then the longest job-title keyword (or a
+        band) that matches – whole words, case and accents ignored, so "Senior Director" beats "Director"; a row
+        limited to the employee's department beats an equal general one; then a department-only row; then the plain
+        row."""
+        if chosen:
+            hit = next((lv for lv in self.levels if fold(lv.name) == fold(chosen)), None)
+            if hit:
+                return hit, "IT chọn tay"
+        words, b, dept = _words(title or ""), fold(band or "").replace(" ", ""), fold(department or "")
+        best: tuple[tuple[int, int, int], MatrixLevel, str] | None = None
+        for i, lv in enumerate(self.levels):
+            if lv.departments and dept not in {fold(d) for d in lv.departments}:
+                continue
+            kw = max(
+                (k for k in lv.titles if k.strip() and _words(k) in words),
+                key=lambda k: len(fold(k)),
+                default=None,
+            )
+            band_hit = bool(b) and b in {fold(x).replace(" ", "") for x in lv.bands}
+            if kw:
+                score, why = (2, len(fold(kw)) * 2 + bool(lv.departments), -i), f"chức danh có “{kw}”"
+            elif band_hit:
+                score, why = (2, len(b) * 2 + bool(lv.departments), -i), f"band {band}"
+            elif not (lv.titles or lv.bands) and lv.departments:
+                score, why = (1, 0, -i), f"phòng ban {department}"
+            elif lv.plain:
+                score, why = (0, 0, -i), "hàng mặc định"
+            else:
+                continue
+            if best is None or score > best[0]:
+                best = (score, lv, why)
+        return (best[1], best[2]) if best else (None, "")
+
     def standard(self) -> list[StandardItem]:
-        """The allocation lines the engine uses: one per switched-on cell, named by its tier when it has one (e.g.
-        "PC - Performance"); same device + tier + quantity in rows with the same departments share a line (the
-        union of their bands)."""
-        # Bands a general row lists: the "other bands" row skips them (department rows do not count).
-        listed = sorted({b for lv in self.levels if not lv.departments for b in lv.bands})
-        lines: dict[tuple[Any, ...], StandardItem] = {}
+        """The allocation lines: one per ticked cell, named by its tier when it has one (e.g. "PC - Performance"),
+        tagged with its row (`level`) – the row is chosen per employee by ``level_for``."""
+        out = []
         for lv, row in zip(self.levels, self.cells, strict=True):
             for dev, cell in zip(self.devices, row, strict=True):
-                if not cell.on:
-                    continue
-                key = (dev.label, cell.tier, cell.quantity, tuple(lv.departments), not lv.bands)
-                item = lines.get(key)
-                if item is None:
-                    lines[key] = StandardItem(
+                if cell.on:
+                    out.append(StandardItem(
                         label=cell.tier or dev.label, bands=list(lv.bands), product_types=dev.product_types,
-                        product_contains=dev.product_contains, quantity=cell.quantity,
-                        catalog_name=dev.catalog_name, level=lv.name, departments=list(lv.departments),
-                        except_bands=listed if not lv.bands else [], tier=cell.tier,
-                    )  # fmt: skip
-                else:
-                    item.bands = list(dict.fromkeys([*item.bands, *lv.bands]))
-                    item.level = f"{item.level}, {lv.name}"
-        return list(lines.values())
+                        product_contains=dev.product_contains, quantity=cell.quantity, catalog_name=dev.catalog_name,
+                        level=lv.name, tier=cell.tier,
+                    ))  # fmt: skip
+        return out
 
 
 def matrix_from_standard(items: list[StandardItem]) -> AllocationMatrix:
     """A first matrix from hand-written lines (shown until the matrix is saved): one column per line label, one
-    row per band list used, and a row for every other band."""
+    row per band list used, and a plain row for everyone else."""
     devices: list[MatrixDevice] = []
     for i in items:
         if i.label not in {d.label for d in devices}:
             devices.append(MatrixDevice(label=i.label, product_types=i.product_types or [i.label],
                                         product_contains=i.product_contains, catalog_name=i.catalog_name))  # fmt: skip
     band_sets = list(dict.fromkeys(tuple(i.bands) for i in items if i.bands))
-    levels = [MatrixLevel(name=", ".join(b)[:100], bands=list(b)) for b in band_sets]
-    levels.append(MatrixLevel(name="Các band khác", group="Band không nằm ở hàng nào ở trên"))
+    levels = [MatrixLevel(name=f"{', '.join(b)[:28]}" + (f" {n}" if n else ""), bands=list(b))
+              for n, b in enumerate(band_sets)]  # fmt: skip
+    levels.append(MatrixLevel(name="Mặc định", group="Chức danh không khớp hàng nào ở trên"))
     cells = []
     for lv in levels:
         row = []
@@ -299,6 +350,25 @@ class LifecycleSettings(BaseModel):
                 for i in self.allocation_matrix.standard()
             ]
         return self
+
+    def items_for_employee(
+        self, title: str | None, band: str | None, department: str | None = None, chosen: str | None = None
+    ) -> tuple[list[StandardItem] | None, str | None, str]:
+        """What one employee receives: (lines, matrix row, why). Without a matrix the band decides (None lines when
+        there is no band); with one, the row from the job title (None when no row fits)."""
+        if self.allocation_matrix is None:
+            from app.modules.lifecycle.allocation import items_for, norm_band
+
+            return (
+                (items_for(chosen or band, self.allocation_standard) if norm_band(chosen or band) else None),
+                None,
+                "",
+            )
+        # What IT typed by hand is a row name, or a band (settings saved before the matrix).
+        lv, why = self.allocation_matrix.level_for(title, chosen or band, department, chosen)
+        if lv is None:
+            return None, None, ""
+        return [i for i in self.allocation_standard if i.level == lv.name], lv.name, why
 
     def label(self, field: str) -> str:
         return self.field_labels.get(field) or DEFAULT_LABELS[field]

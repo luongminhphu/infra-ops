@@ -51,7 +51,7 @@ ONBOARD: dict[str, Any] = {
             ),
             "complete": _step(
                 "Request có đủ thông tin?",
-                "Bắt buộc: **Mã NV**, họ tên, phòng ban, chức danh, **band**, ngày hiệu lực, quản lý trực tiếp, "
+                "Bắt buộc: **Mã NV**, họ tên, phòng ban, **chức danh**, ngày hiệu lực, quản lý trực tiếp, "
                 "địa điểm làm việc.\n\nTrang Request RTR đánh dấu dòng thiếu/sai thông tin.",
                 [("Đủ", "reconcile"), ("Thiếu / sai", "ask_hr")],
                 [("lifecycle.requests", "Kiểm tra lỗi đọc request")],
@@ -59,7 +59,7 @@ ONBOARD: dict[str, Any] = {
             "ask_hr": _step(
                 "Yêu cầu HR bổ sung",
                 "Ghi chú trên request SDP các trường còn thiếu, gán lại cho HR (người tạo RTR). Không tự đoán Mã NV "
-                "hay band.\n\nKhi HR cập nhật, đồng bộ lại rồi kiểm tra lần nữa.",
+                "hay chức danh.\n\nKhi HR cập nhật, đồng bộ lại rồi kiểm tra lần nữa.",
                 [("Đã bổ sung", "complete")],
             ),
             "reconcile": _step(
@@ -91,14 +91,15 @@ ONBOARD: dict[str, Any] = {
                 "`ten.hodem@congty.com.vn`\n"
                 "- Chờ Entra Connect đồng bộ (hoặc chạy delta sync), kiểm tra user xuất hiện trên M365\n"
                 "- Thêm vào nhóm email phòng ban / distribution list",
-                [("", "license_band")],
+                [("", "license_level")],
             ),
-            "license_band": _step(
-                "Band từ B5 trở lên?",
-                "App so sánh band trong request RTR. Quy tắc mẫu: band cao dùng gói đầy đủ.",
-                [("Đúng", "license_full"), ("Sai", "license_role")],
-                kind="check",
-                check={"left": _fact("lifecycle.band"), "op": ">=", "right": _value("B5")},
+            "license_level": _step(
+                "Cấp bậc theo chức danh?",
+                f"{ADJUST}\n\n"
+                "Cấp bậc lấy từ **chức danh** trong request RTR theo Ma trận cấp phát (Cấu hình module); trang Kho thiết "
+                "bị ghi cấp bậc của từng nhân viên mới. Quy tắc mẫu: cấp quản lý trở lên dùng gói license đầy đủ.",
+                [("Quản lý / lãnh đạo", "license_full"), ("Nhân viên / Intern / Vendor", "license_role")],
+                [("lifecycle.stock", "Xem cấp bậc ở Kho thiết bị")],
             ),
             "license_full": _step(
                 "Gán license M365 gói đầy đủ",
@@ -131,7 +132,7 @@ ONBOARD: dict[str, Any] = {
             ),
             "stock": _step(
                 "Lấy thiết bị trong kho",
-                "Mã NV mới chưa có thiết bị: cấp đủ theo Tiêu chuẩn cấp phát theo band. Kho thiết bị gợi ý tài sản "
+                "Mã NV mới chưa có thiết bị: cấp đủ theo Ma trận cấp phát (cấp bậc theo chức danh). Kho thiết bị gợi ý tài sản "
                 "In Store (hàng thu hồi trước). Chọn tài sản trong Job onboard để Job gán cho nhân viên trên SDP.",
                 [("Kho có đủ", "biostar"), ("Kho thiếu", "purchase")],
                 [("lifecycle.stock", "Kho thiết bị"), ("lifecycle.jobs", "Chọn tài sản trong Job")],
@@ -312,7 +313,7 @@ OFFBOARD: dict[str, Any] = {
 EXTRA_DEVICE: dict[str, Any] = {
     "title": "Cấp phát bổ sung thiết bị",
     "category": "Thiết bị",
-    "description": "Nhân viên xin thêm thiết bị (màn hình, phụ kiện…): so với tiêu chuẩn band, xin duyệt khi vượt, lấy "
+    "description": "Nhân viên xin thêm thiết bị (màn hình, phụ kiện…): so với ma trận cấp phát theo chức danh, xin duyệt khi vượt, lấy "
     "từ kho hoặc đề xuất mua, gán trên SDP và lập biên bản bàn giao.",
     "tree": {
         "root": "receive",
@@ -334,8 +335,8 @@ EXTRA_DEVICE: dict[str, Any] = {
                 ],
             ),
             "monitor_std": _step(
-                "Số màn hình đang dùng còn dưới tiêu chuẩn band?",
-                "App so số màn hình đang gán (đối soát gần nhất) với Tiêu chuẩn cấp phát theo band.",
+                "Số màn hình đang dùng còn dưới tiêu chuẩn cấp phát?",
+                "App so số màn hình đang gán (đối soát gần nhất) với Ma trận cấp phát – cấp bậc theo chức danh trong RTR.",
                 [("Đúng", "stock"), ("Sai", "approval")],
                 kind="check",
                 check={
@@ -353,7 +354,7 @@ EXTRA_DEVICE: dict[str, Any] = {
             ),
             "approval": _step(
                 "Ngoài tiêu chuẩn: cần Function Head duyệt",
-                "Đã đủ tiêu chuẩn band hoặc thiết bị ngoài danh mục: đề nghị người dùng xin duyệt của **Function "
+                "Đã đủ tiêu chuẩn cấp phát hoặc thiết bị ngoài danh mục: đề nghị người dùng xin duyệt của **Function "
                 "Head** (email / phê duyệt trên SDP), đính kèm vào request.",
                 [("Đã duyệt", "stock"), ("Không duyệt", "rejected")],
             ),
@@ -442,8 +443,8 @@ RECALL_DEVICE: dict[str, Any] = {
                 outcome={"result": "standard", "approval": "Theo Job offboard"},
             ),
             "over_std": _step(
-                "Số laptop đang dùng vượt tiêu chuẩn band?",
-                "App so số laptop đang gán với Tiêu chuẩn cấp phát theo band. Đổi loại tài sản trong điều kiện nếu "
+                "Số laptop đang dùng vượt tiêu chuẩn cấp phát?",
+                "App so số laptop đang gán với Ma trận cấp phát (cấp bậc theo chức danh). Đổi loại tài sản trong điều kiện nếu "
                 "thu hồi màn hình / thiết bị khác.",
                 [("Đúng", "schedule"), ("Sai", "confirm_mgr")],
                 kind="check",

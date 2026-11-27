@@ -10,7 +10,7 @@ import { formatDate, isoDateVn } from "@/core/lib/format";
 import { Button } from "@/core/ui/button";
 import { Dialog } from "@/core/ui/dialog";
 import { EmptyState, Mono, Panel } from "@/core/ui/feedback";
-import { Field, Input } from "@/core/ui/field";
+import { Field, Input, Select } from "@/core/ui/field";
 import { buyLink as buyLinkFor, proposedFor } from "../buy";
 import { StatusBadge, type Status } from "@/core/ui/status";
 
@@ -40,6 +40,8 @@ export interface PlanRequest {
   effective_date: string | null;
   band: string | null;
   band_source: "rtr" | "override" | null;
+  level: string | null; // allocation-matrix row (cấp bậc), from the job title
+  level_reason: string;
   job: { id: string; status: string; version: number } | null;
   status: "no_band" | "buy" | "covered";
   lines: Line[];
@@ -48,8 +50,9 @@ export interface Allocation {
   as_of: string | null;
   stock: StockLine[];
   requests: PlanRequest[];
-  bands: string[];
-  no_band: number; // hires without a band: their need is not in to_buy
+  bands: string[]; // matrix: its row names (what IT can pick by hand)
+  matrix: boolean; // the allocation matrix decides by job title
+  no_band: number; // hires without a band / matrix row: their need is not in to_buy
 }
 export interface PurchaseLite {
   source_ref: string | null;
@@ -80,6 +83,41 @@ export interface StockLine {
 }
 
 const assetText = (a: Asset) => `${a.name ?? a.id}${a.asset_tag ? ` (${a.asset_tag})` : ""}`;
+function LevelDialog({ req, levels, onClose }: { req: PlanRequest; levels: string[]; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [level, setLevel] = useState(req.band_source === "override" ? (req.band ?? "") : "");
+  const save = useMutation({
+    mutationFn: () => api(`/api/lifecycle/requests/${req.id}/band`, { method: "PUT", json: { band: level } }),
+    onSuccess: () => {
+      toast.success(level ? `Đã đặt cấp bậc ${level} cho ${req.full_name}.` : "Đã quay lại xác định cấp bậc theo chức danh.");
+      void qc.invalidateQueries({ queryKey: ["lifecycle", "allocation"] });
+      onClose();
+    },
+  });
+  return (
+    <Dialog
+      open
+      size="sm"
+      onClose={onClose}
+      title={`Cấp bậc của ${req.full_name ?? req.employee_id}`}
+      description={`Chức danh trong request RTR: ${req.job_title ?? "không có"}.`}
+      footer={
+        <>
+          <Button onClick={onClose}>Huỷ</Button>
+          <Button variant="primary" loading={save.isPending} onClick={() => save.mutate()}>Lưu</Button>
+        </>
+      }
+    >
+      <Field label="Cấp bậc (hàng của Ma trận cấp phát)" hint="Chỉ đặt tay khi chức danh không khớp đúng; đổi từ khoá trong Cấu hình module thì áp dụng cho mọi người.">
+        <Select data-autofocus value={level} onChange={(e) => setLevel(e.target.value)}>
+          <option value="">Theo chức danh (tự động)</option>
+          {levels.map((b) => <option key={b} value={b}>{b}</option>)}
+        </Select>
+      </Field>
+    </Dialog>
+  );
+}
+
 function BandDialog({ req, bands, onClose }: { req: PlanRequest; bands: string[]; onClose: () => void }) {
   const qc = useQueryClient();
   const [band, setBand] = useState(req.band_source === "override" ? (req.band ?? "") : "");
@@ -113,7 +151,7 @@ function BandDialog({ req, bands, onClose }: { req: PlanRequest; bands: string[]
   );
 }
 
-export function RequestCard({ r, purchases, bands }: { r: PlanRequest; purchases: PurchaseLite[] | null; bands: string[] }) {
+export function RequestCard({ r, purchases, bands, matrix = false }: { r: PlanRequest; purchases: PurchaseLite[] | null; bands: string[]; matrix?: boolean }) {
   const { can } = useAuth();
   const qc = useQueryClient();
   const [editBand, setEditBand] = useState(false);
@@ -147,20 +185,33 @@ export function RequestCard({ r, purchases, bands }: { r: PlanRequest; purchases
         </div>
         <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="inline-flex items-center gap-1 text-sm">
-          Band <b className={cn(!r.band && "text-waiting")}>{r.band ?? "chưa có"}</b>
-          {r.band_source === "override" && <span className="text-xs text-muted">(nhập tay)</span>}
+          {matrix ? (
+            <>
+              Cấp bậc <b className={cn(!r.level && "text-waiting")}>{r.level ?? "chưa xác định"}</b>
+              {r.level_reason && <span className="text-xs text-muted">({r.level_reason})</span>}
+            </>
+          ) : (
+            <>
+              Band <b className={cn(!r.band && "text-waiting")}>{r.band ?? "chưa có"}</b>
+              {r.band_source === "override" && <span className="text-xs text-muted">(nhập tay)</span>}
+            </>
+          )}
           {can("lifecycle.job.execute") && (
-            <Button size="icon" variant="ghost" aria-label={`Sửa band của ${r.full_name}`} onClick={() => setEditBand(true)}>
+            <Button size="icon" variant="ghost" aria-label={matrix ? `Chọn cấp bậc của ${r.full_name}` : `Sửa band của ${r.full_name}`} onClick={() => setEditBand(true)}>
               <Pencil className="size-4" aria-hidden="true" />
             </Button>
           )}
         </span>
-        <StatusBadge {...REQ_STATUS[r.status]} />
+        <StatusBadge {...(matrix && r.status === "no_band" ? { status: "waiting" as const, label: "Chưa xác định cấp bậc" } : REQ_STATUS[r.status])} />
         </span>
       </div>
 
       {r.status === "no_band" ? (
-        <p className="mt-3 text-sm text-waiting">Request RTR không ghi band – bấm biểu tượng bút để nhập, hệ thống mới tính được thiết bị cần cấp.</p>
+        <p className="mt-3 text-sm text-waiting">
+          {matrix
+            ? "Chức danh không khớp hàng nào của Ma trận cấp phát – bấm biểu tượng bút để chọn cấp bậc, hoặc thêm hàng mặc định trong Cấu hình module."
+            : "Request RTR không ghi band – bấm biểu tượng bút để nhập, hệ thống mới tính được thiết bị cần cấp."}
+        </p>
       ) : (
         <ul className="mt-3 divide-y divide-line text-sm">
           {r.lines.map((l) => {
@@ -211,7 +262,7 @@ export function RequestCard({ r, purchases, bands }: { r: PlanRequest; purchases
           <Link to={`/lifecycle/jobs/${r.job.id}`} className="inline-flex h-8 items-center rounded-sm px-2 text-sm font-medium text-primary hover:underline">Mở Job</Link>
         )}
       </div>
-      {editBand && <BandDialog req={r} bands={bands} onClose={() => setEditBand(false)} />}
+      {editBand && (matrix ? <LevelDialog req={r} levels={bands} onClose={() => setEditBand(false)} /> : <BandDialog req={r} bands={bands} onClose={() => setEditBand(false)} />)}
     </li>
   );
 }
@@ -242,7 +293,7 @@ export function OnboardTab({ d, purchases }: { d: Allocation; purchases: Purchas
             {g.title} ({g.items.length})
           </h2>
           <ul className="space-y-3">
-            {g.items.map((r) => <RequestCard key={r.id} r={r} purchases={purchases} bands={d.bands} />)}
+            {g.items.map((r) => <RequestCard key={r.id} r={r} purchases={purchases} bands={d.bands} matrix={d.matrix} />)}
           </ul>
         </section>
       ))}

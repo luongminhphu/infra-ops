@@ -242,7 +242,8 @@ async def test_onboard_template_is_a_valid_connected_guide(admin) -> None:  # ty
         assert any(n.kind == "outcome" for n in t.nodes.values()), key
         # Every check reads a fact the lifecycle module provides.
         facts = {o.fact for n in t.nodes.values() if n.check for o in (n.check.left, n.check.right) if o.fact}
-        assert facts <= {"lifecycle.band", "lifecycle.assets_in_use", "lifecycle.standard_quantity"}, (
+        # HR gives no band: no template tests it (the allocation matrix works from the job title).
+        assert facts <= {"lifecycle.assets_in_use", "lifecycle.standard_quantity"}, (
             key,
             facts,
         )
@@ -254,7 +255,7 @@ async def test_onboard_template_is_a_valid_connected_guide(admin) -> None:  # ty
     d = (await admin.get(f"/api/playbook/guides/{r.json()['id']}", params={"version": "draft"})).json()
     assert d["category"] == "Vòng đời nhân sự" and d["tree"]["root"] == "receive"
     # Onboard always means a new employee ID and new accounts: no rehire / duplicate branch.
-    assert "rehire" not in d["tree"]["nodes"] and d["tree"]["nodes"]["license_band"]["kind"] == "check"
+    assert "rehire" not in d["tree"]["nodes"] and d["tree"]["nodes"]["license_level"]["kind"] == "step"
     for key in ("offboard", "extra_device", "recall_device"):
         r = await admin.post("/api/playbook/guides", json={"title": f"{key} (mẫu)", "template": key})
         assert r.status_code == 201, r.text

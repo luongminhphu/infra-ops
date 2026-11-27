@@ -1406,17 +1406,26 @@ Nguyên tắc (product owner): user quyền nào chỉ thấy nội dung và ch�
   bước kiểm tra laptop đã đủ (Mã NV mới chưa có thiết bị): đối soát → tài khoản AD → … → lấy thiết bị trong kho.
   Playbook đã tạo từ mẫu cũ không đổi – sửa tay hoặc tạo lại từ mẫu.
 
-## 60. Ma trận cấp phát thiết bị và cấu hình tham chiếu (27/11/2026)
+## 60. Ma trận cấp phát thiết bị theo chức danh và cấu hình tham chiếu (27/11/2026)
 
-- Cấu hình module › **Ma trận cấp phát thiết bị** thay danh sách dòng: hàng = cấp bậc (band trong RTR – số hoặc chức
-  danh đúng như HR ghi, vd. `7, 8, 9` hay `Manager / Senior Manager`; tuỳ chọn giới hạn phòng ban), cột = thiết bị (loại
-  tài sản SDP, model chứa, tên bảng giá, ghi chú chính sách), ô = tích cấp + số lượng + cấu hình tham chiếu.
-  - Hàng để trống band nhận mọi band chưa có ở hàng khác (Intern / Vendor); hàng giới hạn phòng ban thay hàng chung
-    cùng band (vd. Band 4–6 kỹ thuật IT / DTI / DATA dùng PC - Performance và 2 màn hình).
-  - Lưu ma trận → `allocation_standard` được suy ra (Kho thiết bị, đề xuất mua, fact Playbook dùng như cũ); dòng mang
-    tên cấu hình khi có (vd. “PC - Performance”). Chưa lưu ma trận lần nào: màn hình dựng ma trận từ danh sách cũ.
-  - “Nạp ma trận mẫu”: 5 cấp bậc × 8 thiết bị theo file Ma trận cấp phát Office Tools V2 (band là ví dụ – sửa đúng RTR).
-- **Cấu hình thiết bị tham chiếu** (PC / Laptop Standard / Performance: CPU tối thiểu, RAM, ổ cứng, mục đích, tên bảng
-  giá – tên bảng giá của cấu hình được ưu tiên khi đề xuất mua). Đổi tên cấu hình thì ma trận đổi theo; cấu hình đang
-  dùng không xoá được.
-- Bảng “Loại cấp phát” (Onboarding / Adhoc / Utilization / Exception, cấp duyệt, bằng chứng) trong file chưa đưa vào app.
+- HR không cung cấp band – IT căn cứ **chức danh** trong request RTR. Cấu hình module › **Ma trận cấp phát thiết bị**
+  thay danh sách dòng: hàng = cấp bậc, cột = thiết bị (loại tài sản SDP, model chứa, tên bảng giá, ghi chú chính sách),
+  ô = tích cấp + số lượng + cấu hình tham chiếu (PC / Laptop).
+- Mỗi nhân viên mới vào **một** hàng (`AllocationMatrix.level_for`):
+  1. Hàng IT chọn tay trên trang Kho thiết bị (lưu ở `band_override` – tên hàng ≤ 32 ký tự).
+  2. Từ khoá chức danh khớp (nguyên từ, bỏ dấu, không phân biệt hoa thường); khớp nhiều hàng thì từ khoá dài hơn thắng
+     (“Senior Director” hơn “Director”), hàng giới hạn phòng ban thắng hàng chung. Band (nếu HR có ghi) khớp như từ khoá.
+  3. Hàng chỉ có phòng ban (vd. Nhân viên kỹ thuật IT / DTI / DATA).
+  4. Hàng mặc định (không từ khoá, band, phòng ban) – mọi chức danh còn lại; không có hàng mặc định thì nhân viên
+     “Chưa xác định cấp bậc” cho tới khi IT chọn.
+- Lưu ma trận → `allocation_standard` suy ra (mỗi ô tích một dòng, gắn `level`); Kho thiết bị, đề xuất mua và fact
+  Playbook `standard_quantity` dùng hàng theo chức danh. Trang Kho ghi “Cấp bậc X (chức danh có “Manager”)”, bút chì để
+  chọn tay. Fact mới: `lifecycle.job_title`, `lifecycle.level`. Chưa lưu ma trận: dựng từ danh sách band cũ.
+- “Nạp ma trận mẫu”: 5 hàng theo file Ma trận cấp phát Office Tools V2 – Intern / Vendor, Nhân viên (mặc định), Nhân viên
+  kỹ thuật (IT / DTI / DATA), Quản lý (Manager, Director, Trưởng phòng…), Lãnh đạo cấp cao (Senior Director, C-level,
+  Giám đốc điều hành…) × 8 thiết bị. Từ khoá là ví dụ – sửa theo chức danh HR ghi.
+- **Cấu hình thiết bị tham chiếu**: PC / Laptop Standard / Performance (CPU tối thiểu, RAM, ổ cứng, mục đích, tên bảng
+  giá – ưu tiên khi đề xuất mua). Đổi tên thì ma trận đổi theo; cấu hình đang dùng không xoá được.
+- Mẫu Playbook: Onboard bỏ bước kiểm tra “Band từ B5” (luôn thiếu dữ liệu khi HR không ghi band) – thay bằng bước chọn
+  license theo cấp bậc; các mẫu khác ghi “tiêu chuẩn cấp phát” thay cho “tiêu chuẩn band”. Bảng “Loại cấp phát” trong
+  file (Onboarding / Adhoc / Utilization / Exception) chưa đưa vào app.

@@ -22,6 +22,7 @@ export interface MatrixDevice {
 }
 export interface MatrixLevel {
   name: string;
+  titles: string[];
   bands: string[];
   departments: string[];
   group: string;
@@ -46,19 +47,23 @@ export function tiersFor(device: MatrixDevice, tiers: DeviceTier[]): DeviceTier[
   return tiers.filter((t) => fold(t.name).startsWith(fold(device.label)) || device.product_types.some((p) => fold(t.name).startsWith(fold(p))));
 }
 
-/** Bands listed by more than one general row (department rows may repeat a band on purpose). */
-export function overlappingBands(levels: MatrixLevel[]): string[] {
+/** Title keywords (or bands) more than one general row lists: the first row wins, which is rarely meant. */
+export function overlappingKeys(levels: MatrixLevel[]): string[] {
   const seen = new Map<string, number>();
-  for (const lv of levels) if (!lv.departments.length) for (const b of new Set(lv.bands.map(fold))) seen.set(b, (seen.get(b) ?? 0) + 1);
-  return levels.flatMap((lv) => (lv.departments.length ? [] : lv.bands)).filter((b, i, all) => (seen.get(fold(b)) ?? 0) > 1 && all.indexOf(b) === i);
+  const keys = (lv: MatrixLevel) => [...lv.titles, ...lv.bands];
+  for (const lv of levels) if (!lv.departments.length) for (const k of new Set(keys(lv).map(fold))) seen.set(k, (seen.get(k) ?? 0) + 1);
+  return levels.flatMap((lv) => (lv.departments.length ? [] : keys(lv))).filter((k, i, all) => (seen.get(fold(k)) ?? 0) > 1 && all.findIndex((x) => fold(x) === fold(k)) === i);
 }
+
+/** The row with no title, band or department: everyone no other row takes. */
+export const isPlain = (lv: MatrixLevel) => !lv.titles.length && !lv.bands.length && !lv.departments.length;
 
 const on = (tier = "", quantity = 1): MatrixCell => ({ on: true, quantity, tier });
 const no = emptyCell;
 const device = (label: string, product_types: string[], note = ""): MatrixDevice => ({ label, product_types, product_contains: "", catalog_name: "", note });
 
-/** A starting matrix shaped like the company's allocation sheet (5 levels × 8 devices). Bands are examples: numbers or
- * titles exactly as the RTR band line reads. */
+/** A starting matrix shaped like the company's allocation sheet (5 levels × 8 devices), matched by job title.
+ * The keywords are examples to adjust to the titles HR writes. */
 export const PRESET: Matrix = {
   devices: [
     device("PC", ["Desktop"]),
@@ -71,11 +76,11 @@ export const PRESET: Matrix = {
     device("Phụ kiện khác", ["Accessory"], "Theo nhu cầu công việc (bàn nâng, tay arm, màn hình thứ 3 trở lên) – Adhoc"),
   ],
   levels: [
-    { name: "Intern / Vendor", group: "Thực tập sinh / Đối tác", bands: [], departments: [] },
-    { name: "Band 1–6", group: "Nhân viên", bands: ["1", "2", "3", "4", "5", "6"], departments: [] },
-    { name: "Band 4–6 kỹ thuật", group: "Nhân viên kỹ thuật (IT / DTI / DATA)", bands: ["4", "5", "6"], departments: ["IT", "DTI", "DATA"] },
-    { name: "Band 7–9", group: "Manager / Senior Manager / Director", bands: ["7", "8", "9", "Manager / Senior Manager"], departments: [] },
-    { name: "Band 10 trở lên", group: "Senior Director / C-level", bands: ["10", "11", "12", "Director / Senior Director / C-level"], departments: [] },
+    { name: "Intern / Vendor", group: "Thực tập sinh / Đối tác", titles: ["Thực tập sinh", "Intern", "Vendor", "Đối tác", "Cộng tác viên"], bands: [], departments: [] },
+    { name: "Nhân viên", group: "Nhân viên văn phòng", titles: [], bands: [], departments: [] },
+    { name: "Nhân viên kỹ thuật", group: "Nhân viên khối IT / DTI / DATA", titles: [], bands: [], departments: ["IT", "DTI", "DATA"] },
+    { name: "Quản lý", group: "Manager / Senior Manager / Director", titles: ["Manager", "Director", "Trưởng phòng", "Phó phòng", "Giám đốc"], bands: [], departments: [] },
+    { name: "Lãnh đạo cấp cao", group: "Senior Director / C-level", titles: ["Senior Director", "C-level", "CEO", "CFO", "COO", "CTO", "Tổng giám đốc", "Phó tổng giám đốc", "Giám đốc điều hành", "Giám đốc khối"], bands: [], departments: [] },
   ],
   cells: [
     [on("PC - Standard"), no(), on(), on(), on(), on(), on(), no()],
@@ -110,8 +115,8 @@ export function AllocationMatrixEditor({ value, tiers, onChange }: { value: Matr
   const m = value;
   const setCell = (r: number, c: number, patch: Partial<MatrixCell>) =>
     onChange({ ...m, cells: m.cells.map((row, i) => (i === r ? row.map((x, j) => (j === c ? { ...x, ...patch } : x)) : row)) });
-  const overlap = overlappingBands(m.levels);
-  const fallback = m.levels.filter((lv) => !lv.bands.length);
+  const overlap = overlappingKeys(m.levels);
+  const fallback = m.levels.filter(isPlain);
 
   return (
     <div className="space-y-3">
@@ -148,8 +153,10 @@ export function AllocationMatrixEditor({ value, tiers, onChange }: { value: Matr
                   </button>
                   {lv.group && <span className="block text-xs text-muted">{lv.group}</span>}
                   <span className="block text-xs text-muted">
-                    {lv.bands.length ? <>Band RTR: {lv.bands.join(", ")}</> : <>Mọi band chưa có ở hàng khác</>}
-                    {lv.departments.length > 0 && <> · chỉ {lv.departments.join(", ")}</>}
+                    {lv.titles.length > 0 && <span className="line-clamp-2" title={lv.titles.join(", ")}>Chức danh có: {lv.titles.join(", ")}</span>}
+                    {lv.bands.length > 0 && <span className="block">Band: {lv.bands.join(", ")}</span>}
+                    {lv.departments.length > 0 && <span className="block">Phòng ban: {lv.departments.join(", ")}</span>}
+                    {isPlain(lv) && <span className="block">Mọi chức danh không khớp hàng khác</span>}
                   </span>
                 </th>
                 {m.devices.map((d, c) => {
@@ -215,8 +222,8 @@ export function AllocationMatrixEditor({ value, tiers, onChange }: { value: Matr
       />
       {(overlap.length > 0 || fallback.length > 1) && (
         <p role="status" className="rounded-sm bg-waiting-soft px-3 py-2 text-sm text-pretty">
-          {overlap.length > 0 && <>Band {overlap.join(", ")} nằm ở nhiều hàng – nhân viên band đó nhận thiết bị của tất cả các hàng ấy. </>}
-          {fallback.length > 1 && <>Chỉ một hàng được để trống band (hàng “band còn lại”).</>}
+          {overlap.length > 0 && <>“{overlap.join("”, “")}” nằm ở nhiều hàng – chức danh khớp sẽ vào hàng đứng trước. </>}
+          {fallback.length > 1 && <>Chỉ một hàng được để trống cả chức danh, band và phòng ban (hàng mặc định).</>}
         </p>
       )}
       {editLevel !== null && (
@@ -248,10 +255,11 @@ export function AllocationMatrixEditor({ value, tiers, onChange }: { value: Matr
 function LevelDialog({ level, onClose, onSave, onRemove }: { level: MatrixLevel | null; onClose: () => void; onSave: (lv: MatrixLevel) => void; onRemove?: () => void }) {
   const [name, setName] = useState(level?.name ?? "");
   const [group, setGroup] = useState(level?.group ?? "");
+  const [titles, setTitles] = useState((level?.titles ?? []).join(", "));
   const [bands, setBands] = useState((level?.bands ?? []).join(", "));
   const [depts, setDepts] = useState((level?.departments ?? []).join(", "));
   const [touched, setTouched] = useState(false);
-  const save = () => { setTouched(true); if (name.trim()) onSave({ name: name.trim(), group: group.trim(), bands: list(bands), departments: list(depts) }); };
+  const save = () => { setTouched(true); if (name.trim()) onSave({ name: name.trim(), group: group.trim(), titles: list(titles), bands: list(bands), departments: list(depts) }); };
   return (
     <Dialog
       open
@@ -266,17 +274,20 @@ function LevelDialog({ level, onClose, onSave, onRemove }: { level: MatrixLevel 
       }
     >
       <div className="grid gap-4">
-        <Field label="Tên cấp bậc" required error="Nhập tên, vd. Band 7–9." showError={touched && !name.trim()}>
-          <Input value={name} maxLength={100} onChange={(e) => setName(e.target.value)} placeholder="Band 7–9" />
+        <Field label="Tên cấp bậc" required error="Nhập tên, vd. Quản lý." showError={touched && !name.trim()} hint="Tối đa 32 ký tự – IT chọn theo tên này khi cần đặt tay cho một nhân viên.">
+          <Input value={name} maxLength={32} onChange={(e) => setName(e.target.value)} placeholder="Quản lý" />
         </Field>
         <Field label="Nhóm người dùng tham chiếu">
           <Input value={group} maxLength={200} onChange={(e) => setGroup(e.target.value)} placeholder="Manager / Senior Manager / Director" />
         </Field>
-        <Field label="Band trong request RTR" hint="Số hoặc chức danh, đúng như HR ghi ở dòng Band của RTR (không phân biệt hoa thường, dấu, khoảng trắng), cách nhau dấu phẩy – vd. 7, 8, 9 hoặc Manager, Senior Manager. Để trống = mọi band chưa có ở hàng khác (vd. Intern / Vendor).">
-          <Input value={bands} onChange={(e) => setBands(e.target.value)} placeholder="7, 8, 9 hoặc Manager, Senior Manager" />
+        <Field label="Từ khoá trong chức danh" hint="Chức danh trong request RTR chứa một từ khoá là vào hàng này (nguyên từ, không phân biệt hoa thường, dấu). Cách nhau dấu phẩy, vd. Manager, Director, Trưởng phòng. Khớp nhiều hàng thì từ khoá dài hơn thắng – “Senior Director” hơn “Director”.">
+          <Input value={titles} onChange={(e) => setTitles(e.target.value)} placeholder="Manager, Director, Trưởng phòng" />
         </Field>
-        <Field label="Chỉ áp dụng cho phòng ban" hint="Để trống = mọi phòng ban. Có phòng ban thì hàng này thay cho hàng chung cùng band (vd. nhân viên kỹ thuật IT/DATA).">
+        <Field label="Phòng ban" hint="Có từ khoá: chỉ khi nhân viên thuộc các phòng ban này. Không từ khoá: mọi chức danh của các phòng ban này (vd. nhân viên kỹ thuật IT / DATA). Để trống cả hai ô = hàng mặc định cho mọi chức danh còn lại.">
           <Input value={depts} onChange={(e) => setDepts(e.target.value)} placeholder="IT, DATA" />
+        </Field>
+        <Field label="Band trong RTR (tuỳ chọn)" hint="Chỉ khi HR có ghi band: đúng như dòng Band của RTR, cách nhau dấu phẩy.">
+          <Input value={bands} onChange={(e) => setBands(e.target.value)} />
         </Field>
       </div>
     </Dialog>

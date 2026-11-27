@@ -11,7 +11,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.modules.manifest import FactSource, FactValue
-from app.modules.lifecycle.allocation import items_for
 from app.modules.lifecycle.models import LifecycleRequest, ReconRow, Snapshot
 from app.modules.lifecycle.parsing import fold
 from app.modules.lifecycle.queries import latest_run
@@ -81,20 +80,56 @@ async def assets_in_use(session: AsyncSession, emp: str, product_type: str) -> F
     return FactValue(len(same), f"SDP: {len(same)} {product_type}" + (f" – {names}" if names else ""))
 
 
-async def standard_quantity(session: AsyncSession, emp: str, product_type: str) -> FactValue | None:
-    """How many of that product type the allocation standard gives the employee's band."""
-    value, source, dept = await _band_dept(session, emp)
-    if not value:
-        return None
+async def _request_fields(session: AsyncSession, emp: str) -> tuple[dict[str, Any], str | None, str]:
+    """Fields of the employee's latest RTR request, the band IT set by hand, and where it came from."""
+    r = await session.scalar(
+        select(LifecycleRequest)
+        .where(LifecycleRequest.employee_id == emp)
+        .order_by(LifecycleRequest.created_at.desc().nulls_last())
+        .limit(1)
+    )
+    if r is None:
+        return {}, None, ""
+    return r.fields or {}, r.band_override, f"Request RTR #{r.display_id or r.id}"
+
+
+async def level(session: AsyncSession, emp: str, _: str) -> FactValue | None:
+    """The allocation-matrix row (cấp bậc) the employee falls in, from the job title."""
     settings = await load_settings(session)
-    lines = [i for i in items_for(value, settings.allocation_standard, dept)
-             if fold(product_type) in {fold(t) for t in i.product_types}]  # fmt: skip
-    qty = sum(i.quantity for i in lines)
-    return FactValue(qty, f"Tiêu chuẩn cấp phát band {value}: {qty} {product_type} ({source})")
+    if settings.allocation_matrix is None:
+        return None
+    f, chosen, source = await _request_fields(session, emp)
+    lv, why = settings.allocation_matrix.level_for(
+        f.get("job_title"), f.get("band"), f.get("department"), chosen
+    )
+    return FactValue(lv.name, f"{source}: {why}") if lv else None
+
+
+async def job_title(session: AsyncSession, emp: str, _: str) -> FactValue | None:
+    f, _, source = await _request_fields(session, emp)
+    return FactValue(f["job_title"], source) if f.get("job_title") else None
+
+
+async def standard_quantity(session: AsyncSession, emp: str, product_type: str) -> FactValue | None:
+    """How many of that product type the allocation standard gives the employee (matrix row from the job title,
+    or the band without a matrix)."""
+    settings = await load_settings(session)
+    f, chosen, source = await _request_fields(session, emp)
+    band, band_source = await _band(session, emp)
+    items, lv, why = settings.items_for_employee(f.get("job_title"), band, f.get("department"), chosen)
+    if items is None:
+        return None
+    qty = sum(i.quantity for i in items if fold(product_type) in {fold(t) for t in i.product_types})
+    basis = f"cấp bậc {lv} ({why}, {source})" if lv else f"band {band} ({band_source})"
+    if lv and band:
+        basis += f" – band {band}"
+    return FactValue(qty, f"Tiêu chuẩn cấp phát – {basis}: {qty} {product_type}")
 
 
 FACTS = [
     FactSource("lifecycle.band", "Band của nhân viên", "text", band),
+    FactSource("lifecycle.job_title", "Chức danh (request RTR)", "text", job_title),
+    FactSource("lifecycle.level", "Cấp bậc theo ma trận cấp phát", "text", level),
     FactSource("lifecycle.department", "Phòng ban", "text", department),
     FactSource("lifecycle.assets_in_use", "Số tài sản đang dùng", "number", assets_in_use,
                param_label="Loại tài sản SDP", param_hint="Ví dụ: Monitor, Laptop, Desktop"),
