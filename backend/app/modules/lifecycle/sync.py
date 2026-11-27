@@ -428,9 +428,10 @@ async def _sync(
     )
     if sources["sdp"]:
         # One draft job per onboard/offboard request (drafts never write to external systems).
-        from app.modules.lifecycle.jobs_api import auto_create_jobs
+        from app.modules.lifecycle.jobs_api import auto_create_jobs, cancel_closed_drafts
 
         stats["jobs_created"] = await auto_create_jobs(session)
+        stats["jobs_cancelled"] = await cancel_closed_drafts(session)
         from app.modules.lifecycle.assignment import sync_assignees
 
         stats["jobs_reassigned"] = await sync_assignees(session)

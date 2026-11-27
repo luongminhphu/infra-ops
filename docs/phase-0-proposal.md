@@ -1478,3 +1478,12 @@ Kho thiết bị chỉ liệt kê tài sản chưa gán người. Mọi trạng 
   phát) và đi vào nhánh có **tên trùng giá trị** (không phân biệt hoa thường) – không giới hạn 2 nhánh; nhánh “Khác” nhận
   mọi giá trị còn lại; thiếu dữ liệu → “Chưa đủ dữ liệu”, không có nhánh khớp → `no_branch`. Xuất bản từ chối nhánh chưa
   đặt tên (`unnamed_switch_branch`). Bước hướng dẫn (người chọn) vẫn rẽ được tới 20 nhánh; bước Kiểm tra giữ Đúng / Sai.
+
+## 64. Request đã đóng trên SDP tiếng Việt (27/11/2026)
+
+- SDP hiển thị trạng thái theo ngôn ngữ giao diện (“Đã đóng”, “Đã xử lý”); danh sách “Trạng thái được coi là đã đóng” cũ chỉ
+  có tên tiếng Anh nên app coi các request đó vẫn mở. Mặc định mới thêm Đã đóng / Đã xử lý / Đã huỷ / Đã hủy; cấu hình
+  còn đúng mặc định cũ được nâng cấp tự động; so khớp không phân biệt hoa thường và dấu (`LifecycleSettings.is_closed`).
+- Sau mỗi lần đồng bộ, **Job nháp** (chưa bắt đầu, chưa ghi gì) của request đã đóng **tự huỷ** kèm lý do
+  (“Request #… đã đóng trên SDP”), có nhật ký kiểm tra, mở lại được nếu request mở lại. Job đã bắt đầu không bị đụng tới –
+  bước kiểm tra request dừng như trước.

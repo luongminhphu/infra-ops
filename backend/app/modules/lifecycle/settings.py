@@ -115,6 +115,10 @@ class MatrixCell(BaseModel):
     reuse_only: bool = False  # tận dụng máy cũ trong kho: no purchase, wait when none is free
 
 
+OLD_CLOSED_STATUSES = ["Closed", "Resolved", "Cancelled", "Canceled"]
+CLOSED_STATUSES = [*OLD_CLOSED_STATUSES, "Đã đóng", "Đã xử lý", "Đã huỷ", "Đã hủy"]
+
+
 def fold(text: str) -> str:
     """Lower-case without Vietnamese diacritics (same rule as ``parsing.fold``, which imports this module)."""
     text = text.replace("đ", "d").replace("Đ", "D")
@@ -273,6 +277,9 @@ class LifecycleSettings(BaseModel):
     @classmethod
     def _merge_retired_groups(cls, data: Any) -> Any:
         """Settings saved before the two lists were merged kept the "left the company" groups apart."""
+        if isinstance(data, dict) and data.get("sdp_closed_statuses") == OLD_CLOSED_STATUSES:
+            # The old default only knew English names; a Vietnamese SDP reports "Đã đóng", "Đã xử lý".
+            data = {**data, "sdp_closed_statuses": list(CLOSED_STATUSES)}
         if isinstance(data, dict) and data.get("asset_state_pending_disposal") == "Chờ thanh lý":
             # The old default never existed on SDP; the company's "waiting for disposal" state is Expired.
             data = {**data, "asset_state_pending_disposal": "Expired"}
@@ -336,9 +343,8 @@ class LifecycleSettings(BaseModel):
     # Workflows (Onboard / Offboard)
     auto_create_jobs: bool = True
     sdp_close_status: str = Field("Resolved", min_length=1, max_length=64)
-    sdp_closed_statuses: list[str] = Field(
-        default_factory=lambda: ["Closed", "Resolved", "Cancelled", "Canceled"]
-    )
+    # SDP shows status names in its UI language: a Vietnamese SDP says "Đã đóng", "Đã xử lý"…
+    sdp_closed_statuses: list[str] = Field(default_factory=lambda: list(CLOSED_STATUSES))
     sdp_add_note: bool = True
     biostar_user_group_id: str = Field("1", max_length=32)
     biostar_access_group_ids: list[str] = Field(default_factory=list)
@@ -364,6 +370,10 @@ class LifecycleSettings(BaseModel):
                 for i in self.allocation_matrix.standard()
             ]
         return self
+
+    def is_closed(self, status: str | None) -> bool:
+        """An SDP request status that means the request is over (case and accents ignored)."""
+        return bool(status) and fold(status or "") in {fold(s) for s in self.sdp_closed_statuses}
 
     def items_for_employee(
         self, title: str | None, band: str | None, department: str | None = None, chosen: str | None = None
