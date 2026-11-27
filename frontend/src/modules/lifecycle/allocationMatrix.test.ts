@@ -19,7 +19,7 @@ describe("allocation matrix", () => {
     expect(m.cells.map((r) => r.length)).toEqual([2, 2]);
     m = removeLevel(removeDevice(m, 0), 0);
     expect(m.levels.map((l) => l.name)).toEqual(["B"]);
-    expect(m.cells).toEqual([[{ on: false, quantity: 1, tier: "" }]]);
+    expect(m.cells).toEqual([[{ on: false, quantity: 1, tier: "", reuse_only: false }]]);
   });
 
   it("flags a title keyword two general rows list, not a department row", () => {

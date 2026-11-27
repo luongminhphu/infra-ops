@@ -29,6 +29,7 @@ interface Line {
   picked: Asset[];
   reuse: Asset[];
   buy: number;
+  wait: number;
 }
 interface Prepare {
   request: {
@@ -258,6 +259,7 @@ function PrepareWizard({ job, act, canRun }: { job: Job; act: ReturnType<typeof 
   if (key === "devices") {
     const changed = !sameAssets(chosen, current);
     const buys = lines.filter((l) => l.buy > 0);
+    const waits = lines.filter((l) => l.wait > 0);
     return (
       <Wizard
         label="Chuẩn bị Job"
@@ -290,6 +292,15 @@ function PrepareWizard({ job, act, canRun }: { job: Job; act: ReturnType<typeof 
               </li>
             ))}
           </ul>
+        )}
+        {waits.length > 0 && (
+          <p role="status" className="mt-4 flex items-start gap-1.5 rounded-sm border border-waiting/40 bg-waiting-soft px-3 py-2 text-sm">
+            <Recycle className="mt-0.5 size-4 shrink-0 text-waiting" aria-hidden="true" />
+            <span>
+              Chờ máy cũ thu hồi: {waits.map((l) => `${l.label} × ${l.wait}`).join(", ")}. Cấp bậc này chỉ tận dụng máy cũ trong kho – không đề xuất mua; khi
+              có máy thu hồi, bấm “Thêm từ kho” để gán.
+            </span>
+          </p>
         )}
         {buys.length > 0 && (
           <section aria-labelledby="buy-title" className="mt-4 rounded-sm border border-waiting/40 bg-waiting-soft px-3 py-2 text-sm">

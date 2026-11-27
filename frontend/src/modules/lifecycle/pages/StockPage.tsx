@@ -429,8 +429,8 @@ export function StockPage() {
   };
   const pendingOf = (types: string[]) => (s?.items ?? []).filter((i) => i.status === "pending" && types.includes(i.product_type ?? "")).length;
   const tiles = (a?.stock ?? []).map((l) => ({ ...l, pending: pendingOf(l.product_types), free: l.in_store - l.planned }));
-  const live = tiles.filter((t) => t.standard && (t.in_store || t.to_buy || t.pending));
-  const empty = tiles.filter((t) => t.standard && !t.in_store && !t.to_buy && !t.pending);
+  const live = tiles.filter((t) => t.standard && (t.in_store || t.to_buy || t.waiting || t.pending));
+  const empty = tiles.filter((t) => t.standard && !t.in_store && !t.to_buy && !t.waiting && !t.pending);
   const other = tiles.filter((t) => !t.standard);
   const error = alloc.error ?? stock.error;
 
@@ -499,6 +499,7 @@ export function StockPage() {
                     </div>
                     <div><dt className="text-xs text-muted">Thiếu</dt><dd className={cn("text-lg font-semibold tabular", t.to_buy > 0 && "text-waiting")}>{t.to_buy}</dd></div>
                   </dl>
+                  {t.waiting > 0 && <span className="mt-1 block text-xs text-waiting">{t.waiting} người chờ máy cũ thu hồi (không mua mới)</span>}
                   {t.pending > 0 && <span className="mt-1 block text-xs text-muted">Ngoài ra {t.pending} chờ thanh lý</span>}
                 </button>
               </li>

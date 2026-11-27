@@ -30,6 +30,7 @@ class Line:
     picked: list[dict[str, Any]] = field(default_factory=list)
     reuse: list[dict[str, Any]] = field(default_factory=list)
     buy: int = 0
+    wait: int = 0  # reuse-only line: no returned device free yet, nothing to buy
 
 
 def norm_band(band: str | None) -> str:
@@ -61,7 +62,8 @@ def allocate(
     needs: list[Need], standard: list[StandardItem], stock: list[dict[str, Any]]
 ) -> dict[str, list[Line]]:
     """Earliest effective date first: assets picked on a job draft count first, then free In Store
-    assets matching the line (each asset used once), and the rest must be bought.
+    assets matching the line (each asset used once), and the rest must be bought – except on a reuse-only line
+    (tận dụng máy cũ), which takes returned devices only and otherwise waits.
 
     Requests without a band (and no lines chosen by the matrix) get no lines (the caller shows "missing band")."""
     reserved = {a["id"] for n in needs for a in n.picked}
@@ -76,12 +78,19 @@ def allocate(
         for item in n.items if n.items is not None else items_for(n.band, standard):
             line = Line(item.label, item.quantity, item.catalog_name)
             for pool, dest in ((picked, line.picked), (free, line.reuse)):
-                for a in [a for a in pool if matches(a, item)][
-                    : item.quantity - len(line.picked) - len(line.reuse)
-                ]:
+                fit = [
+                    a
+                    for a in pool
+                    if matches(a, item) and (dest is line.picked or not item.reuse_only or a.get("returned"))
+                ]
+                for a in fit[: item.quantity - len(line.picked) - len(line.reuse)]:
                     pool.remove(a)
                     dest.append(a)
-            line.buy = item.quantity - len(line.picked) - len(line.reuse)
+            missing = item.quantity - len(line.picked) - len(line.reuse)
+            if item.reuse_only:
+                line.wait = missing
+            else:
+                line.buy = missing
             lines.append(line)
         out[n.request_id] = lines
     return out
