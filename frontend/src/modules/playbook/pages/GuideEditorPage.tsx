@@ -11,7 +11,7 @@ import { ErrorState, LoadingRows, PageHeader, Panel } from "@/core/ui/feedback";
 import { Field, Input, Select, Textarea } from "@/core/ui/field";
 import { HelpTip } from "@/core/ui/help-tip";
 import { formatDateTime } from "@/core/lib/format";
-import { getGuide, newId, reachable, removeStep, type Fact, type GuideDetail, type Tree } from "../api";
+import { getGuide, newId, pruneUnreachable, removeStep, unreachableSteps, type Fact, type GuideDetail, type Tree } from "../api";
 import { Mindmap } from "../Mindmap";
 import { Note } from "../Note";
 import { RunPanel } from "../Run";
@@ -97,7 +97,7 @@ export function GuideEditorPage() {
   const addJump = () => others[0] && setNode({ children: [...node.children, { label: node.kind === "check" ? (node.children.length ? "Sai" : "Đúng") : "", to: others[0][0] }] });
   const afterRemove = removeStep(tree, sel);
   const removing = Object.keys(tree.nodes).length - Object.keys(afterRemove.nodes).length;
-  const orphans = Object.keys(tree.nodes).length - reachable(tree).size;
+  const lost = unreachableSteps(tree);
 
   return (
     <>
@@ -139,7 +139,17 @@ export function GuideEditorPage() {
           <Input value={meta.description} maxLength={1000} onChange={(e) => { setMeta({ ...meta, description: e.target.value }); setDirty(true); }} placeholder="Khi nào dùng hướng dẫn này" />
         </Field>
       </div>
-      {orphans > 0 && <p role="status" className="mb-3 rounded-sm bg-waiting-soft px-3 py-2 text-sm">Có {orphans} bước không nối với sơ đồ – sẽ bị từ chối khi xuất bản.</p>}
+      {lost.length > 0 && (
+        <div role="status" className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-sm bg-waiting-soft px-3 py-2 text-sm">
+          <p className="min-w-0 flex-1 text-pretty">
+            Có {lost.length} bước không còn nhánh nào trỏ tới nên không hiện trên sơ đồ và sẽ bị từ chối khi xuất bản:{" "}
+            <strong>{lost.map((k) => tree.nodes[k]!.title || "(chưa đặt tên)").join(", ")}</strong>. Cần dùng lại thì chọn nó ở “Tới bước” của một nhánh; không cần thì xoá.
+          </p>
+          <Button size="sm" variant="danger" onClick={() => change(pruneUnreachable(tree))}>
+            <Trash2 className="size-4" aria-hidden="true" />Xoá {lost.length} bước không nối
+          </Button>
+        </div>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
         <div className="space-y-4">
