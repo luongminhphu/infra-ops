@@ -64,32 +64,13 @@ ONBOARD: dict[str, Any] = {
             ),
             "reconcile": _step(
                 "Đối soát thông tin nhân viên",
-                "Tìm Mã NV trên trang Đối soát:\n\n"
-                "- Chưa có user SDP: bình thường với nhân viên mới (tài khoản AD sẽ đồng bộ sang SDP)\n"
-                "- Đã có user BioStar còn hoạt động / đã có tài sản: có thể là **tái tuyển** hoặc trùng Mã NV\n"
-                "- Họ tên khác giữa các hệ thống: xác nhận với HR",
-                [("", "rehire")],
+                f"{ADJUST}\n\n"
+                "Quy tắc: **mỗi lần onboard là một Mã NV mới và tài khoản mới** – kể cả người từng làm ở công ty, "
+                "không dùng lại tài khoản, mailbox hay thiết bị cũ.\n\n"
+                "Tìm Mã NV trên trang Đối soát để chắc Mã NV mới chưa có ở hệ thống nào (chưa có user SDP / BioStar là "
+                "bình thường). Họ tên, phòng ban khác với request: xác nhận với HR.",
+                [("", "ad_account")],
                 [("lifecycle.reconciliation", "Đối soát theo Mã NV")],
-            ),
-            "rehire": _step(
-                "Nhân viên đã có laptop đang dùng?",
-                "App tự kiểm tra từ lần đối soát gần nhất.",
-                [("Đúng", "rehire_confirm"), ("Sai", "ad_account")],
-                kind="check",
-                check={"left": _fact("lifecycle.assets_in_use", "Laptop"), "op": ">=", "right": _value("1")},
-            ),
-            "rehire_confirm": _step(
-                "Xác nhận tái tuyển / trùng Mã NV với HR",
-                "Đã có laptop gán cho Mã NV này. Xác nhận với HR:\n\n"
-                "- **Tái tuyển / chuyển đổi**: dùng lại tài khoản AD cũ (kích hoạt lại), không cấp thiết bị mới\n"
-                "- **Trùng Mã NV**: dừng, báo HR sửa Mã NV trên RTR",
-                [("Tái tuyển – dùng lại tài khoản", "mailbox"), ("Trùng Mã NV – dừng", "stop_duplicate")],
-            ),
-            "stop_duplicate": _step(
-                "Dừng: Mã NV trùng",
-                "Ghi chú trên request SDP, chuyển lại HR. Huỷ Job onboard nếu HR tạo request mới.",
-                kind="outcome",
-                outcome={"result": "exception", "approval": "HR xác nhận Mã NV đúng"},
             ),
             "ad_account": _step(
                 "Tạo tài khoản AD",
@@ -109,8 +90,7 @@ ONBOARD: dict[str, Any] = {
                 "- Exchange hybrid: tạo remote mailbox cho tài khoản vừa tạo (`Enable-RemoteMailbox`), địa chỉ "
                 "`ten.hodem@congty.com.vn`\n"
                 "- Chờ Entra Connect đồng bộ (hoặc chạy delta sync), kiểm tra user xuất hiện trên M365\n"
-                "- Thêm vào nhóm email phòng ban / distribution list\n"
-                "- Tái tuyển: kích hoạt lại tài khoản và mailbox cũ thay vì tạo mới",
+                "- Thêm vào nhóm email phòng ban / distribution list",
                 [("", "license_band")],
             ),
             "license_band": _step(
@@ -147,23 +127,12 @@ ONBOARD: dict[str, Any] = {
                 "**Theo phòng ban:** ví dụ Kế toán – phần mềm kế toán; Giao dịch – Bloomberg / phần mềm giao dịch; "
                 "IT – công cụ quản trị.\n\n"
                 "Phần mềm ngoài danh mục: cần quản lý trực tiếp duyệt qua request SDP riêng.",
-                [("", "devices")],
-            ),
-            "devices": _step(
-                "Laptop theo tiêu chuẩn band đã đủ?",
-                "So số laptop đang gán với Tiêu chuẩn cấp phát theo band (Cấu hình module).",
-                [("Đúng", "biostar"), ("Sai", "stock")],
-                kind="check",
-                check={
-                    "left": _fact("lifecycle.assets_in_use", "Laptop"),
-                    "op": ">=",
-                    "right": _fact("lifecycle.standard_quantity", "Laptop"),
-                },
+                [("", "stock")],
             ),
             "stock": _step(
                 "Lấy thiết bị trong kho",
-                "Kho thiết bị gợi ý tài sản In Store theo band (hàng thu hồi trước). Chọn tài sản trong Job onboard "
-                "để Job gán cho nhân viên trên SDP.",
+                "Mã NV mới chưa có thiết bị: cấp đủ theo Tiêu chuẩn cấp phát theo band. Kho thiết bị gợi ý tài sản "
+                "In Store (hàng thu hồi trước). Chọn tài sản trong Job onboard để Job gán cho nhân viên trên SDP.",
                 [("Kho có đủ", "biostar"), ("Kho thiếu", "purchase")],
                 [("lifecycle.stock", "Kho thiết bị"), ("lifecycle.jobs", "Chọn tài sản trong Job")],
             ),

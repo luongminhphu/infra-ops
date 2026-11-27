@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { layoutTree } from "./layout";
-import { pruneUnreachable, removeStep, unreachableSteps, type Tree } from "./api";
+import { bypassStep, moveStep, pruneUnreachable, removeStep, unreachableSteps, type Tree } from "./api";
 
 const tree: Tree = {
   root: "a",
@@ -22,6 +22,52 @@ describe("mind map layout", () => {
     const kids = boxes.filter((b) => b.key === "r/0" || b.key === "r/1");
     expect(a.y).toBe((kids[0]!.y + kids[1]!.y) / 2);
     expect(links.find((l) => l.jump)?.label).toBe("Chưa được");
+  });
+
+  it("removes a middle step and joins the steps around it", () => {
+    const chain: Tree = {
+      root: "a",
+      nodes: {
+        a: { title: "A", note: "", children: [{ label: "Đủ", to: "b" }, { label: "Thiếu", to: "x" }] },
+        b: { title: "Kiểm tra laptop", note: "", children: [{ label: "", to: "c" }] },
+        c: { title: "C", note: "", children: [{ label: "", to: "d" }] },
+        d: { title: "D", note: "", children: [] },
+        x: { title: "X", note: "", children: [{ label: "Đã bổ sung", to: "b" }] },
+      },
+    };
+    const t = bypassStep(chain, "b")!;
+    expect(Object.keys(t.nodes).sort()).toEqual(["a", "c", "d", "x"]);
+    expect(t.nodes.a!.children).toEqual([{ label: "Đủ", to: "c" }, { label: "Thiếu", to: "x" }]);
+    expect(t.nodes.x!.children).toEqual([{ label: "Đã bổ sung", to: "c" }]);
+    // A branching step, the root, or a step whose next step is the one before it: no bypass.
+    expect(bypassStep(chain, "a")).toBeNull();
+    expect(bypassStep(tree, "a")).toBeNull();
+    const back: Tree = { root: "a", nodes: { a: { title: "A", note: "", children: [{ label: "", to: "b" }] },
+      b: { title: "B", note: "", children: [{ label: "", to: "a" }] } } };
+    expect(Object.keys(bypassStep(back, "b")!.nodes)).toEqual(["a"]); // a → a is dropped, not a self-loop
+  });
+
+  it("drag and drop moves a step with the steps after it behind another step", () => {
+    const t: Tree = {
+      root: "a",
+      nodes: {
+        a: { title: "A", note: "", children: [{ label: "", to: "b" }, { label: "", to: "c" }] },
+        b: { title: "B", note: "", children: [{ label: "", to: "d" }] },
+        c: { title: "C", note: "", children: [] },
+        d: { title: "D", note: "", children: [{ label: "Lại", to: "a" }] },
+        k: { title: "K", note: "", kind: "check", children: [] } as Tree["nodes"][string],
+      },
+    };
+    const moved = moveStep(t, "b", "c") as Tree;
+    expect(moved.nodes.a!.children.map((x) => x.to)).toEqual(["c"]);
+    expect(moved.nodes.c!.children).toEqual([{ label: "", to: "b" }]);
+    expect(moved.nodes.b!.children).toEqual([{ label: "", to: "d" }]); // the steps after it come along
+    expect(unreachableSteps(moved)).toEqual(unreachableSteps(t));
+    expect(moveStep(t, "b", "d")).toBe("Không thả được vào chính các bước phía sau nó.");
+    expect(moveStep(t, "a", "c")).toBe("Không di chuyển được bước gốc.");
+    expect(moveStep(t, "b", "a")).toBe("Bước này đã nối sau bước đó.");
+    const out = { ...t, nodes: { ...t.nodes, c: { ...t.nodes.c!, kind: "outcome" as const } } };
+    expect(typeof moveStep(out, "b", "c")).toBe("string");
   });
 
   it("lists and prunes steps no branch leads to", () => {

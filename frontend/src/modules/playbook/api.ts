@@ -119,6 +119,68 @@ export function unreachableSteps(tree: Tree): string[] {
   return Object.keys(tree.nodes).filter((k) => !keep.has(k));
 }
 
+/**
+ * Remove a step in the middle and join the steps around it: every branch to it now leads to its one next step
+ * (keeping the branch's own label), so nothing after it is lost. Only for a step with exactly one next step –
+ * a step that branches cannot say which way the earlier step should go. Returns null when that does not apply.
+ */
+export function bypassStep(tree: Tree, id: string): Tree | null {
+  const node = tree.nodes[id];
+  if (!node || id === tree.root || node.children.length !== 1) return null;
+  const next = node.children[0]!.to;
+  if (next === id) return null;
+  const nodes: Record<string, StepNode> = {};
+  for (const [k, n] of Object.entries(tree.nodes)) {
+    if (k === id) continue;
+    const seen = new Set<string>();
+    const children = n.children
+      .map((b) => (b.to === id ? { ...b, to: next } : b))
+      .filter((b) => b.to !== k && !seen.has(`${b.label}\u0000${b.to}`) && seen.add(`${b.label}\u0000${b.to}`));
+    nodes[k] = { ...n, children };
+  }
+  return pruneUnreachable({ root: tree.root, nodes });
+}
+
+/** The step each step is drawn under: the first that reaches it, breadth first (the root has ""). */
+export function drawnParents(tree: Tree): Map<string, string> {
+  const parent = new Map<string, string>([[tree.root, ""]]);
+  const queue = [tree.root];
+  while (queue.length) {
+    const id = queue.shift()!;
+    for (const b of tree.nodes[id]?.children ?? []) {
+      if (!parent.has(b.to) && tree.nodes[b.to]) {
+        parent.set(b.to, id);
+        queue.push(b.to);
+      }
+    }
+  }
+  return parent;
+}
+
+/**
+ * Drag and drop on the map: move a step – with the steps after it – to follow `target`. The branch from the step
+ * it is drawn under goes; `target` gets a new branch to it (other branches to the step, e.g. jumps back, stay).
+ * Returns the reason in Vietnamese when the move is not possible.
+ */
+export function moveStep(tree: Tree, id: string, target: string): Tree | string {
+  const node = tree.nodes[id];
+  const to = tree.nodes[target];
+  if (!node || !to || id === target) return "Thả lên một bước khác.";
+  if (id === tree.root) return "Không di chuyển được bước gốc.";
+  const from = drawnParents(tree).get(id) ?? "";
+  if (from === target) return "Bước này đã nối sau bước đó.";
+  if (to.kind === "outcome") return "Bước kết luận là bước cuối – không nối thêm bước sau.";
+  if (to.kind === "check" && to.children.length >= 2) return "Bước kiểm tra đã đủ nhánh Đúng và Sai.";
+  // The target must still be reachable without the moved step, or the branch would hang in the moved part.
+  const without = reachable({ root: tree.root, nodes: Object.fromEntries(Object.entries(tree.nodes).filter(([k]) => k !== id)) });
+  if (!without.has(target)) return "Không thả được vào chính các bước phía sau nó.";
+  const nodes: Record<string, StepNode> = { ...tree.nodes };
+  if (from) nodes[from] = { ...nodes[from]!, children: nodes[from]!.children.filter((b) => b.to !== id) };
+  const label = to.kind === "check" ? (to.children.length ? "Sai" : "Đúng") : "";
+  nodes[target] = { ...to, children: [...to.children, { label, to: id }] };
+  return { root: tree.root, nodes };
+}
+
 /** Drop the steps that hang nowhere. */
 export function pruneUnreachable(tree: Tree): Tree {
   const keep = reachable(tree);

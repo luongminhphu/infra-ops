@@ -12,7 +12,7 @@ import { ErrorState, LoadingRows, PageHeader, Panel } from "@/core/ui/feedback";
 import { Field, Input, Select, Textarea } from "@/core/ui/field";
 import { HelpTip } from "@/core/ui/help-tip";
 import { formatDateTime } from "@/core/lib/format";
-import { getGuide, newId, pruneUnreachable, removeStep, unreachableSteps, type Fact, type GuideDetail, type Tree } from "../api";
+import { bypassStep, getGuide, moveStep, newId, pruneUnreachable, removeStep, unreachableSteps, type Fact, type GuideDetail, type Tree } from "../api";
 import { Mindmap } from "../Mindmap";
 import { Note } from "../Note";
 import { RunPanel } from "../Run";
@@ -110,6 +110,9 @@ export function GuideEditorPage() {
   const addJump = () => others[0] && setNode({ children: [...node.children, { label: node.kind === "check" ? (node.children.length ? "Sai" : "Đúng") : "", to: others[0][0] }] });
   const afterRemove = removeStep(tree, sel);
   const removing = Object.keys(tree.nodes).length - Object.keys(afterRemove.nodes).length;
+  // Removing a middle step can keep everything after it by joining the step before to the step after.
+  const joined = removing > 1 ? bypassStep(tree, sel) : null;
+  const nextTitle = node.children.length === 1 ? tree.nodes[node.children[0]!.to]?.title : undefined;
   const lost = unreachableSteps(tree);
 
   return (
@@ -171,7 +174,21 @@ export function GuideEditorPage() {
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
         <div className="space-y-4">
-          <Mindmap tree={tree} selected={sel} onSelect={setSelected} label="Sơ đồ đang soạn" path={path} />
+          <Mindmap
+            tree={tree}
+            selected={sel}
+            onSelect={setSelected}
+            label="Sơ đồ đang soạn"
+            path={path}
+            onMove={(stepId, target) => {
+              const next = moveStep(tree, stepId, target);
+              if (typeof next === "string") return toast.error(next);
+              change(next);
+              setSelected(stepId);
+              toast.success(`Đã chuyển “${tree.nodes[stepId]!.title}” sang sau “${tree.nodes[target]!.title}”.`);
+            }}
+          />
+          <p className="text-xs text-muted">Kéo một bước thả lên bước khác để chuyển bước đó (cùng các bước phía sau) sang nối sau bước đó. Đặt tên lựa chọn của nhánh mới ở khung bên phải.</p>
           {dirty ? (
             <p className="text-sm text-muted">Lưu nháp để chạy thử bản nháp với một Mã NV.</p>
           ) : (
@@ -255,11 +272,22 @@ export function GuideEditorPage() {
         onClose={() => setRemoveOpen(false)}
         title={`Xoá bước “${node.title}”?`}
         size="sm"
-        description={removing > 1 ? `Xoá luôn ${removing - 1} bước chỉ nối qua bước này. Các nhánh trỏ tới bước bị xoá cũng bị bỏ. Chưa lưu thì vẫn tải lại được bản nháp cũ.` : "Các nhánh trỏ tới bước này cũng bị bỏ."}
+        description={
+          joined
+            ? `Chọn “Xoá và nối thẳng” để bước trước đi thẳng sang “${nextTitle}”, giữ nguyên ${removing - 1} bước phía sau. “Xoá cả nhánh” bỏ luôn các bước đó. Chưa lưu thì vẫn tải lại được bản nháp cũ.`
+            : removing > 1
+              ? `Xoá luôn ${removing - 1} bước chỉ nối qua bước này.${node.children.length > 1 ? ` Bước này rẽ ${node.children.length} nhánh nên không nối thẳng được – muốn giữ các bước sau, đổi “Tới bước” ở bước trước rồi xoá.` : ""} Chưa lưu thì vẫn tải lại được bản nháp cũ.`
+              : "Các nhánh trỏ tới bước này cũng bị bỏ."
+        }
         footer={
           <>
             <Button onClick={() => setRemoveOpen(false)}>Giữ lại</Button>
-            <Button variant="danger" onClick={() => { change(afterRemove); setSelected(tree.root); setRemoveOpen(false); }}>Xoá {removing} bước</Button>
+            <Button variant={joined ? "ghost" : "danger"} onClick={() => { change(afterRemove); setSelected(tree.root); setRemoveOpen(false); }}>
+              {joined ? `Xoá cả nhánh (${removing} bước)` : `Xoá ${removing} bước`}
+            </Button>
+            {joined && (
+              <Button variant="danger" onClick={() => { change(joined); setSelected(node.children[0]!.to); setRemoveOpen(false); }}>Xoá và nối thẳng</Button>
+            )}
           </>
         }
       />
