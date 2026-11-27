@@ -26,6 +26,8 @@ interface ReviewItem {
   biostar_active: boolean | null;
   done: boolean;
   conclusion: string;
+  hr_status: string; // what HR reads in the e-mail and Excel
+  closed_on: string | null; // the day IT completed the offboard Job
 }
 
 interface Review {
@@ -79,7 +81,7 @@ export function OffboardReviewPage() {
     <>
       <PageHeader
         title="Rà soát nghỉ việc (ISO 27001)"
-        description="Hằng tháng IT gửi phòng Nhân sự danh sách người nghỉ việc theo request RTR, kèm tình trạng thu hồi quyền truy cập và tài sản, để HR xác nhận danh sách đầy đủ và đúng (rà soát quyền truy cập định kỳ theo ISO 27001)."
+        description="Hằng tháng IT gửi phòng Nhân sự danh sách người nghỉ việc theo request ITSM và tình trạng thu hồi, để HR đối chiếu với hệ thống nhân sự và xác nhận danh sách đầy đủ, đúng (ISO 27001)."
         actions={
           // The e-mail is the main action only when the list is ready to send (all cases done, recipient set).
           <span className="inline-flex flex-wrap gap-2">
@@ -113,8 +115,8 @@ export function OffboardReviewPage() {
           <p className="pb-2 text-sm text-muted">
             {d.items.length} người nghỉ việc ({formatDate(d.from)} – {formatDate(d.to)}){d.hr_review_to.length > 0 && <> · Email gửi đến: {d.hr_review_to.join(", ")}</>}
             <HelpTip title="Số liệu lấy từ đâu" className="ml-1">
-              <span className="block">Danh sách: request RTR loại nghỉ việc có ngày hiệu lực trong tháng. Tài sản và BioStar: lần đồng bộ đối soát gần nhất; Job: Job offboard mới nhất của người đó.</span>
-              <span className="block">Email nháp mở được bằng Outlook, đã kèm file Excel có cột “HR xác nhận” để HR điền và gửi lại. Lưu email đã gửi làm bằng chứng rà soát.</span>
+              <span className="block">Danh sách: request ITSM (SDP) loại nghỉ việc có ngày hiệu lực trong tháng. Trạng thái xử lý: “Đã thu hồi” khi Job offboard hoàn tất, không còn tài sản và ra vào BioStar đã khoá (theo lần đồng bộ gần nhất).</span>
+              <span className="block">Email và file Excel gửi HR chỉ có Mã NV, họ tên, phòng ban, ngày nghỉ, request, trạng thái và ngày IT hoàn tất – chi tiết kỹ thuật chỉ hiện ở trang này. File có cột “HR xác nhận” để HR điền và gửi lại; lưu email đã gửi làm bằng chứng rà soát.</span>
             </HelpTip>
           </p>
         )}
@@ -127,17 +129,13 @@ export function OffboardReviewPage() {
       ) : (
         d && (
           <>
-            {/* Phones: one card per person, the decision (conclusion + action) first. */}
+            {/* Phones: one card per person, the status and its action last. */}
             <ul className="space-y-2 sm:hidden" aria-label={`Nhân sự nghỉ việc tháng ${month}`}>
               {d.items.map((r) => (
                 <li key={`${r.employee_id}-${r.request}`} className="rounded-md border border-line bg-surface p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="font-medium">{r.full_name} <Mono className="text-sm text-muted">{r.employee_id}</Mono></p>
-                    <Conclusion r={r} />
-                  </div>
-                  <p className="mt-1 text-sm text-muted">{r.department || "—"} · nghỉ {formatDate(r.effective_date)} · {r.request} {r.request_status}</p>
-                  <div className="mt-2 flex flex-wrap gap-1.5"><JobBadge r={r} /><AssetBadge r={r} /><BioStarBadge r={r} /></div>
-                  <RowAction r={r} className="mt-2" />
+                  <p className="font-medium">{r.full_name} <Mono className="text-sm text-muted">{r.employee_id}</Mono></p>
+                  <p className="mt-0.5 mb-2 text-sm text-muted">{r.department || "—"} · nghỉ {formatDate(r.effective_date)} · {r.request} {r.request_status}{r.done && r.closed_on ? ` · IT xong ${formatDate(r.closed_on)}` : ""}</p>
+                  <Progress r={r} />
                 </li>
               ))}
             </ul>
@@ -146,7 +144,7 @@ export function OffboardReviewPage() {
                 <caption className="sr-only">Nhân sự nghỉ việc tháng {month}</caption>
                 <thead className="bg-surface-2 text-sm text-muted">
                   <tr>
-                    {["Nhân viên", "Ngày nghỉ", "Request RTR", "Job offboard", "Tài sản còn gán", "BioStar", "Kết luận IT"].map((h) => (
+                    {["Nhân viên", "Ngày nghỉ", "Request ITSM", "Trạng thái xử lý", "Ngày IT hoàn tất"].map((h) => (
                       <th key={h} scope="col" className="whitespace-nowrap px-3 py-2 font-semibold">{h}</th>
                     ))}
                   </tr>
@@ -154,20 +152,14 @@ export function OffboardReviewPage() {
                 <tbody>
                   {d.items.map((r) => (
                     <tr key={`${r.employee_id}-${r.request}`} className="border-t border-line align-top">
-                      <td className="px-3 py-1.5">
+                      <td className="px-3 py-2">
                         <span className="block font-medium">{r.full_name}</span>
                         <span className="block text-sm text-muted"><Mono>{r.employee_id}</Mono> · {r.department || "—"}</span>
                       </td>
-                      <td className="tabular whitespace-nowrap px-3 py-1.5">{formatDate(r.effective_date)}</td>
-                      <td className="whitespace-nowrap px-3 py-1.5"><Mono>{r.request}</Mono>{r.request_status && <span className="block text-xs text-muted">{r.request_status}</span>}</td>
-                      <td className="whitespace-nowrap px-3 py-1.5"><JobBadge r={r} /></td>
-                      <td className="whitespace-nowrap px-3 py-1.5"><AssetBadge r={r} /></td>
-                      <td className="whitespace-nowrap px-3 py-1.5"><BioStarBadge r={r} /></td>
-                      <td className="px-3 py-1.5">
-                        <Conclusion r={r} />
-                        {!r.done && <span className="mt-0.5 block text-xs text-muted">{r.conclusion.replace("Cần xử lý: ", "")}</span>}
-                        <RowAction r={r} className="mt-1" />
-                      </td>
+                      <td className="tabular whitespace-nowrap px-3 py-2">{formatDate(r.effective_date)}</td>
+                      <td className="whitespace-nowrap px-3 py-2"><Mono>{r.request}</Mono>{r.request_status && <span className="block text-xs text-muted">{r.request_status}</span>}</td>
+                      <td className="px-3 py-2"><Progress r={r} /></td>
+                      <td className="tabular whitespace-nowrap px-3 py-2">{r.done && r.closed_on ? formatDate(r.closed_on) : <span className="text-muted">—</span>}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -180,22 +172,25 @@ export function OffboardReviewPage() {
   );
 }
 
-function JobBadge({ r }: { r: ReviewItem }) {
-  return r.job_status ? <StatusBadge {...JOB_STATUS[r.job_status]} /> : <StatusBadge status="pending" label="Chưa có Job" />;
-}
-
-function AssetBadge({ r }: { r: ReviewItem }) {
-  if (r.assets_in_use === null) return <StatusBadge status="skipped" label="Chưa đối soát" />;
-  return r.assets_in_use ? <StatusBadge status="warning" label={`Còn ${r.assets_in_use} tài sản`} /> : <StatusBadge status="done" label="Không còn tài sản" />;
-}
-
-function BioStarBadge({ r }: { r: ReviewItem }) {
-  if (r.biostar_active === null) return <StatusBadge status="skipped" label="BioStar chưa đọc" />;
-  return r.biostar_active ? <StatusBadge status="failed" label="BioStar còn hoạt động" /> : <StatusBadge status="done" label={`BioStar: ${r.biostar}`} />;
-}
-
-function Conclusion({ r }: { r: ReviewItem }) {
-  return <StatusBadge status={r.done ? "done" : "warning"} label={r.done ? "Đã thu hồi đủ" : "Cần xử lý"} />;
+/**
+ * Trạng thái xử lý: the HR-facing status, and for IT what is still open (Job, devices, door access) with the link
+ * that finishes it. Only the status goes to HR.
+ */
+function Progress({ r }: { r: ReviewItem }) {
+  if (r.done) return <StatusBadge status="done" label="Đã thu hồi" />;
+  const open: string[] = [];
+  if (r.job_status !== "completed") open.push(r.job_status ? `Job offboard: ${JOB_STATUS[r.job_status].label}` : "Chưa có Job offboard");
+  if (r.assets_in_use === null) open.push("Tài sản: chưa đối soát");
+  else if (r.assets_in_use) open.push(`Còn ${r.assets_in_use} tài sản`);
+  if (r.biostar_active === null) open.push("BioStar: chưa đọc");
+  else if (r.biostar_active) open.push("Ra vào BioStar còn hoạt động");
+  return (
+    <div className="grid justify-items-start gap-1">
+      <StatusBadge status="warning" label="Đang xử lý" />
+      <span className="text-sm text-muted text-pretty">{open.join(" · ")}</span>
+      <RowAction r={r} />
+    </div>
+  );
 }
 
 /** Where IT finishes the case: the offboard job, or the reconciliation panel that creates it. */

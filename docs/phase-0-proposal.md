@@ -1464,3 +1464,13 @@ Kho thiết bị chỉ liệt kê tài sản chưa gán người. Mọi trạng 
   trước, thay là lựa chọn cuối) → Function Head tự đề xuất thì đi tiếp, người khác đề xuất thì cần Function Head duyệt;
   thiết bị khác: IT kiểm tra, có ảnh / ghi tình trạng trên request là hợp lệ → ưu tiên máy thu hồi, kho không có thì đề
   xuất mua → đổi máy, chuyển dữ liệu, biên bản → thiết bị cũ về kho / sửa / chờ thanh lý → đóng request.
+
+## 63. Rà soát nghỉ việc (ISO 27001): gọn cho HR, email không vỡ (27/11/2026)
+
+- Trang, file Excel và email chỉ còn thông tin HR cần để đối chiếu với hệ thống nhân sự: **Mã NV, Họ tên, Phòng ban,
+  Ngày nghỉ việc, Request ITSM** (đổi từ “Request RTR”), **Trạng thái xử lý** (“Đã thu hồi” / “Đang xử lý (còn N tài sản,
+  thẻ / vân tay ra vào còn hiệu lực)”) và **Ngày IT hoàn tất** (ngày Job offboard hoàn tất – bằng chứng thu hồi kịp thời).
+  Excel thêm “HR xác nhận (Đúng / Sai)” và “Ghi chú HR”. Chi tiết kỹ thuật (Job, tài sản, BioStar) chỉ còn ở trang của IT,
+  dưới trạng thái, kèm liên kết mở / tạo Job.
+- Email nháp viết lại ngắn: mục đích, tình trạng một câu, 2 điểm cần xác nhận, cách phản hồi, bảng. Mã hoá base64 + CRLF
+  (trước đây quoted-printable dòng dài làm Outlook vỡ dấu, lộ “=C3”, “<td …”).

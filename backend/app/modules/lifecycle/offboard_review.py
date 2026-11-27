@@ -8,6 +8,7 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from email import policy
 from email.message import EmailMessage
 from html import escape
 from typing import Any
@@ -45,17 +46,16 @@ SDP_STATUS_VN = {
     "cancelled": "Đã huỷ",
     "canceled": "Đã huỷ",
 }
+# What HR checks against their own records - IT's working detail (Job, assets, BioStar) stays on the IT page.
 HEADERS = [
     "STT",
     "Mã NV",
     "Họ tên",
     "Phòng ban",
     "Ngày nghỉ việc",
-    "Request RTR",
-    "Job offboard",
-    "Tài sản còn gán",
-    "BioStar",
-    "Kết luận IT",
+    "Request ITSM",
+    "Trạng thái xử lý",
+    "Ngày IT hoàn tất",
 ]
 
 
@@ -72,6 +72,7 @@ class ReviewRow:
     assets_in_use: int | None  # None = not read
     biostar: str
     biostar_active: bool | None
+    closed_on: date | None = None  # the day IT completed the offboard Job (Vietnam time)
 
     @property
     def done(self) -> bool:
@@ -90,6 +91,22 @@ class ReviewRow:
             todo.append("BioStar còn hoạt động")
         return "Cần xử lý: " + ", ".join(todo) if todo else "Chưa đủ dữ liệu đối soát"
 
+    @property
+    def remaining(self) -> list[str]:
+        """What is still open, in words HR understands (the Job itself is IT's business)."""
+        out = []
+        if self.assets_in_use:
+            out.append(f"còn {self.assets_in_use} tài sản")
+        if self.biostar_active:
+            out.append("thẻ / vân tay ra vào còn hiệu lực")
+        return out
+
+    @property
+    def hr_status(self) -> str:
+        if self.done:
+            return "Đã thu hồi"
+        return "Đang xử lý" + (f" ({', '.join(self.remaining)})" if self.remaining else "")
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "employee_id": self.employee_id,
@@ -105,6 +122,8 @@ class ReviewRow:
             "biostar_active": self.biostar_active,
             "done": self.done,
             "conclusion": self.conclusion,
+            "hr_status": self.hr_status,
+            "closed_on": self.closed_on.isoformat() if self.closed_on else None,
         }
 
 
@@ -139,7 +158,7 @@ async def review_rows(session: AsyncSession, month: date) -> list[ReviewRow]:
                 )
             ).all()
         }
-    jobs: dict[str, tuple[str, str]] = {}
+    jobs: dict[str, tuple[str, str, date | None]] = {}
     if emps:
         for j in (
             await session.scalars(
@@ -148,7 +167,8 @@ async def review_rows(session: AsyncSession, month: date) -> list[ReviewRow]:
                 .order_by(Job.created_at)
             )
         ).all():
-            jobs[j.subject_key] = (j.status, str(j.id))  # latest job wins
+            closed = j.closed_at.astimezone(TZ).date() if j.closed_at and j.status == "completed" else None
+            jobs[j.subject_key] = (j.status, str(j.id), closed)  # latest job wins
     rows = []
     for r in reqs:
         emp = r.employee_id or ""
@@ -172,6 +192,7 @@ async def review_rows(session: AsyncSession, month: date) -> list[ReviewRow]:
                 assets_in_use=in_use,
                 biostar=bs.get("label") or "Chưa đọc",
                 biostar_active=bs_active,
+                closed_on=jobs[emp][2] if emp in jobs else None,
             )
         )
     return rows
@@ -184,11 +205,9 @@ def _cells(i: int, r: ReviewRow) -> list[Any]:
         r.full_name,
         r.department,
         r.effective_date.strftime("%d/%m/%Y"),
-        f"{r.request} ({r.request_status})" if r.request_status else r.request,
-        JOB_LABEL.get(r.job_status or "", "Chưa có Job"),
-        "Chưa đọc" if r.assets_in_use is None else r.assets_in_use,
-        r.biostar,
-        r.conclusion,
+        r.request,
+        r.hr_status,
+        r.closed_on.strftime("%d/%m/%Y") if r.closed_on and r.done else "",
     ]
 
 
@@ -201,13 +220,13 @@ def to_xlsx(rows: list[ReviewRow], month: date, logo: bytes | None = None) -> by
     ws = wb.active
     assert ws is not None
     ws.title = f"Nghỉ việc {month:%m-%Y}"
-    ws.append([*HEADERS, "HR xác nhận", "Ghi chú HR"])
+    ws.append([*HEADERS, "HR xác nhận (Đúng / Sai)", "Ghi chú HR"])
     for i, r in enumerate(rows, 1):
         ws.append([_safe(v) for v in _cells(i, r)] + ["", ""])
     for cell in ws[1]:
         cell.font = Font(bold=True)
         cell.fill = PatternFill("solid", fgColor="E3F0F1")
-    for i, w in enumerate([5, 10, 26, 22, 13, 22, 14, 10, 14, 42, 14, 30], start=1):
+    for i, w in enumerate([5, 10, 28, 24, 14, 14, 34, 14, 16, 32], start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
     for row in ws.iter_rows(min_row=2):
         for cell in row:
@@ -220,71 +239,110 @@ def to_xlsx(rows: list[ReviewRow], month: date, logo: bytes | None = None) -> by
 
 
 def render_email(rows: list[ReviewRow], month: date, sender: str) -> tuple[str, str, str]:
-    """Subject, plain text and HTML body asking HR to confirm the list (complete, correct, nobody missing)."""
+    """Subject, plain text and HTML of a short request: HR confirms the list is complete and correct."""
     m = f"{month:%m/%Y}"
-    first, last = month_range(month)
-    subject = f"[ISO 27001] Rà soát nhân sự nghỉ việc tháng {m}"
-    pending = sum(1 for r in rows if not r.done)
-    intro = [
-        "Kính gửi anh/chị phòng Nhân sự,",
-        "",
-        f"Theo quy trình rà soát quyền truy cập định kỳ (ISO 27001), IT gửi danh sách {len(rows)} nhân sự nghỉ việc "
-        f"có ngày hiệu lực từ {first:%d/%m/%Y} đến {last:%d/%m/%Y} theo các request RTR, kèm tình trạng thu hồi "
-        "quyền truy cập và tài sản.",
-        f"Còn {pending} trường hợp IT đang xử lý."
-        if pending
-        else "IT đã thu hồi đủ cho tất cả các trường hợp.",
-        "",
-        "Nhờ anh/chị rà soát và phản hồi:",
-        "1. Danh sách đã đầy đủ chưa (có nhân sự nghỉ việc trong tháng nào chưa có request RTR không)?",
-        "2. Họ tên, phòng ban, ngày nghỉ việc đã đúng chưa?",
-        "Anh/chị có thể ghi vào cột “HR xác nhận” / “Ghi chú HR” trong file đính kèm và gửi lại.",
+    subject = f"[ISO 27001] Xác nhận danh sách nhân sự nghỉ việc tháng {m}"
+    done = sum(r.done for r in rows)
+    if done == len(rows):
+        status = f"IT đã thu hồi quyền truy cập và tài sản của cả {done} trường hợp."
+    elif done == 0:
+        status = f"Cả {len(rows)} trường hợp IT đang xử lý."
+    else:
+        status = f"Tình trạng: {done} đã thu hồi quyền truy cập và tài sản, {len(rows) - done} đang xử lý."
+    lead = (
+        f"IT gửi danh sách {len(rows)} nhân sự nghỉ việc tháng {m} (theo request ITSM) để rà soát quyền truy cập "
+        "định kỳ theo ISO 27001."
+        if rows
+        else f"Theo request ITSM, tháng {m} không có nhân sự nghỉ việc. Nhờ anh/chị xác nhận giúp IT."
+    )
+    asks = [
+        "Danh sách đã đủ – không thiếu nhân sự nghỉ việc nào trong tháng.",
+        "Họ tên, phòng ban và ngày nghỉ việc đúng.",
     ]
-    outro = ["", "Trân trọng,", sender or "IT Infra Support"]
-    text_rows = [
-        f"{i}. {r.employee_id} – {r.full_name} – {r.department} – nghỉ {r.effective_date:%d/%m/%Y} – {r.conclusion}"
-        for i, r in enumerate(rows, 1)
-    ]
-    body = "\n".join(intro + [""] + (text_rows or ["(Không có nhân sự nghỉ việc trong tháng.)"]) + outro)
-    td = 'style="border:1px solid #c8ced8;padding:4px 8px;vertical-align:top"'
-    th = 'style="border:1px solid #c8ced8;padding:4px 8px;background:#eef2f8;text-align:left"'
-    table = (
-        '<table style="border-collapse:collapse;font-size:13px"><tr>'
-        + "".join(f"<th {th}>{h}</th>" for h in HEADERS)
-        + "</tr>"
-        + "".join(
-            "<tr>" + "".join(f"<td {td}>{escape(str(v))}</td>" for v in _cells(i, r)) + "</tr>"
+    reply = "Vui lòng điền cột “HR xác nhận” trong file đính kèm và phản hồi email này."
+    sign = sender or "IT Infra Support"
+
+    text = [
+        "Kính gửi phòng Nhân sự,",
+        "",
+        lead + (f" {status}" if rows else ""),
+        "",
+        *(
+            ["Nhờ anh/chị xác nhận:", *(f"{n}. {a}" for n, a in enumerate(asks, 1)), reply, ""]
+            if rows
+            else []
+        ),
+        *(
+            f"{i}. {r.employee_id} – {r.full_name} – {r.department or '—'} – nghỉ {r.effective_date:%d/%m/%Y} – "
+            f"{r.request} – {r.hr_status}"
             for i, r in enumerate(rows, 1)
+        ),
+        "",
+        "Trân trọng,",
+        sign,
+    ]
+
+    font = "font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#1f2937;line-height:1.5"
+    th = "padding:6px 10px;border:1px solid #d5dbe3;background:#eef2f7;text-align:left;font-weight:600"
+    td = "padding:6px 10px;border:1px solid #d5dbe3;vertical-align:top"
+
+    def cell(v: Any, extra: str = "") -> str:
+        return f'<td style="{td}{extra}">{escape(str(v))}</td>'
+
+    def row_html(i: int, r: ReviewRow) -> str:
+        colour = "color:#166534" if r.done else "color:#92400e"
+        c = _cells(i, r)
+        nowrap = ";white-space:nowrap"
+        return (
+            "<tr>"
+            + "".join(cell(v, nowrap if k in (0, 1, 4, 5) else "") for k, v in enumerate(c[:6]))
+            + cell(c[6], f";{colour};font-weight:600")
+            + cell(c[7], nowrap)
+            + "</tr>"
         )
-        + "</table>"
-    )
-    html = (
-        "".join(f"<p>{escape(line)}</p>" if line else "" for line in intro)
-        + (table if rows else "<p>(Không có nhân sự nghỉ việc trong tháng.)</p>")
-        + "".join(f"<p>{escape(line)}</p>" for line in outro if line)
-    )
-    return subject, body, html
+
+    parts = [
+        f'<div style="{font}">',
+        "<p>Kính gửi phòng Nhân sự,</p>",
+        f"<p>{escape(lead)}" + (f"<br>{escape(status)}" if rows else "") + "</p>",
+    ]
+    if rows:
+        parts += [
+            "<p>Nhờ anh/chị xác nhận:</p>",
+            '<ol style="margin:0 0 12px 20px;padding:0">',
+            *(f"<li>{escape(a)}</li>" for a in asks),
+            "</ol>",
+            f"<p>{escape(reply)}</p>",
+            '<table style="border-collapse:collapse;font-size:13px;margin:8px 0 16px">',
+            "<tr>" + "".join(f'<th style="{th}">{escape(h)}</th>' for h in HEADERS) + "</tr>",
+            *(row_html(i, r) for i, r in enumerate(rows, 1)),
+            "</table>",
+        ]
+    parts += [f"<p>Trân trọng,<br>{escape(sign)}</p>", "</div>"]
+    return subject, "\n".join(text), "\n".join(parts)
 
 
 def build_eml(rows: list[ReviewRow], month: date, settings: LifecycleSettings, sender: str) -> bytes:
-    """Unsent draft (X-Unsent: Outlook opens it ready to send) with the review workbook attached."""
+    """Unsent draft (X-Unsent: Outlook opens it ready to send) with the review workbook attached.
+
+    Bodies are base64 with CRLF line ends: Outlook mangled long quoted-printable lines (broken accents, stray "=")."""
     subject, body, html = render_email(rows, month, sender)
-    msg = EmailMessage()
+    msg = EmailMessage(policy=policy.SMTP)
     msg["Subject"] = subject
     if settings.hr_review_to:
         msg["To"] = ", ".join(settings.hr_review_to)
     if settings.hr_review_cc:
         msg["Cc"] = ", ".join(settings.hr_review_cc)
     msg["X-Unsent"] = "1"
-    msg.set_content(body)
-    msg.add_alternative(html, subtype="html")
+    msg.set_content(body, cte="base64")
+    msg.add_alternative(html, subtype="html", cte="base64")
     msg.add_attachment(
         to_xlsx(rows, month),
         maintype="application",
         subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename=f"ra-soat-nghi-viec-{month:%Y-%m}.xlsx",
     )
-    return bytes(msg)
+    return msg.as_bytes()
 
 
 def last_month(now: datetime | None = None) -> date:
