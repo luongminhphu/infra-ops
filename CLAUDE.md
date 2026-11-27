@@ -90,3 +90,11 @@ npm run dev                 # proxies /api to :8000
 
 - Work phase by phase; stop for review after each phase. Small commits with clear messages.
 - Update README.md, this file and docs when conventions or phases change.
+
+## Cowork loop (Opus · Sonnet · Fable)
+
+Every request that changes code runs through the cowork loop: the main session (Opus) plans and orchestrates, the
+`sonnet-coder` subagent implements one task at a time, the `fable-critic` subagent challenges plans and diffs. All
+conventions above apply to every role. Full protocol (Vietnamese):
+
+@.claude/cowork.md
