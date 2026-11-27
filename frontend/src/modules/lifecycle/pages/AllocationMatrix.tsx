@@ -63,7 +63,7 @@ const on = (tier = "", quantity = 1, reuse_only = false): MatrixCell => ({ on: t
 const no = emptyCell;
 const device = (label: string, product_types: string[], note = ""): MatrixDevice => ({ label, product_types, product_contains: "", catalog_name: "", note });
 
-/** A starting matrix shaped like the company's allocation sheet (5 levels × 8 devices), matched by job title.
+/** A starting matrix shaped like the company's allocation sheet (5 levels × 9 devices), matched by job title.
  * The keywords are examples to adjust to the titles HR writes. */
 export const PRESET: Matrix = {
   devices: [
@@ -74,6 +74,7 @@ export const PRESET: Matrix = {
     device("Chuột", ["Mouse"]),
     device("Headset", ["Headset"]),
     device("Điện thoại bàn", ["IP Phone"]),
+    device("UPS", ["UPS"]),
     device("Phụ kiện khác", ["Accessory"], "Theo nhu cầu công việc (bàn nâng, tay arm, màn hình thứ 3 trở lên) – Adhoc"),
   ],
   levels: [
@@ -84,11 +85,11 @@ export const PRESET: Matrix = {
     { name: "Lãnh đạo cấp cao", group: "Senior Director / C-level", titles: ["Senior Director", "C-level", "CEO", "CFO", "COO", "CTO", "Tổng giám đốc", "Phó tổng giám đốc", "Giám đốc điều hành", "Giám đốc khối"], bands: [], departments: [] },
   ],
   cells: [
-    [on("PC - Standard"), no(), on(), on(), on(), on(), on(), no()],
-    [on("PC - Standard"), no(), on(), on(), on(), on(), on(), no()],
-    [on("PC - Performance"), on("", 1, true), on("", 2), on(), on(), on(), on(), no()], // laptop: reuse a returned one
-    [on("PC - Performance"), on("Laptop - Standard"), on("", 2), on(), on(), on(), on(), no()],
-    [on("PC - Performance"), on("Laptop - Standard"), on("", 2), on(), on(), on(), on(), no()],
+    [on("PC - Standard"), no(), on(), on(), on(), on(), on(), on(), no()],
+    [on("PC - Standard"), no(), on(), on(), on(), on(), on(), on(), no()],
+    [on("PC - Performance"), on("", 1, true), on("", 2), on(), on(), on(), on(), on(), no()], // laptop: reuse a returned one
+    [on("PC - Performance"), on("Laptop - Standard"), on("", 2), on(), on(), on(), on(), on(), no()],
+    [on("PC - Performance"), on("Laptop - Standard"), on("", 2), on(), on(), on(), on(), on(), no()],
   ],
 };
 
@@ -103,6 +104,32 @@ export function removeLevel(m: Matrix, i: number): Matrix {
 }
 export function removeDevice(m: Matrix, i: number): Matrix {
   return { ...m, devices: m.devices.filter((_, j) => j !== i), cells: m.cells.map((r) => r.filter((_, j) => j !== i)) };
+}
+const move = <T,>(xs: T[], from: number, to: number): T[] => {
+  const out = [...xs];
+  const [x] = out.splice(from, 1);
+  out.splice(to, 0, x!);
+  return out;
+};
+/** Put row `from` at position `to` (its cells move with it). */
+export function moveLevel(m: Matrix, from: number, to: number): Matrix {
+  return { ...m, levels: move(m.levels, from, to), cells: move(m.cells, from, to) };
+}
+/** Put column `from` at position `to` (its cells move with it). */
+export function moveDevice(m: Matrix, from: number, to: number): Matrix {
+  return { ...m, devices: move(m.devices, from, to), cells: m.cells.map((r) => move(r, from, to)) };
+}
+
+/** "Vị trí": first, or after one of the other rows / columns; the value is the index it takes. */
+function PositionField({ label, others, value, onChange }: { label: string; others: string[]; value: number; onChange: (i: number) => void }) {
+  return (
+    <Field label={label}>
+      <Select value={value} onChange={(e) => onChange(Number(e.target.value))}>
+        <option value={0}>Đầu tiên</option>
+        {others.map((o, i) => <option key={`${o}-${i}`} value={i + 1}>Sau “{o}”</option>)}
+      </Select>
+    </Field>
+  );
 }
 
 /**
@@ -226,7 +253,7 @@ export function AllocationMatrixEditor({ value, tiers, onChange }: { value: Matr
         onClose={() => setPresetOpen(false)}
         size="sm"
         title="Nạp ma trận mẫu?"
-        description="Thay ma trận đang soạn bằng mẫu 5 cấp bậc × 8 thiết bị (Intern / Vendor, Band 1–6, Band 4–6 kỹ thuật, Band 7–9, Band 10 trở lên). Sửa lại band cho đúng cách HR ghi trong RTR rồi mới lưu; chưa lưu thì “Hoàn tác thay đổi” vẫn quay lại được."
+        description="Thay ma trận đang soạn bằng mẫu 5 cấp bậc × 9 thiết bị (Intern / Vendor, Band 1–6, Band 4–6 kỹ thuật, Band 7–9, Band 10 trở lên). Sửa lại band cho đúng cách HR ghi trong RTR rồi mới lưu; chưa lưu thì “Hoàn tác thay đổi” vẫn quay lại được."
         footer={
           <>
             <Button onClick={() => setPresetOpen(false)}>Huỷ</Button>
@@ -243,9 +270,12 @@ export function AllocationMatrixEditor({ value, tiers, onChange }: { value: Matr
       {editLevel !== null && (
         <LevelDialog
           level={editLevel === "new" ? null : m.levels[editLevel]!}
+          others={m.levels.filter((_, i) => i !== editLevel).map((x) => x.name)}
+          position={editLevel === "new" ? m.levels.length : editLevel}
           onClose={() => setEditLevel(null)}
-          onSave={(lv) => {
-            onChange(editLevel === "new" ? addLevel(m, lv) : { ...m, levels: m.levels.map((x, i) => (i === editLevel ? lv : x)) });
+          onSave={(lv, pos) => {
+            const next = editLevel === "new" ? addLevel(m, lv) : { ...m, levels: m.levels.map((x, i) => (i === editLevel ? lv : x)) };
+            onChange(moveLevel(next, editLevel === "new" ? m.levels.length : editLevel, pos));
             setEditLevel(null);
           }}
           onRemove={editLevel === "new" ? undefined : () => { onChange(removeLevel(m, editLevel)); setEditLevel(null); }}
@@ -254,9 +284,12 @@ export function AllocationMatrixEditor({ value, tiers, onChange }: { value: Matr
       {editDevice !== null && (
         <DeviceDialog
           device={editDevice === "new" ? null : m.devices[editDevice]!}
+          others={m.devices.filter((_, i) => i !== editDevice).map((x) => x.label)}
+          position={editDevice === "new" ? m.devices.length : editDevice}
           onClose={() => setEditDevice(null)}
-          onSave={(d) => {
-            onChange(editDevice === "new" ? addDevice(m, d) : { ...m, devices: m.devices.map((x, i) => (i === editDevice ? d : x)) });
+          onSave={(d, pos) => {
+            const next = editDevice === "new" ? addDevice(m, d) : { ...m, devices: m.devices.map((x, i) => (i === editDevice ? d : x)) };
+            onChange(moveDevice(next, editDevice === "new" ? m.devices.length : editDevice, pos));
             setEditDevice(null);
           }}
           onRemove={editDevice === "new" ? undefined : () => { onChange(removeDevice(m, editDevice)); setEditDevice(null); }}
@@ -266,14 +299,15 @@ export function AllocationMatrixEditor({ value, tiers, onChange }: { value: Matr
   );
 }
 
-function LevelDialog({ level, onClose, onSave, onRemove }: { level: MatrixLevel | null; onClose: () => void; onSave: (lv: MatrixLevel) => void; onRemove?: () => void }) {
+function LevelDialog({ level, others, position, onClose, onSave, onRemove }: { level: MatrixLevel | null; others: string[]; position: number; onClose: () => void; onSave: (lv: MatrixLevel, pos: number) => void; onRemove?: () => void }) {
+  const [pos, setPos] = useState(position);
   const [name, setName] = useState(level?.name ?? "");
   const [group, setGroup] = useState(level?.group ?? "");
   const [titles, setTitles] = useState((level?.titles ?? []).join(", "));
   const [bands, setBands] = useState((level?.bands ?? []).join(", "));
   const [depts, setDepts] = useState((level?.departments ?? []).join(", "));
   const [touched, setTouched] = useState(false);
-  const save = () => { setTouched(true); if (name.trim()) onSave({ name: name.trim(), group: group.trim(), titles: list(titles), bands: list(bands), departments: list(depts) }); };
+  const save = () => { setTouched(true); if (name.trim()) onSave({ name: name.trim(), group: group.trim(), titles: list(titles), bands: list(bands), departments: list(depts) }, pos); };
   return (
     <Dialog
       open
@@ -303,12 +337,14 @@ function LevelDialog({ level, onClose, onSave, onRemove }: { level: MatrixLevel 
         <Field label="Band trong RTR (tuỳ chọn)" hint="Chỉ khi HR có ghi band: đúng như dòng Band của RTR, cách nhau dấu phẩy.">
           <Input value={bands} onChange={(e) => setBands(e.target.value)} />
         </Field>
+        <PositionField label="Vị trí hàng" others={others} value={pos} onChange={setPos} />
       </div>
     </Dialog>
   );
 }
 
-function DeviceDialog({ device, onClose, onSave, onRemove }: { device: MatrixDevice | null; onClose: () => void; onSave: (d: MatrixDevice) => void; onRemove?: () => void }) {
+function DeviceDialog({ device, others, position, onClose, onSave, onRemove }: { device: MatrixDevice | null; others: string[]; position: number; onClose: () => void; onSave: (d: MatrixDevice, pos: number) => void; onRemove?: () => void }) {
+  const [pos, setPos] = useState(position);
   const [d, setD] = useState<Omit<MatrixDevice, "product_types"> & { product_types: string }>({
     label: device?.label ?? "",
     product_types: (device?.product_types ?? []).join(", "),
@@ -319,7 +355,7 @@ function DeviceDialog({ device, onClose, onSave, onRemove }: { device: MatrixDev
   const [touched, setTouched] = useState(false);
   const types = list(d.product_types);
   const ok = d.label.trim() && types.length > 0;
-  const save = () => { setTouched(true); if (ok) onSave({ ...d, label: d.label.trim(), product_types: types }); };
+  const save = () => { setTouched(true); if (ok) onSave({ ...d, label: d.label.trim(), product_types: types }, pos); };
   return (
     <Dialog
       open
@@ -349,6 +385,7 @@ function DeviceDialog({ device, onClose, onSave, onRemove }: { device: MatrixDev
         <Field label="Ghi chú chính sách" className="sm:col-span-2" hint="Hiện dưới tên cột, vd. “Theo nhu cầu công việc – cấp qua Adhoc”.">
           <Input value={d.note} maxLength={300} onChange={(e) => setD({ ...d, note: e.target.value })} />
         </Field>
+        <PositionField label="Vị trí cột" others={others} value={pos} onChange={setPos} />
       </div>
     </Dialog>
   );
