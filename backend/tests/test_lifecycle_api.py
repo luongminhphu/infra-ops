@@ -333,6 +333,30 @@ async def test_allocation_plan_and_band_override(admin, configured, respx_mock) 
     r = await admin.put(f"/api/lifecycle/requests/{req['id']}/band", json={"band": ""})
     assert r.json()["band_source"] == "rtr"
 
+    # With the allocation matrix the row comes from the job title (HR gives no band); IT can pick a row by hand.
+    values = (await admin.get("/api/lifecycle/settings")).json()["values"]
+    assert values["allocation_matrix"]["levels"]  # unsaved: a first matrix built from the band lines
+    on, off = {"on": True, "quantity": 1, "tier": ""}, {"on": False, "quantity": 1, "tier": ""}
+    values["allocation_matrix"] = {
+        "devices": [{"label": "Laptop", "product_types": ["Laptop"], "product_contains": "", "catalog_name": "", "note": ""},
+                    {"label": "Màn hình", "product_types": ["Monitor"], "product_contains": "", "catalog_name": "", "note": ""}],
+        "levels": [{"name": "Quản lý", "titles": ["Trưởng phòng"], "bands": [], "departments": [], "group": ""},
+                   {"name": "Nhân viên", "titles": [], "bands": [], "departments": [], "group": ""}],
+        "cells": [[on, {**on, "quantity": 2}], [off, on]],
+    }  # fmt: skip
+    assert (await admin.put("/api/lifecycle/settings", json=values)).status_code == 200
+    data = (await admin.get("/api/lifecycle/allocation")).json()
+    req = next(r for r in data["requests"] if r["employee_id"] == "003551")
+    assert data["matrix"] and data["bands"] == ["Quản lý", "Nhân viên"]
+    assert (req["level"], req["level_reason"]) == ("Nhân viên", "hàng mặc định")
+    assert [(ln["label"], ln["quantity"]) for ln in req["lines"]] == [("Màn hình", 1)]
+    await admin.put(f"/api/lifecycle/requests/{req['id']}/band", json={"band": "Quản lý"})
+    data = (await admin.get("/api/lifecycle/allocation")).json()
+    req = next(r for r in data["requests"] if r["employee_id"] == "003551")
+    assert (req["level"], req["level_reason"]) == ("Quản lý", "IT chọn tay")
+    assert sorted((ln["label"], ln["quantity"]) for ln in req["lines"]) == [("Laptop", 1), ("Màn hình", 2)]
+    await admin.put(f"/api/lifecycle/requests/{req['id']}/band", json={"band": ""})
+
 
 async def test_settings_validation_and_permissions(admin, client) -> None:  # type: ignore[no-untyped-def]
     bad = await admin.put("/api/lifecycle/settings", json={"rtr_lookback_days": 1})

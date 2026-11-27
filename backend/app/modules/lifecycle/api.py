@@ -33,6 +33,7 @@ from app.modules.lifecycle.settings import (
     SETTINGS_KEY,
     LifecycleSettings,
     main_biostar,
+    matrix_from_standard,
 )
 from app.modules.lifecycle.settings import load as load_module_settings
 from app.modules.lifecycle.sync import SYNC_TASK_KEY, reparse_all
@@ -441,7 +442,13 @@ async def get_module_settings(
         )
     ).all()
     return {
-        "values": settings.model_dump(mode="json"),
+        "values": settings.model_dump(mode="json")
+        | (
+            # Not saved yet: start the matrix editor from the hand-written lines.
+            {"allocation_matrix": matrix_from_standard(settings.allocation_standard).model_dump(mode="json")}
+            if settings.allocation_matrix is None
+            else {}
+        ),
         "field_titles": FIELD_TITLES,
         "default_labels": DEFAULT_LABELS,
         "profiles": [

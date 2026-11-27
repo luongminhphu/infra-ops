@@ -466,7 +466,9 @@ export function StockPage() {
           {a.no_band > 0 && (
             <p className="mb-3 flex items-start gap-1.5 text-sm text-waiting">
               <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              Chưa tính thiết bị cho {a.no_band} nhân viên chưa có band – số Thiếu có thể tăng khi nhập band.
+              {a.matrix
+                ? `Chưa tính thiết bị cho ${a.no_band} nhân viên chưa xác định cấp bậc (chức danh không khớp Ma trận cấp phát) – số Thiếu có thể tăng khi chọn cấp bậc.`
+                : `Chưa tính thiết bị cho ${a.no_band} nhân viên chưa có band – số Thiếu có thể tăng khi nhập band.`}
             </p>
           )}
           <ul aria-label="Kho theo loại thiết bị" className="mb-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">

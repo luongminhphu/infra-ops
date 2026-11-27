@@ -112,10 +112,16 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
     reqs = [r for r in reqs if not (r.id in jobs and jobs[r.id].status == "completed")]
 
     needs = []
+    levels: dict[str, tuple[str | None, str]] = {}  # request -> (matrix row, why)
     for r in reqs:
         job = jobs.get(r.id)
         picked = [{**a, **assets.get(a["id"], {})} for a in (job.params.get("assets", []) if job else [])]
-        needs.append(Need(r.id, r.effective_date, band_of(r)[0], picked))
+        f = r.fields or {}
+        items, level, why = settings.items_for_employee(
+            f.get("job_title"), f.get("band"), f.get("department"), r.band_override
+        )
+        levels[r.id] = (level, why)
+        needs.append(Need(r.id, r.effective_date, band_of(r)[0], picked, items))
     plan = allocate(needs, settings.allocation_standard, stock)
 
     # Which upcoming onboard each stock asset is set aside for: chosen on its job draft, or only suggested.
@@ -130,7 +136,8 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
                 )
     in_stock = {a["id"] for a in stock}
     summary = []
-    for item in settings.allocation_standard:
+    # One stock row per label: matrix rows can give the same device under the same name.
+    for item in {i.label: i for i in settings.allocation_standard}.values():
         lines = [ln for lines in plan.values() for ln in lines if ln.label == item.label]
         summary.append(
             {
@@ -194,14 +201,21 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
                 "effective_date": r.effective_date,
                 "band": band,
                 "band_source": source,
+                "level": levels[r.id][0],
+                "level_reason": levels[r.id][1],
                 "job": {"id": str(job.id), "status": job.status, "version": job.version} if job else None,
                 "status": "no_band"
-                if band is None
+                if (levels[r.id][0] is None if settings.allocation_matrix else band is None)
                 else ("buy" if any(ln.buy for ln in lines) else "covered"),
                 "lines": [_line(ln) for ln in lines],
             }
         )
-    bands = sorted({b for i in settings.allocation_standard for b in i.bands})
+    # What IT can pick by hand for a request: matrix rows, or the bands of hand-written lines.
+    bands = (
+        [lv.name for lv in settings.allocation_matrix.levels]
+        if settings.allocation_matrix
+        else sorted({b for i in settings.allocation_standard for b in i.bands})
+    )
     # Hires without a band have no computable need: the shortage excludes them, so say how many.
     no_band = sum(r["status"] == "no_band" for r in out)
     return {
@@ -209,6 +223,7 @@ async def build_plan(session: AsyncSession) -> dict[str, Any]:
         "stock": summary,
         "requests": out,
         "bands": bands,
+        "matrix": settings.allocation_matrix is not None,
         "no_band": no_band,
     }
 

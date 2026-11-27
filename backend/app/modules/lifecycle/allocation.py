@@ -18,6 +18,8 @@ class Need:
     effective_date: date | None
     band: str | None
     picked: list[dict[str, Any]] = field(default_factory=list)  # assets already chosen on the job draft
+    # Lines already chosen for this employee (allocation matrix: by job title); None = decide by band.
+    items: list[StandardItem] | None = None
 
 
 @dataclass
@@ -61,17 +63,17 @@ def allocate(
     """Earliest effective date first: assets picked on a job draft count first, then free In Store
     assets matching the line (each asset used once), and the rest must be bought.
 
-    Requests without a band get no lines (the caller shows "missing band")."""
+    Requests without a band (and no lines chosen by the matrix) get no lines (the caller shows "missing band")."""
     reserved = {a["id"] for n in needs for a in n.picked}
     free = [a for a in stock if a["id"] not in reserved]
     out: dict[str, list[Line]] = {}
     for n in sorted(needs, key=lambda n: (n.effective_date or date.max, n.request_id)):
-        if not norm_band(n.band):
+        if n.items is None and not norm_band(n.band):
             out[n.request_id] = []
             continue
         picked = list(n.picked)
         lines = []
-        for item in items_for(n.band, standard):
+        for item in n.items if n.items is not None else items_for(n.band, standard):
             line = Line(item.label, item.quantity, item.catalog_name)
             for pool, dest in ((picked, line.picked), (free, line.reuse)):
                 for a in [a for a in pool if matches(a, item)][
