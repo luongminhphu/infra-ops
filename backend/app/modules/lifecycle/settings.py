@@ -273,6 +273,9 @@ class LifecycleSettings(BaseModel):
     @classmethod
     def _merge_retired_groups(cls, data: Any) -> Any:
         """Settings saved before the two lists were merged kept the "left the company" groups apart."""
+        if isinstance(data, dict) and data.get("asset_state_pending_disposal") == "Chờ thanh lý":
+            # The old default never existed on SDP; the company's "waiting for disposal" state is Expired.
+            data = {**data, "asset_state_pending_disposal": "Expired"}
         if isinstance(data, dict) and data.get("biostar_retired_groups"):
             data = dict(data)
             retired = data.pop("biostar_retired_groups")
@@ -297,8 +300,14 @@ class LifecycleSettings(BaseModel):
     asset_state_in_use: str = "In Use"
     asset_state_in_store: str = "In Store"
     # Stock management: SDP asset states for "waiting for disposal" and "disposed" (must exist on SDP).
-    asset_state_pending_disposal: str = Field("Chờ thanh lý", min_length=1, max_length=64)
+    asset_state_pending_disposal: str = Field("Expired", min_length=1, max_length=64)
     asset_state_disposed: str = Field("Disposed", min_length=1, max_length=64)
+    # Received but not checked yet (never suggested for allocation until moved to In Store).
+    asset_state_inventory: str = Field("Inventory", min_length=1, max_length=64)
+    # Away for repair / warranty, and still with the employee but due back: neither is a reconciliation mismatch
+    # while assigned.
+    asset_state_in_repair: str = Field("In Repair", min_length=1, max_length=64)
+    asset_state_to_be_returned: str = Field("To Be Returned", min_length=1, max_length=64)
     # SDP asset custom field (udf_fields key, e.g. "udf_char1") holding the accounting fixed-asset code (Mã TSCĐ).
     asset_fa_code_field: str = Field("", max_length=100, pattern=r"^[A-Za-z0-9_]*$")
 

@@ -1433,3 +1433,17 @@ Nguyên tắc (product owner): user quyền nào chỉ thấy nội dung và ch�
   “Chờ máy cũ” – không tính vào số Thiếu, không đề xuất mua (dòng mang hậu tố “(máy cũ)”). Trang Kho: nhãn “Chờ máy cũ
   N”, thẻ thiết bị ghi số người chờ; Job wizard nhắc “Thêm từ kho” khi có máy thu hồi. Mẫu ma trận: Nhân viên kỹ thuật
   được Laptop chỉ máy cũ.
+
+## 61. Trạng thái tài sản SDP ↔ app (27/11/2026)
+
+| SDP | Vai trò trong app (Cấu hình module) | Ảnh hưởng |
+|---|---|---|
+| In Use | đang sử dụng | đếm tài sản đang dùng; Job onboard gán |
+| In Store | trong kho | Kho thiết bị, gợi ý cấp, máy cũ; Job offboard trả về |
+| Inventory | mới nhập – chưa kiểm (mới) | hiện ở Kho (“Mới nhập – chưa kiểm”), **không gợi ý cấp**; “Đã kiểm – nhập kho” → In Store |
+| In Repair | đang sửa / bảo hành (mới) | hiện ở Kho (“Đang sửa”), không gợi ý cấp; “Gửi sửa” từ hàng trong kho, “Sửa xong – về kho”; đang gán người thì đối soát không báo lệch |
+| To Be Returned | chờ trả lại (mới) | đang gán người thì đối soát không báo lệch |
+| Expired | chờ thanh lý (mặc định mới; giá trị cũ “Chờ thanh lý” – không có trên SDP – tự đổi thành Expired) | tab Chờ thanh lý; chỉ thanh lý từ trạng thái này |
+| Disposed | đã thanh lý | rời kho, ra khỏi sổ kiểm kê |
+
+Kho thiết bị chỉ liệt kê tài sản chưa gán người. Mọi trạng thái trừ Disposed vẫn nằm trong sổ kiểm kê.
