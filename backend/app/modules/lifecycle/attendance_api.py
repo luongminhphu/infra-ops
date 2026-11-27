@@ -110,6 +110,7 @@ async def export_attendance(
     found: set[str] = set()
     reads = [main_biostar(settings)] + [{"profile_id": s.profile_id} for s in settings.biostar_sources]
     read_ok = 0
+    sources: list[str] = []  # per system: how many requested IDs matched (last 5 digits) and scans read
     for i, which in enumerate(reads):
         source = "BioStar chính" if i == 0 else f"BioStar phụ {i}"
         try:
@@ -122,10 +123,19 @@ async def export_attendance(
                     if emp := by_user.get(str(u.get("user_id"))):
                         found.add(emp)
                         report.names.setdefault(emp, u.get("name") or "")
+                before = len(report.scans)
                 if by_user:
                     add_events(
                         report, await client.search_events(sorted(by_user), start, end), by_user, profile.name
                     )
+                sample = ", ".join(
+                    f"{e}↔{u}" for u, e in sorted(by_user.items(), key=lambda x: x[1])[:3] if u != e
+                )
+                sources.append(
+                    f"{profile.name}: {len(set(by_user.values()))}/{len(ids)} Mã NV khớp theo 5 số cuối"
+                    + (f" (vd. {sample})" if sample else "")
+                    + f", {len(report.scans) - before} lượt quẹt"
+                )
             read_ok += 1
         except Exception as exc:
             report.errors.append(_read_error(source, exc))
@@ -155,5 +165,6 @@ async def export_attendance(
             "X-Read-Errors": str(len(report.errors)),
             # Header values are latin-1: the (Vietnamese) reasons travel percent-encoded, one per line.
             "X-Read-Error-Detail": quote("\n".join(report.errors)[:1500]),
+            "X-Source-Detail": quote("\n".join(sources)[:1500]),
         },
     )
