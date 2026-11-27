@@ -6,7 +6,7 @@
 :root {
   color-scheme: light dark;
 
-  /* Neutrals – bright and quiet: white page, hairline structure, one accent (cobalt) for actions */
+  /* Neutrals – bright and quiet: white page, hairline structure, one accent (logo blue) for actions */
   --ink: light-dark(#111827, #e5eaf3);
   --muted: light-dark(#5b6472, #95a1b6);
   --paper: light-dark(#ffffff, #0b1120);
@@ -17,12 +17,12 @@
   /* Form control borders must reach 3:1 against the surface (WCAG 1.4.11). */
   --control-border: light-dark(#74819a, #6f7d97);
 
-  /* Brand – cobalt */
-  --primary: light-dark(#2f5bd3, #7c9dff);
-  --primary-hover: light-dark(#2449ad, #a1b8ff);
+  /* Brand – the company logo blue (#074b9b); dark mode uses a lighter tint of the same hue */
+  --primary: light-dark(#074b9b, #79aef0);
+  --primary-hover: light-dark(#053a7a, #a5c9f5);
   --on-primary: light-dark(#ffffff, #0b1120);
-  --primary-soft: light-dark(#e4ebfc, #1a2747);
-  --focus: light-dark(#2f5bd3, #a1b8ff);
+  --primary-soft: light-dark(#e3ecf8, #132a4d);
+  --focus: light-dark(#074b9b, #a5c9f5);
   /* Rail (module navigation) */
   --rail: light-dark(#fafbfc, #0e1626);
 

@@ -12,7 +12,7 @@ env:
   INFRAOPS_ENVIRONMENT: production
   INFRAOPS_PUBLIC_BASE_URL: https://infraops.congty.local
   INFRAOPS_AUTH_MODE: local
-  INFRAOPS_ENABLED_MODULES: lifecycle,workload
+  INFRAOPS_ENABLED_MODULES: lifecycle,workload,playbook
   INFRAOPS_SECRET_EXPIRY_WARN_DAYS: "30"
   INFRAOPS_OIDC_TENANT_ID: ""
   INFRAOPS_OIDC_CLIENT_ID: ""

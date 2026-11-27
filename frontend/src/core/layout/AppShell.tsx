@@ -1,6 +1,8 @@
 import { useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
+import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { iconFor } from "@/core/ui/icons";
 import { cn } from "@/core/lib/cn";
@@ -73,6 +75,13 @@ export function AppShell() {
       );
     });
 
+  // The company logo set in Hệ thống › Logo báo cáo (same query key, so a new upload shows at once).
+  const branding = useQuery({
+    queryKey: ["core", "branding"],
+    queryFn: () => api<{ has_logo: boolean; logo_version: string | null }>("/api/core/branding"),
+    staleTime: 5 * 60_000,
+  });
+  const logo = branding.data?.has_logo ? `/api/core/branding/logo?v=${branding.data.logo_version}` : null;
   return (
     <div className="flex min-h-dvh">
       <a
@@ -83,7 +92,11 @@ export function AppShell() {
       </a>
       <nav aria-label="Phân hệ" className="sticky top-0 hidden h-dvh w-[var(--rail-w)] shrink-0 flex-col items-center border-r border-line bg-rail py-2 sm:flex">
         <Link to="/" className="mb-2 flex h-10 items-center rounded-sm px-2" aria-label="infra-ops – Tổng quan">
-          <img src="/favicon.svg" alt="" className="size-7" />
+          {logo ? (
+            <img src={logo} alt="" className="max-h-8 max-w-[calc(var(--rail-w)-1rem)] object-contain" />
+          ) : (
+            <img src="/favicon.svg" alt="" className="size-7" />
+          )}
         </Link>
         <ul className="flex flex-1 flex-col items-center gap-1 overflow-y-auto">
           {sections.filter((s) => !s.bottom).map((s) => <RailLink key={s.id} s={s} active={s.id === section?.id} />)}
