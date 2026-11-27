@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { JobWizard } from "./JobWizard";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CalendarClock, Hand, ListChecks, MoreHorizontal, LoaderCircle, ChevronLeft, Eye, Play, RotateCcw, ShieldAlert, SkipForward, Workflow, XCircle } from "lucide-react";
+import { AlertTriangle, CalendarClock, Hand, ListChecks, MoreHorizontal, LoaderCircle, ChevronLeft, Eye, Play, RotateCcw, ShieldAlert, SkipForward, Workflow, XCircle, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
@@ -39,7 +39,9 @@ interface PreviewStep {
  * step has run, no timing details or before-state.
  */
 export function StepDetail({ job, step, act, focus = false }: { job: Job; step: JobStep; act: ReturnType<typeof useJobActions>; focus?: boolean }) {
-  const { can } = useAuth();
+  const { can, me } = useAuth();
+  // The Playbook explains the step (cross-module hand-off by URL; hidden when the module is off or not allowed).
+  const playbook = can("playbook.guides.view") && (me?.nav ?? []).some((g) => g.module === "playbook");
   const canRun = can("lifecycle.job.execute");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [skipOpen, setSkipOpen] = useState(false);
@@ -62,6 +64,14 @@ export function StepDetail({ job, step, act, focus = false }: { job: Job; step: 
             <span key={w} className="rounded-xs border border-line px-1.5 py-0.5">Ghi vào {SYSTEM_WRITE_LABEL[w] ?? w}</span>
           ))}
           {step.requires_confirm && <span className="rounded-xs bg-failed-soft px-1.5 py-0.5 text-failed">Cần nhập lại Mã NV</span>}
+          {playbook && (
+            <Link
+              to={`/playbook/for-step?${new URLSearchParams({ workflow: job.workflow_key, step: step.key })}`}
+              className="ml-auto inline-flex items-center gap-1 font-medium text-primary hover:underline"
+            >
+              <BookOpen className="size-4" aria-hidden="true" />Hướng dẫn trong Playbook
+            </Link>
+          )}
         </div>
 
         {step.message && !awaitingConfirm && (

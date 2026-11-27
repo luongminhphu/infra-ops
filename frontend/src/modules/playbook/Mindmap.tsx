@@ -1,5 +1,5 @@
 import { useMemo, useState, type DragEvent } from "react";
-import { CircleCheck, CornerDownRight, Flag, Split } from "lucide-react";
+import { CircleCheck, CornerDownRight, Flag, Split, Workflow } from "lucide-react";
 import { cn } from "@/core/lib/cn";
 import { moveStep, OUTCOME, type Tree } from "./api";
 import { BOX_H, BOX_W, layoutTree } from "./layout";
@@ -59,7 +59,7 @@ export function Mindmap({ tree, selected, onSelect, label, path, onMove }: { tre
           const kind = node.kind ?? "step";
           const walked = path?.has(b.id);
           const tone = kind === "outcome" && node.outcome ? OUTCOME[node.outcome.result].status : null;
-          const Icon = kind === "check" ? Split : kind === "outcome" ? Flag : null;
+          const Icon = kind === "check" ? Split : kind === "outcome" ? Flag : kind === "job" ? Workflow : null;
           return b.jump ? (
             <button
               key={b.key}

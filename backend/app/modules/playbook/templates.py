@@ -528,6 +528,34 @@ RECALL_DEVICE: dict[str, Any] = {
     },
 }
 
+# Steps the app's Job runs are "Bước của Job": the reader sees the Job step and its current checklist (Lưu đồ quy
+# trình), so the template never repeats – and never drifts from – what the Job checks.
+# node: (workflow step, note kept – only what the Job itself does not say)
+JOB_STEPS = {
+    "onboard": ("lifecycle.onboard", {
+        "biostar": ("biostar_enroll", "Hẹn nhân viên đăng ký trực tiếp tại máy BioStar trong ngày đầu làm việc."),
+        "handover_doc": ("handover_doc", ""),
+        "close": ("close_request", ""),
+    }),
+    "offboard": ("lifecycle.offboard", {
+        "biostar": ("biostar_offboard", "Khoá đúng ngày nghỉ – **không chờ** thu hồi thiết bị."),
+        "collect": ("collect_assets", "Thiếu, hỏng hoặc chưa trả: đi nhánh bên dưới để báo quản lý trực tiếp và HR."),
+        "to_store": ("return_assets", "Sao lưu dữ liệu cần giữ rồi mới xoá trắng máy trước khi cấp lại."),
+        "return_doc": ("return_doc", ""),
+        "close": ("close_request", ""),
+    }),
+}  # fmt: skip
+for _tpl, (_wf, _steps) in ((ONBOARD, JOB_STEPS["onboard"]), (OFFBOARD, JOB_STEPS["offboard"])):
+    for _node, (_step_key, _note) in _steps.items():
+        n = _tpl["tree"]["nodes"][_node]
+        n |= {
+            "kind": "job",
+            "job": {"workflow": _wf, "step": _step_key},
+            "note": _note,
+            # The step itself links to the Job; other tools (documents, stock, review) stay.
+            "actions": [a for a in n["actions"] if a["tool"] != "lifecycle.jobs"],
+        }
+
 TEMPLATES: dict[str, dict[str, Any]] = {
     "onboard": ONBOARD,
     "offboard": OFFBOARD,

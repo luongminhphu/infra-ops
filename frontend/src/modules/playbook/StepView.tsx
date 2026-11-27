@@ -1,6 +1,7 @@
 import { CornerDownRight } from "lucide-react";
 import { StatusBadge } from "@/core/ui/status";
 import { OP_LABEL, OUTCOME, type Fact, type Operand, type StepNode, type Tree } from "./api";
+import { JobStepInfo } from "./JobStep";
 import { Note } from "./Note";
 import { StepActions } from "./Tools";
 
@@ -26,6 +27,7 @@ export function StepView({ tree, node, facts, onSelect }: { tree: Tree; node: St
           {node.outcome.approval && <span className="text-sm">{node.outcome.approval}</span>}
         </p>
       )}
+      {kind === "job" && node.job && <JobStepInfo job={node.job} />}
       <Note text={node.note} />
       <StepActions node={node} />
       {node.children.length > 0 && (

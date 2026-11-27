@@ -225,7 +225,7 @@ export function MyWorkPage() {
       {q.data?.failed.length ? <p role="status" className="mb-4 text-sm text-waiting">Chưa tải được việc của: {q.data.failed.join(", ")}.</p> : null}
       {sections.length > 0 && (
         <details>
-          <summary className="cursor-pointer py-2 font-medium">Xem theo nhóm: Job, task và gợi ý mua</summary>
+          <summary className="cursor-pointer py-2 font-medium">Xem theo nhóm: Job, task và gợi ý</summary>
           <div className="mt-4 space-y-6">
             {sections.map(({ key, component: Section }) => <Section key={key} />)}
           </div>

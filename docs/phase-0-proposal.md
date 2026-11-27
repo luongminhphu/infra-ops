@@ -1447,3 +1447,16 @@ Nguyên tắc (product owner): user quyền nào chỉ thấy nội dung và ch�
 | Disposed | đã thanh lý | rời kho, ra khỏi sổ kiểm kê |
 
 Kho thiết bị chỉ liệt kê tài sản chưa gán người. Mọi trạng thái trừ Disposed vẫn nằm trong sổ kiểm kê.
+
+## 62. Playbook và Lưu đồ quy trình: một nguồn cho mỗi việc (27/11/2026)
+
+- **Vai trò:** Playbook = nơi người làm đọc để biết làm gì (gồm việc tay: AD, mailbox, license, xin duyệt). Lưu đồ quy
+  trình = cấu hình các Job app chạy và checklist (ISO).
+- **Giai đoạn 1:** Lưu đồ quy trình chỉ hiện với quyền sửa checklist (`core.workflow.checklist.manage`, mặc định
+  Manager / Administrator); Operator xem checklist ngay trong Job và hướng dẫn trong Playbook.
+- **Giai đoạn 2:** loại bước Playbook **“Bước của Job”** (`kind: job`, `{workflow, step}`): người đọc thấy tên bước, mô tả
+  và checklist **hiện hành** đọc trực tiếp từ quy trình (không chép), kèm link “Mở Job”. Xuất bản từ chối bước Job không
+  còn tồn tại (`unknown_job_step`). Mẫu Onboard (BioStar, biên bản, đóng request) và Offboard (BioStar, thu hồi, về kho,
+  biên bản, đóng request) dùng bước Job; ghi chú chỉ giữ điều Job không nói.
+- **Giai đoạn 3:** mỗi bước trong trang Job có link “Hướng dẫn trong Playbook” → `/playbook/for-step?workflow&step` mở
+  Playbook đã xuất bản tại đúng bước (`GET /api/playbook/step-guide`); chưa có thì báo “Chưa có Playbook hướng dẫn”.

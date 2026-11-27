@@ -203,7 +203,9 @@ manifest = ModuleManifest(
         ),
         NavItem("Request RTR", "/lifecycle/requests", "ticket", RECON_VIEW, NAV_SOURCES),
         NavItem("Đồng bộ dữ liệu", "/lifecycle/sync", "refresh-cw", RECON_VIEW, NAV_SOURCES),
-        NavItem("Lưu đồ quy trình", "/lifecycle/flows", "route", "lifecycle.job.view", NAV_SETUP),
+        # Configuration of the Jobs (steps, checklists): for checklist managers. Operators read each step's checklist in
+        # the Job itself and the "how" in the Playbook.
+        NavItem("Lưu đồ quy trình", "/lifecycle/flows", "route", "core.workflow.checklist.manage", NAV_SETUP),
         NavItem("Mẫu biên bản", "/lifecycle/templates", "file-cog", "lifecycle.templates.manage", NAV_SETUP),
         NavItem("Cấu hình module", "/lifecycle/settings", "settings", "lifecycle.settings.manage", NAV_SETUP),
     ],
