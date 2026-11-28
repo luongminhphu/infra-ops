@@ -29,6 +29,20 @@ interface Detail {
   acks: { rule: string; note: string; acked_by: string; acked_at: string }[];
 }
 
+const LINK = "text-primary underline-offset-2 hover:underline";
+
+/** Employee ID as a link to the reconciliation panel; plain text without the permission. */
+export function EmpLink({ id }: { id: string }) {
+  const { can } = useAuth();
+  return can("lifecycle.reconciliation.view") ? <Link to={`/lifecycle/reconciliation?emp=${encodeURIComponent(id)}`} className={LINK}>{id}</Link> : <>{id}</>;
+}
+
+/** Asset tag as a link to the stock list filtered by it (StockPage route needs lifecycle.job.view). */
+export function AssetTagLink({ tag }: { tag: string }) {
+  const { can } = useAuth();
+  return can("lifecycle.job.view") ? <Link to={`/lifecycle/stock?tab=assets&q=${encodeURIComponent(tag)}`} className={LINK}>{tag}</Link> : <>{tag}</>;
+}
+
 function IssueItem({ employeeId, issue, ackNote }: { employeeId: string; issue: Issue; ackNote?: { note: string; acked_by: string; acked_at: string } }) {
   const { can } = useAuth();
   const qc = useQueryClient();
@@ -327,7 +341,7 @@ export function EmployeePanel({
                   {d.assets.map((a) => (
                     <tr key={a.id} className="border-t border-line">
                       <td className="py-1">{a.name}<span className="block text-xs text-muted">{a.product_type} · {a.product}</span></td>
-                      <td className="py-1"><Mono>{a.asset_tag ?? "—"}</Mono></td>
+                      <td className="py-1"><Mono>{a.asset_tag ? <AssetTagLink tag={a.asset_tag} /> : "—"}</Mono></td>
                       <td className="py-1">{a.state ?? "—"}</td>
                     </tr>
                   ))}

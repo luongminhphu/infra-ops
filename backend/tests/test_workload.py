@@ -1283,3 +1283,12 @@ async def test_onboard_line_is_proposed_once_whoever_proposes(admin, client) -> 
     assert r.status_code == 200, r.text
     await client.login("dup-op2@test.local")
     assert (await client.post("/api/workload/purchases", json=body)).status_code == 201
+
+
+def test_ticket_state_vietnamese_done_and_cancelled():
+    import unicodedata
+
+    s = WorkloadSettings()
+    assert ticket_state("Đã xong", s) == "done" and ticket_state("Hoàn tất", s) == "done"
+    assert ticket_state(unicodedata.normalize("NFD", "Đã hủy"), s) == "cancelled"
+    assert ticket_state("Đang xử lý", s) == "open"

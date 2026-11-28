@@ -69,6 +69,8 @@ async def test_stocktake_end_to_end(admin, client, configured, respx_mock) -> No
     assert hit["matched"] and not hit["already"] and hit["item"]["count"] == "found"
     assert (await admin.post(f"{base}/scan", json={"code": "LT0123"})).json()["already"] is True
     assert (await admin.post(f"{base}/scan", json={"code": "NOPE"})).json()["matched"] is False
+    padded = (await admin.post(f"{base}/scan", json={"code": "\t lt0123 "})).json()
+    assert padded["matched"] and padded["already"] and padded["item"]["id"] == laptop["id"]
 
     # Found but broken; an asset on site that SDP does not know (a duplicate code is refused).
     r = await admin.put(f"{base}/items/{laptop['id']}", json={"count": "found", "condition": "broken"})

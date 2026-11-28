@@ -10,6 +10,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import raiseload
 
 from app.core.audit.service import record
 from app.core.auth.deps import CurrentUser, current_user, require
@@ -43,9 +44,16 @@ def stalled_minutes(job: Job) -> int | None:
     return int(idle.total_seconds() // 60) if idle > STALLED_AFTER else None
 
 
+LEAN_STEP_OMIT = ("before_state", "output", "checklist", "evidence", "message", "verify_note")
+
+
 def job_out(
-    job: Job, wf: WorkflowDefinition | None = None, events: list[JobEvent] | None = None
+    job: Job,
+    wf: WorkflowDefinition | None = None,
+    events: list[JobEvent] | None = None,
+    lean: bool = False,
 ) -> dict[str, Any]:
+    """``lean`` (list views): omits assignments and heavy step fields, so evidence/assignments may be raiseloaded."""
     wf = wf or _wf(job)
     defs = {s.key: s for s in wf.steps}
     done = sum(1 for s in job.steps if s.status in ("done", "skipped"))
@@ -79,7 +87,9 @@ def job_out(
         }
         if job.assignee_name
         else None,
-        "assignments": [
+        "assignments": []
+        if lean
+        else [
             {
                 "from_name": a.from_name,
                 "to_name": a.to_name,
@@ -119,11 +129,16 @@ def job_out(
                 "verified_by": s.verified_by,
                 "verified_at": s.verified_at,
                 "verify_note": s.verify_note,
-                "evidence": [cl.evidence_out(e) for e in job.evidence if e.step_key == s.key],
+                "evidence": [] if lean else [cl.evidence_out(e) for e in job.evidence if e.step_key == s.key],
             }
             for s in sorted(job.steps, key=lambda s: s.seq)
         ],
     }
+    if lean:
+        del out["assignments"]
+        for st in out["steps"]:
+            for k in LEAN_STEP_OMIT:
+                del st[k]
     if events is not None:
         out["events"] = [
             {"at": e.at, "step_key": e.step_key, "level": e.level, "message": e.message, "actor": e.actor}
@@ -183,6 +198,7 @@ async def list_jobs(
     q: str = Query("", max_length=100),
     offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
+    lean: bool = False,
 ) -> dict[str, Any]:
     allowed = [w.key for _, w in get_registry().workflows() if user.has(w.view_permission)]
     if workflow and workflow not in allowed:
@@ -229,8 +245,10 @@ async def list_jobs(
             )
         ).all()
     )
+    if lean:
+        stmt = stmt.options(raiseload(Job.evidence), raiseload(Job.assignments))
     rows = (await session.scalars(stmt.order_by(Job.updated_at.desc()).offset(offset).limit(limit))).all()
-    return {"total": total, "counts": counts, "items": [job_out(j) for j in rows]}
+    return {"total": total, "counts": counts, "items": [job_out(j, lean=lean) for j in rows]}
 
 
 @router.get("/jobs/{job_id}")

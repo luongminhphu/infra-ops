@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import String, exists, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import raiseload
 
 from app.core.audit.models import AuditLog
 from app.core.audit.service import Actor, record
@@ -208,6 +209,7 @@ async def _full(
                     Job.external_ref.in_(ordered),
                     Job.status != "cancelled",
                 )
+                .options(raiseload(Job.evidence), raiseload(Job.assignments))
                 .order_by(Job.created_at)
             )
         ).all():

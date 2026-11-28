@@ -8,10 +8,11 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Literal
 
-from app.core.timeutil import fmt_date
+from app.core.timeutil import TZ, fmt_date
+from app.modules.lifecycle.normalize import EMPLOYEE_ID_DIGITS, id_key
 from app.modules.lifecycle.parsing import fold, name_key
 from app.modules.lifecycle.settings import LifecycleSettings
 
@@ -25,6 +26,12 @@ RULES: dict[str, tuple[Severity, str, str]] = {
     "onboard_no_biostar": ("medium", "biostar", "Đã onboard nhưng chưa có user BioStar"),
     "onboard_no_credential": ("low", "biostar", "User BioStar chưa đăng ký thẻ, vân tay hoặc khuôn mặt"),
     "onboard_no_assets": ("low", "assets", "Đã onboard nhưng chưa được gán tài sản"),
+    "onboard_cancelled_biostar_active": (
+        "high",
+        "biostar",
+        "Onboard đã huỷ nhưng user BioStar còn hoạt động",
+    ),
+    "onboard_cancelled_assets_in_use": ("medium", "assets", "Onboard đã huỷ nhưng còn tài sản đang gán"),
     "biostar_unknown_employee": ("medium", "biostar", "Mã NV trên BioStar không có trong SDP"),
     "sdp_duplicate_employee_id": ("medium", "sdp", "Mã NV trùng trên nhiều user SDP"),
     "name_mismatch": ("low", "biostar", "Họ tên không khớp giữa các hệ thống"),
@@ -99,6 +106,27 @@ def _latest(requests: list[dict[str, Any]]) -> dict[str, Any] | None:
     return max(relevant, key=key) if relevant else None
 
 
+def _padded_id_key(emp: str) -> str:
+    """``id_key`` that also treats "3551" and "003551" alike (BioStar often drops the leading zeros)."""
+    return id_key(emp.zfill(EMPLOYEE_ID_DIGITS)) if emp.isdigit() else emp
+
+
+def _cancelled_onboard_label(r: dict[str, Any]) -> str:
+    created = None
+    raw = str(r.get("created_at") or "")
+    try:
+        if len(raw) > 10:
+            dt = datetime.fromisoformat(raw)
+            created = (dt.astimezone(TZ) if dt.tzinfo else dt).date()
+        else:
+            created = date.fromisoformat(raw)
+    except ValueError:
+        pass
+    return f"Request onboard #{r.get('display_id') or r['id']}" + (
+        f" (tạo {fmt_date(created)})" if created else ""
+    )
+
+
 def reconcile(
     requests: list[dict[str, Any]],
     sdp_users: list[dict[str, Any]],
@@ -116,7 +144,7 @@ def reconcile(
     for r in requests:
         if r.get("employee_id"):
             req_by_emp[r["employee_id"]].append(r)
-        elif r.get("parse_errors"):
+        elif r.get("parse_errors") and not settings.is_closed(r.get("status")):
             notes.append(
                 {
                     "rule": "request_parse_error",
@@ -175,6 +203,40 @@ def reconcile(
 
     bs_by_emp = {b.get("employee_id") or b["user_id"]: b for b in biostar_users if b.get("user_id")}
 
+    # Cancelled onboard only (no live request): the person may still hold access granted before the cancellation.
+    # Names must match so a mistyped ID never accuses someone else.
+    cancelled_ob: dict[str, dict[str, Any]] = {}
+    cancelled_bs: dict[str, dict[str, Any]] = {}
+    for emp, reqs in req_by_emp.items():
+        if any(not settings.is_cancelled(r.get("status")) for r in reqs):
+            continue
+        ob = _latest([r for r in reqs if r.get("kind") == "onboard"])
+        if not (ob and ob.get("full_name")):
+            continue
+        cancelled_ob[emp] = ob
+        ob_name = name_key(ob["full_name"])
+
+        def _ok(b: dict[str, Any] | None, want: str = ob_name) -> bool:
+            return bool(
+                b and b["active"] and not b.get("retired") and b.get("name") and name_key(b["name"]) == want
+            )
+
+        if _ok(bs_by_emp.get(emp)):
+            cancelled_bs[emp] = bs_by_emp[emp]
+            continue
+        # shortcut: unclaimed BioStar user with the same trailing ID digits; only used when unique.
+        cand = [
+            b
+            for k, b in bs_by_emp.items()
+            if k not in req_by_emp
+            and k not in users_by_emp
+            and _padded_id_key(k) == _padded_id_key(emp)
+            and _ok(b)
+        ]
+        if len(cand) == 1:
+            cancelled_bs[emp] = cand[0]
+    used_bs = {b["user_id"] for b in cancelled_bs.values()}
+
     # SDP is the source of truth: employees are SDP users and RTR requests; BioStar only adds access data. BioStar
     # users matching neither are listed apart (access review), never as employees – unless SDP could not be read.
     # People moved to the "left the company" BioStar group are hidden unless an RTR request still concerns them.
@@ -185,7 +247,12 @@ def reconcile(
         employees |= set(bs_by_emp) - retired
     elif sources.get("biostar"):
         for emp, b in sorted(bs_by_emp.items(), key=lambda kv: (not kv[1]["active"], kv[0])):
-            if emp not in employees and emp not in retired and emp not in users_by_emp:
+            if (
+                emp not in employees
+                and emp not in retired
+                and emp not in users_by_emp
+                and b["user_id"] not in used_bs
+            ):
                 notes.append(
                     {
                         "rule": "biostar_unknown_employee",
@@ -202,14 +269,16 @@ def reconcile(
     rows: list[Row] = []
     for emp in sorted(employees):
         reqs = req_by_emp.get(emp, [])
-        latest = _latest(reqs)
+        live = [r for r in reqs if not settings.is_cancelled(r.get("status"))]
+        latest = _latest(live)
         users = users_by_emp.get(emp, [])
         bs = bs_by_emp.get(emp)
         # SDP is the reference for the person's name; RTR and BioStar only fill in when SDP has no user.
         ref_name = (
             (users[0]["name"] if users else None)
             or (latest or {}).get("full_name")
-            or (reqs[0].get("full_name") if reqs else None)
+            or (live[0].get("full_name") if live else None)
+            or (cancelled_ob.get(emp) or {}).get("full_name")
             or (bs or {}).get("name")
             or ""
         )
@@ -242,7 +311,9 @@ def reconcile(
 
         # --- cells -------------------------------------------------------
         # The kind/date is its own column in the UI; this cell says what SDP holds for the person.
-        if reqs and latest is None:
+        if reqs and not live:
+            sdp_label = "RTR đã huỷ"
+        elif reqs and latest is None:
             sdp_label = "RTR chưa phân loại"
         elif reqs and users:
             sdp_label = "RTR + user"
@@ -329,6 +400,30 @@ def reconcile(
                         f"Ngày hiệu lực {fmt_date(today_eff, '?')} nhưng chưa có tài sản nào.",
                     )
                 )
+        ob = cancelled_ob.get(emp)
+        if ob:
+            ob_bs = cancelled_bs.get(emp)
+            if sources.get("biostar") and ob_bs:
+                row.issues.append(
+                    Issue(
+                        "onboard_cancelled_biostar_active",
+                        f"{_cancelled_onboard_label(ob)} đã huỷ nhưng user BioStar {ob_bs['user_id']} vẫn hoạt động"
+                        " – khoá hoặc xoá user trên BioStar.",
+                    )
+                )
+            if (
+                sources.get("assets")
+                and in_use
+                and len(users) == 1
+                and name_key(users[0].get("name") or "") == name_key(ob["full_name"])
+            ):
+                row.issues.append(
+                    Issue(
+                        "onboard_cancelled_assets_in_use",
+                        f"{_cancelled_onboard_label(ob)} đã huỷ nhưng còn {len(in_use)} tài sản đang gán"
+                        " – thu hồi trên SDP.",
+                    )
+                )
         if len(users) > 1:
             row.issues.append(
                 Issue(
@@ -349,7 +444,7 @@ def reconcile(
         if len({name_key(v) for v in present.values()}) > 1:
             row.issues.append(Issue("name_mismatch", " · ".join(f"{k}: {v}" for k, v in present.items())))
         for r in reqs:
-            if r.get("parse_errors"):
+            if r.get("parse_errors") and not settings.is_closed(r.get("status")):
                 row.issues.append(
                     Issue(
                         "request_parse_error",

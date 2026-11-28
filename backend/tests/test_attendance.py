@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 import json
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from urllib.parse import unquote
 
 import httpx
@@ -191,3 +191,79 @@ async def test_unreachable_biostar_is_reported_without_raw_exception(admin, conf
     body = {"employee_ids": "003551", "date_from": "2026-11-02", "date_to": "2026-11-03"}
     err = (await admin.post("/api/lifecycle/attendance/export", json=body)).json()["error"]
     assert err["code"] == "biostar_unreadable" and "boom" not in err["message"]
+
+
+async def _seed_run(errors: dict, year: int, extra_sdp: tuple | None = None) -> None:  # type: ignore[type-arg]
+    from app.core.db import get_sessionmaker
+    from app.modules.lifecycle.models import Snapshot, SyncRun
+
+    at = datetime(year, 1, 1, tzinfo=UTC)
+    async with get_sessionmaker()() as s:
+        run = SyncRun(
+            trigger="manual", status="partial", started_at=at, finished_at=at, stats={}, errors=errors
+        )
+        s.add(run)
+        await s.flush()
+        for sid, emp, name in [("1", "003551", "Nguyễn Văn An"), ("2", "004000", "Trần Thị Bình"),
+                               ("3", "005000", "Lê Cường"), ("4", "006000", "Phạm Dũng")]:  # fmt: skip
+            s.add(Snapshot(run_id=run.id, system="sdp_user", external_id=sid, employee_id=emp,
+                           data={"id": sid, "employee_id": emp, "name": name}))  # fmt: skip
+        if extra_sdp:
+            sid, emp, name = extra_sdp
+            s.add(Snapshot(run_id=run.id, system="sdp_user", external_id=sid, employee_id=emp,
+                           data={"id": sid, "employee_id": emp, "name": name}))  # fmt: skip
+        for uid, name in [("1003551", "NGUYEN VAN AN"), ("004000", "Someone Else"), ("007000", "Hoàng Em")]:
+            s.add(Snapshot(run_id=run.id, system="biostar_user", external_id=uid,
+                           data={"user_id": uid, "name": name, "source": "BioStar chính", "active": True}))  # fmt: skip
+        await s.commit()
+
+
+async def test_preview_statuses_last_five_digits_and_failed_source(admin, client) -> None:  # type: ignore[no-untyped-def]
+    try:
+        await _preview_checks(admin, client)
+    finally:  # the runs are the newest ones: other tests must not see them (snapshots cascade)
+        from sqlalchemy import delete
+
+        from app.core.db import get_sessionmaker
+        from app.modules.lifecycle.models import SyncRun
+
+        async with get_sessionmaker()() as s:
+            await s.execute(delete(SyncRun).where(SyncRun.started_at >= datetime(2100, 1, 1, tzinfo=UTC)))
+            await s.commit()
+
+
+async def _preview_checks(admin, client) -> None:  # type: ignore[no-untyped-def]
+    await _seed_run({}, 2100)
+    ids = "3551\n004000\n005000\n007000\n009999"
+    r = await admin.post("/api/lifecycle/attendance/preview", json={"employee_ids": ids})
+    assert r.status_code == 200, r.text
+    got = {i["employee_id"]: i for i in r.json()["items"]}
+    assert {k: v["status"] for k, v in got.items()} == {
+        "003551": "ok", "004000": "name_differs", "005000": "sdp_only",
+        "007000": "biostar_only", "009999": "not_found",
+    }  # fmt: skip
+    assert got["003551"]["sdp_name"] == "Nguyễn Văn An"
+    assert got["003551"]["biostar"] == [
+        {"name": "NGUYEN VAN AN", "user_id": "1003551", "source": "BioStar chính", "active": True}
+    ]
+    assert r.json()["synced_at"] and r.json()["failed_sources"] == []
+
+    await _seed_run({"biostar": "boom"}, 2101)
+    r = await admin.post("/api/lifecycle/attendance/preview", json={"employee_ids": "005000\n009999\n3551"})
+    assert r.json()["failed_sources"] == ["biostar"]
+    assert {i["employee_id"]: i["status"] for i in r.json()["items"]} == {
+        "005000": "unknown", "009999": "unknown", "003551": "ok",
+    }  # fmt: skip
+
+    await _seed_run({"sdp_assets": "boom"}, 2102)  # an unrelated SDP read does not make the result unknown
+    r = await admin.post("/api/lifecycle/attendance/preview", json={"employee_ids": "005000\n009999"})
+    assert {i["employee_id"]: i["status"] for i in r.json()["items"]} == {
+        "005000": "sdp_only", "009999": "not_found",
+    }  # fmt: skip
+    await _seed_run({}, 2103, extra_sdp=("9", "103551", "Người Khác"))  # same 5 digits, another name
+    r = await admin.post("/api/lifecycle/attendance/preview", json={"employee_ids": "3551"})
+    assert r.json()["items"][0]["status"] == "ok"
+
+    await client.login("att-viewer@test.local")
+    resp = await client.post("/api/lifecycle/attendance/preview", json={"employee_ids": ids})
+    assert resp.status_code == 403

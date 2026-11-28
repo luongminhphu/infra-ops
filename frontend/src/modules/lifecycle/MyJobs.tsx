@@ -6,12 +6,12 @@ import { ErrorState, LoadingRows, Panel } from "@/core/ui/feedback";
 import { StatusBadge } from "@/core/ui/status";
 import { formatDate } from "@/core/lib/format";
 import { cn } from "@/core/lib/cn";
-import { JOB_STATUS, JOB_WORKFLOWS, WORKFLOW_LABEL, jobStatusLabel, type Job } from "./jobs";
+import { JOB_STATUS, JOB_WORKFLOWS, WORKFLOW_LABEL, jobStatusLabel, type JobListItem } from "./jobs";
 
 const DAY = 86_400_000;
 
 /** What still has to happen before an upcoming job can run (from the job's own data). */
-export function prepItems(j: Job): { text: string; done: boolean }[] {
+export function prepItems(j: JobListItem): { text: string; done: boolean }[] {
   const scheduled = j.status === "scheduled";
   if (j.params.kind === "onboard")
     return [
@@ -31,7 +31,7 @@ export function prepItems(j: Job): { text: string; done: boolean }[] {
 }
 
 /** needs-me | running | upcoming, from the job state (pure, tested). */
-export function bucket(j: Job): "now" | "running" | "upcoming" {
+export function bucket(j: JobListItem): "now" | "running" | "upcoming" {
   if (j.status === "draft" || j.status === "scheduled") return "upcoming";
   const s = j.steps.find((x) => x.key === j.current_step);
   if (j.status === "failed") return "now";
@@ -40,7 +40,7 @@ export function bucket(j: Job): "now" | "running" | "upcoming" {
   return "running";
 }
 
-function JobRow({ j, children }: { j: Job; children?: React.ReactNode }) {
+function JobRow({ j, children }: { j: JobListItem; children?: React.ReactNode }) {
   const st = JOB_STATUS[j.status];
   const eff = j.params.effective_date;
   const days = eff ? Math.ceil((new Date(eff).getTime() - Date.now()) / DAY) : null;
@@ -65,7 +65,7 @@ function JobRow({ j, children }: { j: Job; children?: React.ReactNode }) {
   );
 }
 
-function Group({ title, hint, jobs, prep = false }: { title: string; hint: string; jobs: Job[]; prep?: boolean }) {
+function Group({ title, hint, jobs, prep = false }: { title: string; hint: string; jobs: JobListItem[]; prep?: boolean }) {
   return (
     <section aria-label={title}>
       <h3 className="flex items-baseline gap-2 text-base font-semibold">
@@ -100,12 +100,12 @@ function Group({ title, hint, jobs, prep = false }: { title: string; hint: strin
 export function MyJobsSection() {
   const open = useQuery({
     queryKey: ["jobs", "mine", "open"],
-    queryFn: () => api<{ items: Job[] }>(`/api/core/jobs?assignee=me&status=open&limit=200&workflows=${JOB_WORKFLOWS}`),
+    queryFn: () => api<{ items: JobListItem[] }>(`/api/core/jobs?lean=1&assignee=me&status=open&limit=200&workflows=${JOB_WORKFLOWS}`),
     refetchInterval: 30_000,
   });
   const done = useQuery({
     queryKey: ["jobs", "mine", "done"],
-    queryFn: () => api<{ items: Job[] }>(`/api/core/jobs?assignee=me&status=completed&limit=10&workflows=${JOB_WORKFLOWS}`),
+    queryFn: () => api<{ items: JobListItem[] }>(`/api/core/jobs?lean=1&assignee=me&status=completed&limit=10&workflows=${JOB_WORKFLOWS}`),
   });
   const jobs = open.data?.items ?? [];
   const by = (b: ReturnType<typeof bucket>) => jobs.filter((j) => bucket(j) === b);

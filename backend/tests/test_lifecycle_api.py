@@ -547,3 +547,38 @@ async def test_sdp_user_of_an_rtr_employee_is_searched_when_the_list_skipped_it(
             [{"employee_id": "003475", "created_at": "2026-10-01"}, {"employee_id": "003551"}],
         )
     assert [u["id"] for u in found] == ["h1"]
+
+
+@respx.mock(assert_all_called=False)
+async def test_sync_auto_cancels_and_reopens_job_with_request(admin, configured, respx_mock) -> None:  # type: ignore[no-untyped-def]
+    from sqlalchemy import select
+
+    from app.core.workflow.models import Job
+
+    routes = mock_systems(respx_mock)
+
+    def set_status(name: str, stamp: int) -> None:
+        rows = [
+            {**r, "status": {"name": name}, "last_updated_time": {"value": str(stamp)}}
+            if r["id"] == "1002"
+            else r
+            for r in REQUESTS
+        ]
+        routes["list"].mock(return_value=httpx.Response(200, json=sdp_ok("requests", rows)))
+
+    async def job_status() -> str:
+        async with get_sessionmaker()() as s:
+            return (
+                await s.scalars(
+                    select(Job.status).where(Job.external_ref == "1002", Job.module_id == "lifecycle")
+                )
+            ).one()
+
+    await _sync()
+    assert await job_status() == "draft"
+    set_status("Closed", 9_000_000_000_001)
+    summary = await _sync()
+    assert summary["jobs_cancelled"] >= 1 and await job_status() == "cancelled"
+    set_status("Open", 9_000_000_000_002)
+    summary = await _sync()
+    assert summary["jobs_reopened"] == 1 and await job_status() == "draft"

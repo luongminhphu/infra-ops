@@ -88,7 +88,7 @@ async def check_request(ctx: StepContext) -> StepOutcome:
         return StepOutcome(
             "failed",
             f"Request #{ctx.params.get('request_display_id') or rid} đang ở trạng thái “{status}” trên SDP. "
-            "Mở lại request hoặc huỷ Job.",
+            "Mở lại request (Job tự huỷ ở lần đồng bộ tới và tự mở lại khi request mở lại) hoặc huỷ Job.",
             out,
         )
     return StepOutcome("done", f"Request còn mở (trạng thái “{status or 'không rõ'}”).", out)

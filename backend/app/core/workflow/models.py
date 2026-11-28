@@ -34,7 +34,7 @@ class Job(UUIDPk, Timestamps, Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft", index=True)
     subject_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     subject_label: Mapped[str] = mapped_column(String(256), nullable=False, default="")
-    external_ref: Mapped[str | None] = mapped_column(String(64))
+    external_ref: Mapped[str | None] = mapped_column(String(64), index=True)
     idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
     params: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     scheduled_for: Mapped[date | None] = mapped_column(Date)

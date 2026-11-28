@@ -149,6 +149,7 @@ def request_dict(r: LifecycleRequest) -> dict[str, Any]:
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "department": (r.fields or {}).get("department"),
         "parse_errors": r.parse_errors,
+        "status": r.status,
     }
 
 
@@ -428,10 +429,15 @@ async def _sync(
     )
     if sources["sdp"]:
         # One draft job per onboard/offboard request (drafts never write to external systems).
-        from app.modules.lifecycle.jobs_api import auto_create_jobs, cancel_closed_drafts
+        from app.modules.lifecycle.jobs_api import (
+            auto_create_jobs,
+            cancel_closed_jobs,
+            reopen_reopened_jobs,
+        )
 
         stats["jobs_created"] = await auto_create_jobs(session)
-        stats["jobs_cancelled"] = await cancel_closed_drafts(session)
+        stats["jobs_cancelled"] = await cancel_closed_jobs(session)
+        stats["jobs_reopened"] = await reopen_reopened_jobs(session)
         from app.modules.lifecycle.assignment import sync_assignees
 
         stats["jobs_reassigned"] = await sync_assignees(session)

@@ -85,6 +85,11 @@ async def create_job_for_request(
         raise AppError(
             "Request chưa có Mã NV hợp lệ. Sửa nội dung request trên SDP rồi đồng bộ lại.", code="no_employee"
         )
+    if (await load_module_settings(session)).is_closed(req.status):
+        raise AppError(
+            f"Request #{req.display_id or req.id} đã đóng trên SDP (“{req.status}”) – không tạo Job.",
+            code="request_closed",
+        )
     wf = WORKFLOW_BY_KIND[req.kind]
     params = job_params(req)
     params["sdp_user_id"], params["sdp_user_name"] = await _sdp_user_guess(session, req.employee_id)
@@ -130,35 +135,79 @@ async def auto_create_jobs(session: AsyncSession) -> int:
     return created
 
 
-async def cancel_closed_drafts(session: AsyncSession) -> int:
-    """Called after a sync: a draft Job (never started, nothing written anywhere) whose RTR request is now closed on
-    SDP leaves the queues – cancelled with the reason and audited, so it can be reopened if the request reopens."""
+async def _requests_for(session: AsyncSession, jobs: list[Job]) -> dict[str, LifecycleRequest]:
+    rows = await session.scalars(
+        select(LifecycleRequest).where(LifecycleRequest.id.in_([j.external_ref for j in jobs]))
+    )
+    return {r.id: r for r in rows.all()}
+
+
+async def cancel_closed_jobs(session: AsyncSession) -> int:
+    """Called after a sync: a draft Job, or a failed one where no step did any work, whose RTR request is now closed
+    on SDP leaves the queues – cancelled with the reason, marked `auto_cancelled_at` (= its closed_at) and audited.
+    A failed job is cancelled only when the request itself was cancelled or it failed at the first check."""
     settings = await load_module_settings(session)
-    drafts = (
+    jobs = (
         await session.scalars(
-            select(Job).where(
-                Job.module_id == MODULE_ID, Job.status == "draft", Job.external_ref.is_not(None)
+            select(Job)
+            .where(
+                Job.module_id == MODULE_ID, Job.status.in_(("draft", "failed")), Job.external_ref.is_not(None)
             )
+            .with_for_update(skip_locked=True)
         )
     ).all()
-    reqs = {
-        r.id: r
-        for r in (
-            await session.scalars(
-                select(LifecycleRequest).where(LifecycleRequest.id.in_([j.external_ref for j in drafts]))
-            )
-        ).all()
-    }
+    reqs = await _requests_for(session, list(jobs))
     cancelled = 0
-    for job in drafts:
+    for job in jobs:
         req = reqs.get(job.external_ref or "")
-        if req is not None and settings.is_closed(req.status):
-            reason = (
-                f"Request #{req.display_id or req.id} đã đóng trên SDP (“{req.status}”) – Job nháp tự huỷ."
-            )
-            await engine.cancel_job(session, Actor(None, "system (đồng bộ)"), job, reason)
-            cancelled += 1
+        if req is None or not settings.is_closed(req.status) or engine.steps_with_work(job):
+            continue
+        if job.status == "failed" and not (
+            settings.is_cancelled(req.status) or job.current_step == "check_request"
+        ):
+            continue
+        tail = "Job nháp tự huỷ." if job.status == "draft" else "Job chưa ghi gì ra hệ thống nên tự huỷ."
+        reason = f"Request #{req.display_id or req.id} đã đóng trên SDP (“{req.status}”) – {tail}"
+        await engine.cancel_job(session, Actor(None, "system (đồng bộ)"), job, reason)
+        assert job.closed_at is not None  # set by cancel_job
+        job.params = {**job.params, "auto_cancelled_at": job.closed_at.isoformat()}
+        cancelled += 1
     return cancelled
+
+
+async def reopen_reopened_jobs(session: AsyncSession) -> int:
+    """Called after a sync: a Job auto-cancelled because its request closed returns to draft when the request is open
+    again. Jobs cancelled by a person carry no marker, or a stale one (closed_at moved on), and stay cancelled."""
+    settings = await load_module_settings(session)
+    jobs = (
+        await session.scalars(
+            select(Job)
+            .where(Job.module_id == MODULE_ID, Job.status == "cancelled", Job.external_ref.is_not(None))
+            .where(Job.params.has_key("auto_cancelled_at"))
+            .with_for_update(skip_locked=True)
+        )
+    ).all()
+    reqs = await _requests_for(session, list(jobs))
+    reopened = 0
+    for job in jobs:
+        req = reqs.get(job.external_ref or "")
+        if req is None or settings.is_closed(req.status):
+            continue
+        marker = job.params["auto_cancelled_at"]
+        job.params = {k: v for k, v in job.params.items() if k != "auto_cancelled_at"}
+        if job.closed_at is None or job.closed_at.isoformat() != marker:
+            continue  # stale: a person cancelled it after the auto-cancel
+        try:
+            await engine.reopen_job(
+                session,
+                Actor(None, "system (đồng bộ)"),
+                job,
+                f"Request #{req.display_id or req.id} mở lại trên SDP",
+            )
+        except Conflict:  # job_has_work: leave it cancelled
+            continue
+        reopened += 1
+    return reopened
 
 
 class CreateIn(BaseModel):

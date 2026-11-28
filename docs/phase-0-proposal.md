@@ -1490,3 +1490,60 @@ Kho thiết bị chỉ liệt kê tài sản chưa gán người. Mọi trạng 
 - Đồng bộ dữ liệu (`lifecycle.sync`) chạy **mỗi 4 giờ** thay vì 30 phút; migration `0008_lifecycle` chuyển máy đã cài
   đang ở 30 phút sang 4 giờ (chu kỳ đã chỉnh khác giữ nguyên). Cần sớm hơn thì bấm “Đồng bộ ngay”. Đồng bộ công việc
   (`workload.sync`, 10 phút) không đổi.
+
+## 65. Hiệu năng và liên kết giữa các màn hình (27/11/2026)
+
+- **Worker (mỗi 15 s):** chỉ khoá và chạy Job thật sự có việc. Job đang chờ người (bước thủ công, chờ xác nhận, chờ
+  kiểm tra) được lọc bằng một truy vấn cột, không còn bị khoá/commit mỗi lượt. Sau khi khoá, Job đã bị huỷ hoặc mở lại
+  về nháp trong lúc worker đang chạy sẽ **không** chạy tiếp bước nào (trước đây có thể chạy – lỗi có sẵn, đã sửa).
+- **Danh sách Job gọn:** `GET /api/core/jobs?lean=1` bỏ dữ liệu nặng của bước (before_state, output, checklist, bằng chứng,
+  lịch sử giao việc). Trang Job, Hàng việc của team, Việc của tôi và widget dùng bản gọn; trang chi tiết giữ bản đầy đủ.
+- **Đi kiểm:** mỗi lần quét chỉ đọc 4 cột mã rồi nạp đúng tài sản trúng; khoá kỳ kiểm kê giữ nguyên để "Kết thúc kiểm" không
+  ghi đè lần quét vừa ghi nhận. Ô tìm user SDP chờ 250 ms sau khi ngừng gõ mới tìm.
+- **Index:** `core_job(external_ref)` (`0010_core`), `lifecycle_stocktake_item(zone_id)` (`0009_lifecycle`).
+- **Liên kết (ẩn khi thiếu quyền):** Mã NV trên Job onboard/offboard/thuyên chuyển và trên biên bản → bảng nhân viên ở Đối soát;
+  asset tag (bảng nhân viên, kiểm kê) → Kho; Mã NV dòng kiểm kê → bảng nhân viên; nguồn của đề xuất mua → ticket SDP.
+- Chưa làm (đo trước): phân trang SQL cho Request/Đối soát, đếm đối soát lưu sẵn, cache PDF xem trước, xuất chấm công trong
+  worker, đọc SDP song song, tách bundle theo route, Nhận hàng → lập biên bản bàn giao.
+
+## 66. Trạng thái RTR tiếng Việt: bớt nhiễu (27/11/2026)
+
+- **Luôn coi là đã đóng** (không phân biệt hoa thường, dấu, kiểu gõ Unicode): Closed, Resolved, Completed, Đã đóng, Đã xử lý,
+  Đã xong, Hoàn tất, Đã hoàn tất, Hoàn thành, Đã hoàn thành – cộng thêm danh sách đã lưu ở Cấu hình. Công việc Infra Support
+  (workload) nhận thêm Đã xong / Hoàn tất / Đã hoàn tất / Huỷ / Đã từ chối và so khớp không dấu.
+- **Trạng thái đã huỷ** là danh sách riêng, sửa được ở Cấu hình (mặc định Cancelled, Rejected, Đã huỷ/hủy, Huỷ/Hủy, Từ chối,
+  Đã từ chối). Request đã huỷ vẫn được liệt kê nhưng **không quyết định loại onboard/offboard** khi đối soát (một offboard bị huỷ
+  không còn báo "đã nghỉ nhưng BioStar còn hoạt động"), không vào Rà soát nghỉ việc gửi HR; nhân viên chỉ có request đã huỷ hiện
+  "RTR đã huỷ". Nếu đội IT dùng "Đã huỷ" để đóng việc đã xử lý tay, bỏ trạng thái đó khỏi danh sách.
+- Request đã đóng (xong hoặc huỷ) không còn báo **Request RTR thiếu/sai thông tin**. Request đã xong vẫn quyết định loại
+  (offboard xong vẫn phải kiểm BioStar và tài sản).
+- **Job:** sau mỗi lần đồng bộ, Job nháp của request đã đóng, và Job lỗi **chưa ghi gì ra hệ thống** của request đã huỷ (hoặc
+  hỏng ngay ở bước kiểm tra request), tự huỷ (có lý do, nhật ký kiểm tra). Request mở lại thì đúng Job đó tự mở lại về nháp – Job
+  do người huỷ không bao giờ bị mở lại. Job lỗi của request "đã xử lý" vẫn ở hàng việc (ví dụ offboard hỏng ở bước BioStar).
+  Không tạo được Job cho request đã đóng (`request_closed`).
+- Chưa làm: rule riêng cho onboard bị huỷ mà BioStar/tài sản đã cấp (cần chủ sản phẩm quyết).
+
+## 67. Cảnh báo onboard đã huỷ nhưng còn quyền / tài sản (27/11/2026)
+
+- Chủ sản phẩm: đội IT **không** dùng "Đã huỷ" để đóng offboard đã xử lý tay → giữ danh sách trạng thái huỷ mặc định.
+- Rule đối soát mới (nhân viên mà **mọi** request RTR đều đã huỷ, có ít nhất một onboard):
+  - `onboard_cancelled_biostar_active` (cao): user BioStar còn hoạt động – khoá hoặc xoá trên BioStar.
+  - `onboard_cancelled_assets_in_use` (trung bình): còn tài sản đang gán – thu hồi trên SDP.
+- Chống báo nhầm: họ tên trên request phải khớp tên BioStar / user SDP (gõ nhầm Mã NV không "tố" người khác); chỉ một user SDP
+  mang mã; user BioStar ở nhóm loại trừ không tính. Chưa có user SDP thì tìm user BioStar chưa thuộc ai cùng 5 số cuối Mã NV
+  (duy nhất sau khi lọc còn hoạt động + khớp tên); user đó không còn bị báo thêm "Mã NV trên BioStar không có trong SDP".
+- Thông báo nêu số request và ngày tạo (giờ Việt Nam). Giới hạn: tài sản của user SDP chưa có Mã NV không được xét; onboard
+  trùng của nhân viên cũ (vào trước khi có tool) vẫn có thể bị báo – xác nhận đã xem. Sau rollback phiên bản, bấm "Đồng bộ ngay".
+
+## 68. Gợi ý Mã NV cho user SDP thiếu mã; xem trước tên khi lập báo cáo chấm công (27/11/2026)
+
+- **Trang "User SDP thiếu Mã NV"** (Dữ liệu nguồn, quyền xem đối soát): user SDP không có Mã NV (hoặc giá trị rác như "N/A",
+  "-", "000000") đối chiếu tên với user BioStar 2 của lần đồng bộ gần nhất. Mã đề xuất = **5 số cuối** Mã NV BioStar (theo chủ
+  sản phẩm, không chuẩn hoá 6 số), hiện kèm mã gốc trên BioStar. Mức khớp: Khớp tên (cùng tên, khác thứ tự/viết hoa/không dấu),
+  Gần đúng (thiếu tên đệm, khác dấu, hoặc ứng viên đã khoá/đã nghỉ), Nhiều ứng viên (kể cả hai user SDP cùng một ứng viên),
+  Mã đã thuộc user khác, Không tìm thấy. Không dùng điểm tương đồng: thay một từ trong tên là người khác. Xuất Excel (Mã NV dạng
+  chữ, có nhật ký kiểm tra). App **không ghi** vào SDP – sửa Mã NV trên SDP/AD. Lần đồng bộ đọc lỗi SDP → không có danh sách;
+  lỗi BioStar → liệt kê nhưng không gợi ý.
+- **Báo cáo chấm công:** sau khi dán/nhận diện Mã NV, ô kiểm tra hiện tên SDP + BioStar theo từng mã (5 số cuối, giống lúc xuất),
+  tên HR nếu có, và trạng thái (đúng, lệch tên, chỉ SDP, chỉ BioStar, chưa thấy, BioStar đã khoá, chưa rõ khi nguồn lỗi) theo dữ
+  liệu đồng bộ gần nhất. Chỉ để kiểm tra – không chặn xuất file.

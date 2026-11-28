@@ -9,6 +9,7 @@ external systems never happen inside an HTTP request. Each job is advanced under
 from __future__ import annotations
 
 import traceback
+from collections.abc import Iterable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -462,20 +463,26 @@ async def cancel_job(session: AsyncSession, actor: Actor, job: Job, reason: str)
     return job
 
 
+def steps_with_work(job: Job) -> list[str]:
+    """Titles of steps that wrote to an external system or that a person finished by hand."""
+    _, wf = workflow_or_404(job.workflow_key)
+    defs = {d.key: d for d in wf.steps}
+
+    def did_work(s: JobStep) -> bool:
+        d = defs.get(s.key)
+        return bool(s.before_state) or (
+            s.status in ("done", "verify") and d is not None and (bool(d.writes) or d.kind == "manual")
+        )
+
+    return [s.title for s in job.steps if did_work(s)]
+
+
 async def reopen_job(session: AsyncSession, actor: Actor, job: Job, reason: str) -> Job:
     """Bring a cancelled job back to draft when none of its steps did anything (no step finished, none wrote to
     an external system): the case is handed back as not done. Anything else must be redone as a new job."""
     if job.status != "cancelled":
         raise Conflict("Chỉ mở lại được Job đã huỷ.", code="not_cancelled")
-    _, wf = workflow_or_404(job.workflow_key)
-    defs = {d.key: d for d in wf.steps}
-
-    def did_work(s: JobStep) -> bool:  # wrote to an external system, or a person did a manual step
-        d = defs.get(s.key)
-        finished = s.status in ("done", "verify")
-        return bool(s.before_state) or (finished and d is not None and (bool(d.writes) or d.kind == "manual"))
-
-    touched = [s.title for s in job.steps if did_work(s)]
+    touched = steps_with_work(job)
     if touched:
         raise Conflict(
             "Job đã có bước thực hiện (" + ", ".join(touched) + ") nên không mở lại được – tạo Job mới.",
@@ -723,9 +730,9 @@ async def advance(session: AsyncSession, job: Job, worker_actor: Actor) -> None:
 
 async def pump(session: AsyncSession) -> dict[str, Any]:
     """Scheduled task: start due scheduled jobs and advance active ones (one transaction per job)."""
-    ids = (
-        await session.scalars(
-            select(Job.id)
+    rows = (
+        await session.execute(
+            select(Job.id, Job.status)
             .where(
                 or_(
                     Job.status.in_(ACTIVE),
@@ -736,6 +743,23 @@ async def pump(session: AsyncSession) -> dict[str, Any]:
             .order_by(Job.updated_at)
         )
     ).all()
+    waiting = [r.id for r in rows if r.status == "waiting"]
+    steps: dict[Any, list[Any]] = {}
+    if waiting:
+        step_rows = await session.execute(
+            select(
+                JobStep.job_id,
+                JobStep.seq,
+                JobStep.status,
+                JobStep.kind,
+                JobStep.requires_confirm,
+                JobStep.confirmed_at,
+                JobStep.next_run_at,
+            ).where(JobStep.job_id.in_(select(Job.id).where(Job.status == "waiting")))
+        )
+        for r in step_rows:
+            steps.setdefault(r.job_id, []).append(r)
+    ids = [r.id for r in rows if r.status != "waiting" or _has_due_work(steps.get(r.id, []))]
     advanced = 0
     for job_id in ids:
         job = await session.scalar(
@@ -746,11 +770,17 @@ async def pump(session: AsyncSession) -> dict[str, Any]:
         )
         if job is None:
             continue
+        # Re-check under the lock: the job may have been cancelled/reopened since the candidate read.
+        if job.status not in ACTIVE and not (
+            job.status == "scheduled" and job.scheduled_for is not None and job.scheduled_for <= today_vn()
+        ):
+            await session.rollback()
+            continue
         if job.status == "scheduled":
             job.status = "running"
             job.started_at = now()
             event(session, job, "Đến ngày đã lên lịch – bắt đầu Job.")
-        if job.status == "waiting" and not _has_due_work(job):
+        if job.status == "waiting" and not _has_due_work(job.steps):
             await session.commit()
             continue
         actor = Actor(user_id=None, upn=f"worker ({job.started_by or 'system'})")
@@ -765,9 +795,9 @@ async def pump(session: AsyncSession) -> dict[str, Any]:
     return {"advanced": advanced, "candidates": len(ids)}
 
 
-def _has_due_work(job: Job) -> bool:
+def _has_due_work(steps: Iterable[Any]) -> bool:
     """A waiting job only needs the worker when an automatic step is due (confirmed or timer elapsed)."""
-    for s in sorted(job.steps, key=lambda s: s.seq):
+    for s in sorted(steps, key=lambda s: s.seq):
         if s.status in FINISHED_STEP:
             continue
         if s.status == "verify":

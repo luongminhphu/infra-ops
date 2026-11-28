@@ -26,6 +26,7 @@ from app.core.workflow.models import Job
 from app.modules.lifecycle.models import LifecycleRequest, ReconRow
 from app.modules.lifecycle.queries import latest_run
 from app.modules.lifecycle.settings import LifecycleSettings
+from app.modules.lifecycle.settings import load as load_settings
 
 JOB_LABEL = {
     "draft": "Nháp",
@@ -146,6 +147,8 @@ async def review_rows(session: AsyncSession, month: date) -> list[ReviewRow]:
             .order_by(LifecycleRequest.effective_date, LifecycleRequest.employee_id)
         )
     ).all()
+    settings = await load_settings(session)
+    reqs = [r for r in reqs if not settings.is_cancelled(r.status)]
     emps = [r.employee_id for r in reqs if r.employee_id]
     run = await latest_run(session)
     recon: dict[str, dict[str, Any]] = {}

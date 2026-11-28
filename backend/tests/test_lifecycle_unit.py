@@ -538,3 +538,277 @@ def test_old_pending_disposal_default_becomes_expired() -> None:
         == "Expired"
     )
     assert LifecycleSettings(asset_state_pending_disposal="Retired").asset_state_pending_disposal == "Retired"
+
+
+def test_closed_and_cancelled_vietnamese_statuses():
+    import unicodedata
+
+    from app.modules.lifecycle.settings import LifecycleSettings
+
+    s = LifecycleSettings()
+    for ok in ("Đã xong", "HOÀN TẤT", unicodedata.normalize("NFD", "Đã huỷ"), "Từ chối"):
+        assert s.is_closed(ok), ok
+    for no in ("Chờ hoàn thành", "Đang xử lý", "", None):
+        assert not s.is_closed(no), no
+    assert s.is_cancelled("Đã hủy") and not s.is_cancelled("Đã xong")
+    s.sdp_cancelled_statuses = [x for x in s.sdp_cancelled_statuses if x not in ("Đã huỷ", "Đã hủy")]
+    assert not s.is_cancelled("Đã huỷ")
+
+
+def _rq(rid, kind, day, status=None, errors=None, emp="003551"):  # type: ignore[no-untyped-def]
+    return {"id": rid, "employee_id": emp, "full_name": "Nguyễn Văn An", "kind": kind, "effective_date": day,
+            "created_at": day, "parse_errors": errors or [], "status": status}  # fmt: skip
+
+
+def test_cancelled_request_does_not_decide_kind() -> None:
+    _, users, assets, bs = _data()
+    run = lambda reqs: reconcile(reqs, users, assets, bs, S, date(2026, 11, 16))  # noqa: E731
+    rules, row = _issues(
+        run(
+            [
+                _rq("1", "onboard", "2026-11-02", "Đã xong", emp="002100"),
+                _rq("2", "offboard", "2026-11-10", "Đã huỷ", emp="002100"),
+            ]
+        ),
+        "002100",
+    )
+    assert row.kind == "onboard" and not any(r.startswith("offboard_") for r in rules)
+    assert row.request_ids == ["1", "2"]
+    rules, row = _issues(run([_rq("2", "offboard", "2026-11-10", "Đã xong", emp="002100")]), "002100")
+    assert row.kind == "offboard" and "offboard_biostar_active" in rules
+    rules, row = _issues(run([_rq("2", "offboard", "2026-11-10", "Đã huỷ", emp="002100")]), "002100")
+    assert row.kind is None and row.cells["sdp"]["label"] == "RTR đã huỷ"
+
+
+def test_closed_request_parse_errors_are_not_reported() -> None:
+    _, users, assets, bs = _data()
+    err = ["Thiếu Mã nhân viên"]
+    for status, reported in (("Đã xong", False), ("Đang xử lý", True)):
+        by_emp = reconcile(
+            [_rq("1", "onboard", "2026-11-02", status, err, emp="002100")],
+            users,
+            assets,
+            bs,
+            S,
+            date(2026, 11, 16),
+        )
+        rules, _ = _issues(by_emp, "002100")
+        assert ("request_parse_error" in rules) is reported
+        orphan = {**_rq("3", None, "2026-11-02", status, err), "employee_id": None}
+        res = reconcile([orphan], users, assets, bs, S, date(2026, 11, 16))
+        assert any(n["rule"] == "request_parse_error" for n in res.notes) is reported
+
+
+def _bs(uid, name="Nguyễn Văn An", active=True, retired=False):  # type: ignore[no-untyped-def]
+    return {"user_id": uid, "name": name, "active": active, "disabled": not active, "retired": retired,
+            "cards": 1, "fingerprints": 0, "faces": 0}  # fmt: skip
+
+
+def _cancelled_onboard_rules(reqs, bs, users=(), assets=(), sources=None, emp="003551"):  # type: ignore[no-untyped-def]
+    res = reconcile(reqs, list(users), list(assets), bs, S, date(2026, 11, 16), sources)
+    rules, row = _issues(res, emp)
+    return {r for r in rules if r.startswith("onboard_cancelled")}, row
+
+
+def test_cancelled_onboard_with_access_or_assets_still_granted() -> None:
+    cancelled = [_rq("7", "onboard", "2026-11-02", "Đã huỷ")]
+    users = [{"id": "u1", "name": "Nguyễn Văn An", "employee_id": "003551", "department": None}]
+    in_use = [{"id": "a1", "user_id": "u1", "state": S.asset_state_in_use, "name": "PC", "asset_tag": "T1"}]
+    bs = [_bs("003551")]
+    rules, row = _cancelled_onboard_rules(cancelled, bs, users, in_use)
+    assert rules == {"onboard_cancelled_biostar_active", "onboard_cancelled_assets_in_use"}
+    by = {i.rule: i for i in row.issues}
+    assert by["onboard_cancelled_biostar_active"].severity == "high"
+    assert by["onboard_cancelled_assets_in_use"].severity == "medium"
+    assert "#7 (tạo 02/11/2026)" in by["onboard_cancelled_biostar_active"].message
+    # sources not read -> not judged
+    src = {"sdp": True, "assets": True, "biostar": False}
+    assert _cancelled_onboard_rules(cancelled, bs, users, in_use, src)[0] == {
+        "onboard_cancelled_assets_in_use"
+    }
+    src = {"sdp": True, "assets": False, "biostar": True}
+    assert _cancelled_onboard_rules(cancelled, bs, users, in_use, src)[0] == {
+        "onboard_cancelled_biostar_active"
+    }
+
+
+def test_cancelled_onboard_rules_do_not_fire_when_unsafe() -> None:
+    bs = [_bs("003551")]
+    cancelled = _rq("7", "onboard", "2026-11-02", "Đã huỷ")
+    # another onboard is done
+    done = _rq("6", "onboard", "2026-11-01", "Đã xong")
+    assert not _cancelled_onboard_rules([done, cancelled], bs)[0]
+    # wrong ID typed: names differ
+    assert not _cancelled_onboard_rules([cancelled], [_bs("003551", "Lê Văn Cường")])[0]
+    # retired BioStar user
+    assert not _cancelled_onboard_rules([cancelled], [_bs("003551", retired=True)])[0]
+    # a live request of unclassified kind (C-37) and a cancelled offboard
+    live = _rq("8", None, "2026-11-03", "Đang xử lý")
+    assert not _cancelled_onboard_rules([cancelled, live], bs)[0]
+    assert not _cancelled_onboard_rules([_rq("9", "offboard", "2026-11-02", "Đã huỷ")], bs)[0]
+
+
+def test_cancelled_onboard_finds_unclaimed_biostar_user_by_id_digits() -> None:
+    cancelled = [_rq("7", "onboard", "2026-11-02", "Đã huỷ")]
+    # SDP has employee IDs (so BioStar users are not employees themselves) but none for this person
+    users = [normalize.sdp_user(u, "employee_id") for u in SDP_USERS if u.get("employee_id") != "003551"]
+    rules, _ = _cancelled_onboard_rules(cancelled, [_bs("3551")], users)
+    assert rules == {"onboard_cancelled_biostar_active"}
+    # ambiguous: two unclaimed candidates
+    assert not _cancelled_onboard_rules(cancelled, [_bs("3551"), _bs("103551")], users)[0]
+
+
+def _other_users():  # type: ignore[no-untyped-def]
+    return [normalize.sdp_user(u, "employee_id") for u in SDP_USERS if u.get("employee_id") != "003551"]
+
+
+def test_cancelled_onboard_fallback_rejects_candidates_claimed_by_others() -> None:
+    cancelled = [_rq("7", "onboard", "2026-11-02", "Đã huỷ")]
+    users = _other_users()
+    # key "3551" already belongs to another SDP user
+    owner = {"id": "u9", "name": "Khác", "employee_id": "3551", "department": None}
+    assert not _cancelled_onboard_rules(cancelled, [_bs("3551")], [*users, owner])[0]
+    # ... or to another request
+    other_req = _rq("8", "onboard", "2026-11-02", "Đã xong", emp="3551")
+    assert not _cancelled_onboard_rules([*cancelled, other_req], [_bs("3551")], users)[0]
+
+
+def test_cancelled_onboard_assets_need_one_user_with_same_name() -> None:
+    cancelled = [_rq("7", "onboard", "2026-11-02", "Đã huỷ")]
+    in_use = [{"id": "a1", "user_id": "u1", "state": S.asset_state_in_use, "name": "PC", "asset_tag": "T1"}]
+    mk = lambda uid, name: {"id": uid, "name": name, "employee_id": "003551", "department": None}  # noqa: E731
+    assert not _cancelled_onboard_rules(cancelled, [], [mk("u1", "Lê Văn Cường")], in_use)[0]
+    dup = [mk("u1", "Nguyễn Văn An"), mk("u2", "Nguyễn Văn An")]
+    assert "onboard_cancelled_assets_in_use" not in _cancelled_onboard_rules(cancelled, [], dup, in_use)[0]
+
+
+def test_cancelled_onboard_fallback_filters_before_counting() -> None:
+    cancelled = [_rq("7", "onboard", "2026-11-02", "Đã huỷ")]
+    users = _other_users()
+    # inactive exact match and no twin
+    assert not _cancelled_onboard_rules(cancelled, [_bs("003551", active=False)], users)[0]
+    # inactive exact + active twin with the same name
+    bs = [_bs("003551", active=False), _bs("3551")]
+    assert _cancelled_onboard_rules(cancelled, bs, users)[0] == {"onboard_cancelled_biostar_active"}
+    # retired twin does not make the match ambiguous
+    bs = [_bs("3551"), _bs("103551", retired=True)]
+    assert _cancelled_onboard_rules(cancelled, bs, users)[0] == {"onboard_cancelled_biostar_active"}
+    # SDP without any employee ID
+    assert _cancelled_onboard_rules(cancelled, [_bs("3551")], [])[0] == {"onboard_cancelled_biostar_active"}
+
+
+def test_cancelled_onboard_fallback_row_has_name_and_no_unknown_note() -> None:
+    cancelled = [_rq("7", "onboard", "2026-11-02", "Đã huỷ")]
+    res = reconcile(cancelled, _other_users(), [], [_bs("3551")], S, date(2026, 11, 16))
+    assert res.notes == [] or all(n.get("employee_id") != "3551" for n in res.notes)
+    _, row = _issues(res, "003551")
+    assert row.full_name == "Nguyễn Văn An"
+
+
+def test_cancelled_onboard_label_uses_vietnam_date() -> None:
+    cancelled = [{**_rq("7", "onboard", "2026-11-02", "Đã huỷ"), "created_at": "2026-11-01T18:30:00+00:00"}]
+    _, row = _cancelled_onboard_rules(cancelled, [_bs("003551")])
+    assert "(tạo 02/11/2026)" in row.issues[0].message
+
+
+# ---------------------------------------------------------------- SDP ID suggestions
+def _sdpu(name, emp=None, uid="1", dept=None):  # type: ignore[no-untyped-def]
+    return {"id": uid, "name": name, "email": f"{uid}@x.vn", "employee_id": emp, "department": dept}
+
+
+def _bsu(name, uid, **kw):  # type: ignore[no-untyped-def]
+    return {"user_id": uid, "name": name, "source": "BS", "active": True, **kw}
+
+
+def _one(sdp_name, *bs, others=()):  # type: ignore[no-untyped-def]
+    from app.modules.lifecycle.id_suggest import suggest
+
+    (row,) = suggest([_sdpu(sdp_name), *others], list(bs))
+    return row
+
+
+@pytest.mark.parametrize(
+    ("sdp", "bio"),
+    [("Nguyễn Văn An", "NGUYEN VAN AN"), ("An. Nguyen Van", "Nguyễn Văn An")],
+)
+def test_suggest_exact_ignores_accents_and_order(sdp: str, bio: str) -> None:
+    row = _one(sdp, _bsu(bio, "003551"))
+    assert row["status"] == "matched"
+    assert row["suggestion"]["employee_id"] == "03551"  # last 5 digits, never padded to 6
+    assert row["suggestion"]["biostar_user_id"] == "003551"
+
+
+@pytest.mark.parametrize(
+    ("sdp", "bio"),
+    [("Nguyễn Thị Ngọc Hà", "Nguyễn Thị Thu Hà"), ("Lê Thị Thu Hà", "Nguyễn Thị Thu Hà")],
+)
+def test_suggest_different_person_is_not_matched(sdp: str, bio: str) -> None:
+    assert _one(sdp, _bsu(bio, "1001"))["status"] == "none"
+
+
+def test_suggest_accent_difference_between_accented_names_is_near() -> None:
+    row = _one("Nguyễn Văn Hùng", _bsu("Nguyễn Văn Hưng", "1001"))
+    assert row["status"] == "near" and "khác dấu" in row["suggestion"]["notes"]
+
+
+@pytest.mark.parametrize(
+    ("sdp", "bio"), [("Nguyễn Thị Hà", "Nguyễn Thị Thu Hà"), ("Ha. Nguyen Thi Thu", "Nguyễn Thị Hà")]
+)
+def test_suggest_missing_middle_name_is_near(sdp: str, bio: str) -> None:
+    assert _one(sdp, _bsu(bio, "1001"))["status"] == "near"
+
+
+def test_suggest_ambiguous_claimed_and_ranking() -> None:
+    assert (
+        _one("Nguyễn Văn An", _bsu("Nguyễn Văn An", "1"), _bsu("Nguyễn Văn An", "2"))["status"] == "ambiguous"
+    )
+    row = _one("Nguyễn Văn An", _bsu("Nguyễn Văn An", "100008"), others=[_sdpu("Khác", "000008", uid="9")])
+    assert row["status"] == "claimed" and row["suggestion"] is None
+    assert "Mã đã thuộc user SDP khác" in row["candidates"][0]["notes"][0]
+    row = _one(
+        "Nguyễn Văn An",
+        _bsu("Nguyễn Văn An", "1001", active=False),
+        _bsu("Nguyễn Văn An", "1002", retired=True, active=False),
+        _bsu("Nguyễn Văn An", "1003"),
+    )
+    assert row["status"] == "matched" and row["suggestion"]["biostar_user_id"] == "1003"
+    assert row["candidates"][0]["biostar_user_id"] == "1003"
+
+
+def test_suggest_junk_ids_are_missing() -> None:
+    from app.modules.lifecycle.id_suggest import missing
+
+    assert all(missing(v) for v in (None, "", "N/A", "-", "000000", "1"))
+    assert not missing("003551") and not missing("3551")
+    assert _one("Nguyễn Văn An")["status"] == "none"
+
+
+def test_suggest_same_top_for_two_sdp_users_is_ambiguous() -> None:
+    from app.modules.lifecycle.id_suggest import suggest
+
+    rows = suggest(
+        [_sdpu("Nguyễn Văn An", uid="1"), _sdpu("Nguyen Van An", uid="2")], [_bsu("NGUYEN VAN AN", "1001")]
+    )
+    assert [r["status"] for r in rows] == ["ambiguous", "ambiguous"]
+    assert all(
+        r["suggestion"] is None and "Cùng ứng viên với user SDP" in r["candidates"][0]["notes"][-1]
+        for r in rows
+    )
+
+
+def test_suggest_inactive_or_retired_top_is_near() -> None:
+    assert _one("Nguyễn Văn An", _bsu("Nguyễn Văn An", "1001", active=False))["status"] == "near"
+    assert _one("Nguyễn Văn An", _bsu("Nguyễn Văn An", "1001", retired=True))["status"] == "near"
+
+
+def test_suggest_exact_any_word_order_and_whitespace_not_accent_diff() -> None:
+    row = _one("An Van Nguyen", _bsu("NGUYEN  VAN AN ", "1001"))
+    assert row["status"] == "matched" and row["suggestion"]["notes"] == []
+    assert _one("Nguyễn Văn An", _bsu("Nguyễn  Văn An ", "1001"))["status"] == "matched"
+    assert _one("Nguyễn An An", _bsu("Nguyễn An", "1001"))["status"] == "none"
+
+
+def test_suggest_junk_values_are_missing() -> None:
+    from app.modules.lifecycle.id_suggest import missing
+
+    assert all(missing(v) for v in ("na", "NA", "n/a", "None", "null", "TBD", "x", "-"))

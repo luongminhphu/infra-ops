@@ -69,11 +69,13 @@ def job_item(job: Job, today: Any) -> dict[str, Any] | None:
 async def load(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
     jobs = (
         await session.scalars(
-            select(Job).where(
+            select(Job)
+            .where(
                 Job.assignee_user_id == user.id,
                 Job.workflow_key.in_(JOB_WORKFLOWS),
                 Job.status.not_in(["completed", "cancelled"]),
             )
+            .options(raiseload(Job.evidence), raiseload(Job.assignments))
         )
     ).all()
     today = today_vn()
@@ -115,7 +117,8 @@ async def summary(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
     week_ago = datetime.now(UTC) - timedelta(days=7)
     jobs = (
         await session.scalars(
-            select(Job).where(
+            select(Job)
+            .where(
                 Job.assignee_user_id == user.id,
                 Job.workflow_key.in_(JOB_WORKFLOWS),
                 Job.status != "cancelled",
@@ -123,6 +126,7 @@ async def summary(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
                     Job.status != "completed", Job.closed_at >= week_ago
                 ),  # older completed jobs are not counted
             )
+            .options(raiseload(Job.evidence), raiseload(Job.assignments))
         )
     ).all()
     today = today_vn()

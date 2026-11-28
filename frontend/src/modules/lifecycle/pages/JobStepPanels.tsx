@@ -79,11 +79,12 @@ export function AssetPicker({ open, onClose, selected, onPick }: { open: boolean
 export function DraftConfig({ job, onSave, saving }: { job: Job; onSave: (patch: { assets?: JobAsset[]; sdp_user_id?: string; sdp_user_name?: string; clear_sdp_user?: boolean }) => void; saving: boolean }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [userQ, setUserQ] = useState("");
+  const debouncedUserQ = useDebounced(userQ, 250);
   const assets = job.params.assets ?? [];
   const users = useQuery({
-    queryKey: ["sdp-users", userQ],
-    queryFn: () => api<{ id: string; name: string; email: string | null; employee_id: string | null }[]>(`/api/lifecycle/sdp-users?q=${encodeURIComponent(userQ)}`),
-    enabled: userQ.trim().length >= 2,
+    queryKey: ["sdp-users", debouncedUserQ],
+    queryFn: () => api<{ id: string; name: string; email: string | null; employee_id: string | null }[]>(`/api/lifecycle/sdp-users?q=${encodeURIComponent(debouncedUserQ)}`),
+    enabled: debouncedUserQ.trim().length >= 2,
   });
   return (
     <div className="space-y-4">

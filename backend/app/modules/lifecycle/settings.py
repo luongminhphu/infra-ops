@@ -117,6 +117,14 @@ class MatrixCell(BaseModel):
 
 OLD_CLOSED_STATUSES = ["Closed", "Resolved", "Cancelled", "Canceled"]
 CLOSED_STATUSES = [*OLD_CLOSED_STATUSES, "Đã đóng", "Đã xử lý", "Đã huỷ", "Đã hủy"]
+# Always closed, whatever the saved list says (SDP Vietnamese UI names).
+BUILTIN_CLOSED = [
+    "Closed", "Resolved", "Completed", "Đã đóng", "Đã xử lý", "Đã xong",
+    "Hoàn tất", "Đã hoàn tất", "Hoàn thành", "Đã hoàn thành",
+]  # fmt: skip
+CANCELLED_STATUSES = [
+    "Cancelled", "Canceled", "Rejected", "Đã huỷ", "Đã hủy", "Huỷ", "Hủy", "Từ chối", "Đã từ chối",
+]  # fmt: skip
 
 
 def fold(text: str) -> str:
@@ -345,6 +353,7 @@ class LifecycleSettings(BaseModel):
     sdp_close_status: str = Field("Resolved", min_length=1, max_length=64)
     # SDP shows status names in its UI language: a Vietnamese SDP says "Đã đóng", "Đã xử lý"…
     sdp_closed_statuses: list[str] = Field(default_factory=lambda: list(CLOSED_STATUSES))
+    sdp_cancelled_statuses: list[str] = Field(default_factory=lambda: list(CANCELLED_STATUSES))
     sdp_add_note: bool = True
     biostar_user_group_id: str = Field("1", max_length=32)
     biostar_access_group_ids: list[str] = Field(default_factory=list)
@@ -373,7 +382,13 @@ class LifecycleSettings(BaseModel):
 
     def is_closed(self, status: str | None) -> bool:
         """An SDP request status that means the request is over (case and accents ignored)."""
-        return bool(status) and fold(status or "") in {fold(s) for s in self.sdp_closed_statuses}
+        if not status:
+            return False
+        names = [*BUILTIN_CLOSED, *self.sdp_closed_statuses, *self.sdp_cancelled_statuses]
+        return fold(status) in {fold(s) for s in names}
+
+    def is_cancelled(self, status: str | None) -> bool:
+        return bool(status) and fold(status or "") in {fold(s) for s in self.sdp_cancelled_statuses}
 
     def items_for_employee(
         self, title: str | None, band: str | None, department: str | None = None, chosen: str | None = None

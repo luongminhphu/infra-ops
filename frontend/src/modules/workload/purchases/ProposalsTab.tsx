@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { AlertTriangle, Copy, LoaderCircle, Paperclip, ShoppingCart, Trash2 } from "lucide-react";
@@ -37,6 +37,14 @@ function DupChip({ n }: { n: number }) {
       <Copy className="size-3.5" aria-hidden="true" />Có thể trùng ({n} đề xuất khác)
     </span>
   );
+}
+
+/** Source label; a ticket id links to the tickets list when the user may open it. */
+function SourceText({ p }: { p: Purchase }) {
+  const { can } = useAuth();
+  return p.ticket_display_id && can("workload.tickets.view") ? (
+    <Link to={`/workload/tickets?state=all&q=${encodeURIComponent(p.ticket_display_id)}`} className="text-primary underline-offset-2 hover:underline">{sourceLabel(p)}</Link>
+  ) : <>{sourceLabel(p)}</>;
 }
 
 export function sourceLabel(p: Purchase): string {
@@ -181,7 +189,7 @@ function ApproveDialog({ p: initial, dup, onClose, onDone }: { p: Purchase; dup:
         <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 rounded-sm bg-surface-2 px-3 py-2 text-sm">
           <dt className="text-muted">Người đề xuất</dt><dd>{p.created_by_name} · {formatDate(p.created_at)}</dd>
           <dt className="text-muted">Người dùng</dt><dd>{p.employee || "—"}</dd>
-          <dt className="text-muted">Nguồn</dt><dd>{sourceLabel(p)} · {KIND_LABEL[p.kind]} × {p.quantity}</dd>
+          <dt className="text-muted">Nguồn</dt><dd><SourceText p={p} /> · {KIND_LABEL[p.kind]} × {p.quantity}</dd>
           {p.reason && (<><dt className="text-muted">Lý do</dt><dd className="whitespace-pre-line">{p.reason}</dd></>)}
         </dl>
         {dup > 0 && (
@@ -355,7 +363,7 @@ export function ProposalsTab() {
       ...(priced
         ? [{ accessorKey: "amount", header: "Thành tiền", cell: (c: { row: { original: Purchase } }) => <span className="tabular whitespace-nowrap">{formatVnd(c.row.original.amount, "Chưa có giá")}</span> } as ColumnDef<Purchase, unknown>]
         : []),
-      { id: "source", header: "Nguồn", accessorFn: (p) => sourceLabel(p), cell: (c) => <Mono className="whitespace-nowrap">{sourceLabel(c.row.original)}</Mono> },
+      { id: "source", header: "Nguồn", accessorFn: (p) => sourceLabel(p), cell: (c) => <Mono className="whitespace-nowrap"><SourceText p={c.row.original} /></Mono> },
       {
         id: "evidence",
         header: "Bằng chứng",

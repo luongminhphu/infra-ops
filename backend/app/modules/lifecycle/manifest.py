@@ -34,6 +34,7 @@ from app.modules.lifecycle.inventory_api import router as inventory_router
 from app.modules.lifecycle.jobs_api import router as jobs_router
 from app.modules.lifecycle.offboard_review import next_action as offboard_review_action
 from app.modules.lifecycle.offboard_review_api import router as offboard_review_router
+from app.modules.lifecycle.sdp_ids_api import router as sdp_ids_router
 from app.modules.lifecycle.stock import ASSET_DISPOSE, ASSET_STATE
 from app.modules.lifecycle.stock import router as stock_router
 from app.modules.lifecycle.stocktake_api import next_action as stocktake_action
@@ -173,6 +174,7 @@ manifest = ModuleManifest(
         attendance_router,
         offboard_review_router,
         stocktake_router,
+        sdp_ids_router,
     ],
     workflows=[ONBOARD, OFFBOARD, TRANSFER, REASSIGN_JOB, ASSET_STATE, ASSET_DISPOSE],
     document_kinds=[HANDOVER, RETURN, STOCKTAKE_RECORD],
@@ -203,6 +205,7 @@ manifest = ModuleManifest(
         ),
         NavItem("Request RTR", "/lifecycle/requests", "ticket", RECON_VIEW, NAV_SOURCES),
         NavItem("Đồng bộ dữ liệu", "/lifecycle/sync", "refresh-cw", RECON_VIEW, NAV_SOURCES),
+        NavItem("User SDP thiếu Mã NV", "/lifecycle/sdp-missing-ids", "user-search", RECON_VIEW, NAV_SOURCES),
         # Configuration of the Jobs (steps, checklists): for checklist managers. Operators read each step's checklist in
         # the Job itself and the "how" in the Playbook.
         NavItem("Lưu đồ quy trình", "/lifecycle/flows", "route", "core.workflow.checklist.manage", NAV_SETUP),

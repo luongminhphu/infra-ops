@@ -9,15 +9,15 @@ import { EmptyState, ErrorState, LoadingRows, Mono } from "@/core/ui/feedback";
 import { HelpTip } from "@/core/ui/help-tip";
 import { StatusBadge } from "@/core/ui/status";
 import { formatDate, isoDateVn } from "@/core/lib/format";
-import { JOB_STATUS, JOB_WORKFLOWS, WORKFLOW_LABEL, jobStatusLabel, type Job } from "./jobs";
+import { JOB_STATUS, JOB_WORKFLOWS, WORKFLOW_LABEL, jobStatusLabel, type JobListItem } from "./jobs";
 
 /** Open jobs split into the unclaimed queue (oldest effective date first) and the work each person holds. */
-export function splitQueue(jobs: Job[]): { waiting: Job[]; byPerson: { name: string; userId: string | null; jobs: Job[] }[] } {
-  const byDate = (a: Job, b: Job) => (a.params.effective_date ?? "9").localeCompare(b.params.effective_date ?? "9");
+export function splitQueue(jobs: JobListItem[]): { waiting: JobListItem[]; byPerson: { name: string; userId: string | null; jobs: JobListItem[] }[] } {
+  const byDate = (a: JobListItem, b: JobListItem) => (a.params.effective_date ?? "9").localeCompare(b.params.effective_date ?? "9");
   // Offboards past their effective date first: access must not outlive the last working day.
-  const late = (j: Job) => (j.params.kind === "offboard" && daysLate(j) > 0 ? 0 : 1);
+  const late = (j: JobListItem) => (j.params.kind === "offboard" && daysLate(j) > 0 ? 0 : 1);
   const waiting = jobs.filter((j) => !j.assignee).sort((a, b) => late(a) - late(b) || byDate(a, b));
-  const people = new Map<string, { name: string; userId: string | null; jobs: Job[] }>();
+  const people = new Map<string, { name: string; userId: string | null; jobs: JobListItem[] }>();
   for (const j of jobs.filter((x) => x.assignee)) {
     const key = j.assignee!.user_id ?? j.assignee!.name ?? "?";
     const p = people.get(key) ?? { name: j.assignee!.name ?? "?", userId: j.assignee!.user_id, jobs: [] };
@@ -29,18 +29,18 @@ export function splitQueue(jobs: Job[]): { waiting: Job[]; byPerson: { name: str
 }
 
 /** Whole days past the effective date (Vietnam calendar), 0 when not late. */
-export function daysLate(j: Pick<Job, "params">, today: string = isoDateVn()): number {
+export function daysLate(j: Pick<JobListItem, "params">, today: string = isoDateVn()): number {
   const eff = j.params.effective_date;
   if (!eff || eff >= today) return 0;
   return Math.round((Date.parse(today) - Date.parse(eff)) / 86_400_000);
 }
 
-function stepText(j: Job): string {
+function stepText(j: JobListItem): string {
   const s = j.steps.find((x) => x.key === j.current_step);
   return s ? `Bước ${s.seq}/${j.progress.total}: ${s.title}` : `Xong ${j.progress.done}/${j.progress.total} bước`;
 }
 
-function JobLine({ j, action }: { j: Job; action?: React.ReactNode }) {
+function JobLine({ j, action }: { j: JobListItem; action?: React.ReactNode }) {
   return (
     <li className="flex items-start gap-3 py-2">
       <Link to={`/lifecycle/jobs/${j.id}`} className="min-w-0 flex-1 hover:underline-offset-2">
@@ -69,11 +69,11 @@ export function TeamQueueWidget() {
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["jobs", "team", "open"],
-    queryFn: () => api<{ items: Job[] }>(`/api/core/jobs?status=open&limit=500&workflows=${JOB_WORKFLOWS}`),
+    queryFn: () => api<{ items: JobListItem[] }>(`/api/core/jobs?lean=1&status=open&limit=500&workflows=${JOB_WORKFLOWS}`),
     refetchInterval: 30_000,
   });
   const claim = useMutation({
-    mutationFn: (j: Job) => api(`/api/lifecycle/jobs/${j.id}/claim`, { method: "POST" }),
+    mutationFn: (j: JobListItem) => api(`/api/lifecycle/jobs/${j.id}/claim`, { method: "POST" }),
     onSuccess: (_r, j) => {
       toast.success(`Đã nhận ${WORKFLOW_LABEL[j.workflow_key] ?? "Job"} ${j.subject_label}. SDP ghi bạn là Technician trong ít giây; Job chuyển sang Việc của tôi.`, {
         action: { label: "Mở Việc của tôi", onClick: () => navigate("/me/work") },

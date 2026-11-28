@@ -42,6 +42,7 @@ interface Values {
   auto_create_jobs: boolean;
   sdp_close_status: string;
   sdp_closed_statuses: string[];
+  sdp_cancelled_statuses: string[];
   sdp_add_note: boolean;
   biostar_user_group_id: string;
   biostar_access_group_ids: string[];
@@ -89,6 +90,7 @@ export function SettingsPage() {
   const [hrCc, setHrCc] = useState("");
   const [serverError, setServerError] = useState("");
   const [closedStatuses, setClosedStatuses] = useState("");
+  const [cancelledStatuses, setCancelledStatuses] = useState("");
   const [excludedGroups, setExcludedGroups] = useState("");
   const [loadGroups, setLoadGroups] = useState(false);
   const groups = useQuery({
@@ -102,6 +104,7 @@ export function SettingsPage() {
       setV(q.data.values);
       setProductTypes(q.data.values.asset_product_types.join(", "));
       setClosedStatuses(q.data.values.sdp_closed_statuses.join(", "));
+      setCancelledStatuses(q.data.values.sdp_cancelled_statuses.join(", "));
       setExcludedGroups(q.data.values.biostar_excluded_groups.join(", "));
       setHrTo(q.data.values.hr_review_to.join(", "));
       setHrCc(q.data.values.hr_review_cc.join(", "));
@@ -133,6 +136,7 @@ export function SettingsPage() {
       ...v,
       asset_product_types: list(productTypes),
       sdp_closed_statuses: list(closedStatuses),
+      sdp_cancelled_statuses: list(cancelledStatuses),
       biostar_excluded_groups: list(excludedGroups),
       hr_review_to: list(hrTo),
       hr_review_cc: list(hrCc),
@@ -348,8 +352,11 @@ export function SettingsPage() {
               <Field label="Trạng thái request khi đóng Job" hint="Tên trạng thái trên SDP, ví dụ Resolved hoặc Closed.">
                 <Input value={v.sdp_close_status} onChange={(e) => set("sdp_close_status", e.target.value)} />
               </Field>
-              <Field label="Trạng thái được coi là đã đóng" hint="Đúng như SDP hiển thị (SDP tiếng Việt: Đã đóng, Đã xử lý…), cách nhau dấu phẩy, không phân biệt hoa thường / dấu. Request ở các trạng thái này: không tạo Job nháp, Job nháp có sẵn tự huỷ khi đồng bộ, Job đang chạy dừng ở bước kiểm tra request.">
+              <Field label="Trạng thái được coi là đã đóng" hint="Luôn được coi là đã đóng: Closed, Resolved, Completed, Đã đóng, Đã xử lý, Đã xong, Hoàn tất, Đã hoàn tất, Hoàn thành, Đã hoàn thành. Thêm tên khác đúng như SDP hiển thị, cách nhau dấu phẩy, không phân biệt hoa thường / dấu. Request ở các trạng thái này: không tạo Job nháp, Job nháp có sẵn tự huỷ khi đồng bộ, Job đang chạy dừng ở bước kiểm tra request.">
                 <Input value={closedStatuses} onChange={(e) => setClosedStatuses(e.target.value)} />
+              </Field>
+              <Field label="Trạng thái được coi là đã huỷ" hint="Request ở các trạng thái này không còn quyết định loại onboard/offboard khi đối soát. Bỏ một trạng thái nếu đội IT dùng nó để đóng việc đã xử lý.">
+                <Input value={cancelledStatuses} onChange={(e) => setCancelledStatuses(e.target.value)} />
               </Field>
             </div>
             <Switch label="Thêm ghi chú tóm tắt vào request khi đóng" checked={v.sdp_add_note} onChange={(x) => set("sdp_add_note", x)} />
@@ -468,7 +475,7 @@ export function SettingsPage() {
 
         {serverError && <p role="alert" className="rounded-sm bg-failed-soft px-3 py-2 text-sm text-failed">{serverError}</p>}
         <div className="sticky bottom-0 -mx-4 sm:-mx-5 flex justify-end gap-2 border-t border-line bg-paper/95 px-5 py-3 backdrop-blur">
-          <Button onClick={() => { setV(d.values); setProductTypes(d.values.asset_product_types.join(", ")); setClosedStatuses(d.values.sdp_closed_statuses.join(", ")); setExcludedGroups(d.values.biostar_excluded_groups.join(", ")); setHrTo(d.values.hr_review_to.join(", ")); setHrCc(d.values.hr_review_cc.join(", ")); }}>Hoàn tác thay đổi</Button>
+          <Button onClick={() => { setV(d.values); setProductTypes(d.values.asset_product_types.join(", ")); setClosedStatuses(d.values.sdp_closed_statuses.join(", ")); setCancelledStatuses(d.values.sdp_cancelled_statuses.join(", ")); setExcludedGroups(d.values.biostar_excluded_groups.join(", ")); setHrTo(d.values.hr_review_to.join(", ")); setHrCc(d.values.hr_review_cc.join(", ")); }}>Hoàn tác thay đổi</Button>
           <Button type="submit" variant="primary" loading={save.isPending}>Lưu cấu hình</Button>
         </div>
       </form>

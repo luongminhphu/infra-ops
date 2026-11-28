@@ -14,6 +14,7 @@ import { StatusBadge } from "@/core/ui/status";
 import { formatDateTime } from "@/core/lib/format";
 import { cn } from "@/core/lib/cn";
 import { DOC_STATUS, KIND_SHORT_TITLE, SHORT_OF, useDocMeta, type Doc, type DocData, type ShortKind } from "../docs";
+import { EmpLink } from "./EmployeePanel";
 import { DocForm, emptyData, formErrors } from "../DocForm";
 
 function Back() {
@@ -201,7 +202,7 @@ export function DocumentPage() {
           d ? (
             <span className="inline-flex flex-wrap items-center gap-2">
               <StatusBadge status={DOC_STATUS[status].status} label={DOC_STATUS[status].label} />
-              {d.subject_label} · lập bởi {d.created_by} lúc {formatDateTime(d.created_at)}
+              {d.subject_key ? <>{d.subject_label.replace(` (${d.subject_key})`, "")} (<EmpLink id={d.subject_key} />)</> : d.subject_label} · lập bởi {d.created_by} lúc {formatDateTime(d.created_at)}
             </span>
           ) : (
             "Sau khi lưu nháp có thể xem trước PDF. Biên bản chỉ được cấp số khi chốt."

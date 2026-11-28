@@ -122,6 +122,31 @@ async def _zones(session: AsyncSession, stocktake_id: uuid.UUID) -> list[dict[st
     return [_zone_out(z) for z in rows.all()]
 
 
+async def _matching(session: AsyncSession, stocktake_id: uuid.UUID, codes: list[str]) -> list[StocktakeItem]:
+    """Items matching any code, in id order. Matches in Python on 4 columns, then loads only the hits."""
+    rows = await session.execute(
+        select(StocktakeItem.id, StocktakeItem.serial, StocktakeItem.asset_tag, StocktakeItem.fa_code)
+        .where(StocktakeItem.stocktake_id == stocktake_id)
+        .order_by(StocktakeItem.id)
+    )
+    ids = [
+        r.id
+        for r in rows
+        if any(
+            matches({"serial": r.serial, "asset_tag": r.asset_tag, "fa_code": r.fa_code}, c) for c in codes
+        )
+    ]
+    if not ids:
+        return []
+    return list(
+        (
+            await session.scalars(
+                select(StocktakeItem).where(StocktakeItem.id.in_(ids)).order_by(StocktakeItem.id)
+            )
+        ).all()
+    )
+
+
 async def _items(session: AsyncSession, stocktake_id: uuid.UUID) -> list[StocktakeItem]:
     return list(
         (
@@ -291,8 +316,7 @@ async def scan(
     """A serial / asset tag / accounting code read on site. Marks the matching asset as present (idempotent)."""
     s = await _get(session, stocktake_id, lock=True)
     _open_for_count(s)
-    items = await _items(session, stocktake_id)
-    hits = [i for i in items if matches(_item_out(i), body.code)]
+    hits = await _matching(session, stocktake_id, [body.code])
     if not hits:
         return {"matched": False, "item": None, "already": False}
     if len(hits) > 1:
@@ -392,10 +416,13 @@ async def add_extra(
         raise AppError(
             "Nhập ít nhất serial, asset tag hoặc mã TSCĐ để nhận diện tài sản.", code="extra_no_code"
         )
-    for i in await _items(session, stocktake_id):
-        if any(matches(_item_out(i), c) for c in (body.serial, body.asset_tag, body.fa_code) if c.strip()):
-            raise Conflict(f"Mã đã có trong kỳ kiểm kê: {i.name} ({i.asset_tag or i.serial or '—'}).",
-                           code="extra_duplicate")  # fmt: skip
+    dups = await _matching(
+        session, stocktake_id, [c for c in (body.serial, body.asset_tag, body.fa_code) if c.strip()]
+    )
+    if dups:
+        i = dups[0]
+        raise Conflict(f"Mã đã có trong kỳ kiểm kê: {i.name} ({i.asset_tag or i.serial or '—'}).",
+                       code="extra_duplicate")  # fmt: skip
     item = StocktakeItem(
         stocktake_id=s.id,
         asset_id=None,

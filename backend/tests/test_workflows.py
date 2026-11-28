@@ -15,6 +15,7 @@ import respx
 from sqlalchemy import select
 
 from app.core.audit.models import AuditLog
+from app.core.audit.service import Actor
 from app.core.db import get_sessionmaker
 from app.core.workflow.engine import pump, today_vn
 from app.core.workflow.models import Job
@@ -688,11 +689,31 @@ async def test_auto_create_jobs_and_list(admin) -> None:  # type: ignore[no-unty
     assert listed["items"][0]["created_by"] == "system (đồng bộ)"
     assert (await admin.get("/api/core/jobs", params={"q": "004445"})).json()["total"] == 0
 
+    # Lean list: same job, no heavy step fields, no assignments; default payload keeps them.
+    lean = (await admin.get("/api/core/jobs", params={"q": "004444", "lean": 1})).json()["items"][0]
+    full = listed["items"][0]
+    assert "assignments" not in lean and "assignments" in full
+    assert lean["params"] == full["params"] and len(lean["steps"]) == len(full["steps"])
+    for st in lean["steps"]:
+        assert not {"before_state", "output", "evidence", "checklist", "message", "verify_note"} & set(st)
+    assert {"before_state", "output", "evidence"} <= set(full["steps"][0])
+
+    # The lifecycle queue (raiseloads evidence/assignments) still sees the job's steps.
+    me = (await admin.get("/api/core/me")).json()
+    async with get_sessionmaker()() as s:
+        j = await s.get(Job, uuid.UUID(full["id"]))
+        j.assignee_user_id, j.assignee_name = uuid.UUID(me["id"]), "Admin"  # type: ignore[union-attr]
+        await s.commit()
+    q = (await admin.get("/api/core/me/next")).json()
+    assert q["failed"] == []
+    assert f"job:{full['id']}" in [i["key"] for i in q["items"]]
+    assert (await admin.get("/api/core/me/summary")).json()["failed"] == []
+
 
 async def test_requests_closed_in_vietnamese_drop_their_draft_jobs(admin) -> None:  # type: ignore[no-untyped-def]
     """A Vietnamese SDP reports "Đã đóng" / "Đã xử lý": no draft is created for it, and a draft made while the
     request was open is cancelled (with its reason) once the request closes – it leaves the team queue."""
-    from app.modules.lifecycle.jobs_api import auto_create_jobs, cancel_closed_drafts
+    from app.modules.lifecycle.jobs_api import auto_create_jobs, cancel_closed_jobs
     from app.modules.lifecycle.settings import LifecycleSettings
 
     s0 = LifecycleSettings()
@@ -718,11 +739,124 @@ async def test_requests_closed_in_vietnamese_drop_their_draft_jobs(admin) -> Non
     async with get_sessionmaker()() as s:  # HR / IT closed it on SDP; the next sync reads "Đã đóng"
         (await s.get(LifecycleRequest, "9479")).status = "Đã đóng"  # type: ignore[union-attr]
         await s.commit()
-        assert await cancel_closed_drafts(s) >= 1
+        assert await cancel_closed_jobs(s) >= 1
         await s.commit()
-        assert await cancel_closed_drafts(s) == 0  # idempotent
+        assert await cancel_closed_jobs(s) == 0  # idempotent
     got = (await admin.get(f"/api/core/jobs/{job['id']}")).json()
     assert got["status"] == "cancelled" and "đã đóng trên SDP" in got["close_reason"]
+
+
+async def test_closed_request_jobs_cancel_and_reopen_with_the_request(admin) -> None:  # type: ignore[no-untyped-def]
+    from app.core.workflow.models import JobStep
+    from app.modules.lifecycle.jobs_api import (
+        cancel_closed_jobs,
+        create_job_for_request,
+        reopen_reopened_jobs,
+    )
+
+    ids = {"9611": "004461", "9612": "004462", "9613": "004463", "9614": "004464"}
+    jobs: dict[str, uuid.UUID] = {}
+    async with get_sessionmaker()() as s:
+        for rid, emp in ids.items():
+            req = LifecycleRequest(id=rid, display_id=f"7{rid[1:]}", subject="x", employee_id=emp, full_name="Lê F",
+                                   kind="offboard", status="Đang mở", effective_date=date(2026, 10, 1), fields={},
+                                   parse_errors=[], description_text="")  # fmt: skip
+            s.add(req)
+            await s.flush()
+            job, _ = await create_job_for_request(s, Actor(None, "t"), req)
+            jobs[rid] = job.id
+        await s.commit()
+        j2 = await s.get(Job, jobs["9612"], populate_existing=True)
+        j2.status, j2.current_step = "failed", "check_request"  # type: ignore[union-attr]
+        j3 = await s.get(Job, jobs["9613"])
+        j3.status = "failed"  # type: ignore[union-attr]
+        steps = (
+            await s.scalars(select(JobStep).where(JobStep.job_id == jobs["9613"]).order_by(JobStep.seq))
+        ).all()
+        steps[-1].before_state = {"x": 1}  # a later write step did something
+        for rid in ids:
+            (await s.get(LifecycleRequest, rid)).status = "Đã đóng"  # type: ignore[union-attr]
+        await s.commit()
+        assert await cancel_closed_jobs(s) >= 3
+        await s.commit()
+    async with get_sessionmaker()() as s:
+        got = {r: await s.get(Job, j, populate_existing=True) for r, j in jobs.items()}
+        assert got["9611"].status == "cancelled" and "auto_cancelled_at" in got["9611"].params  # type: ignore[union-attr]
+        assert "Job nháp tự huỷ" in got["9611"].close_reason  # type: ignore[union-attr]
+        assert got["9612"].status == "cancelled" and "chưa ghi gì ra hệ thống" in got["9612"].close_reason  # type: ignore[union-attr]
+        assert got["9613"].status == "failed"  # type: ignore[union-attr]
+        j4 = await s.get(Job, jobs["9614"])  # a person-cancelled job is the same minus the marker
+        j4.params = {k: v for k, v in j4.params.items() if k != "auto_cancelled_at"}  # type: ignore[union-attr]
+        await s.commit()
+        assert await reopen_reopened_jobs(s) == 0  # all requests still closed
+        for rid in ("9611", "9612", "9614"):
+            (await s.get(LifecycleRequest, rid)).status = "Đang mở"  # type: ignore[union-attr]
+        await s.commit()
+        assert await reopen_reopened_jobs(s) == 2
+        await s.commit()
+        assert await reopen_reopened_jobs(s) == 0
+    async with get_sessionmaker()() as s:
+        for rid, status in (("9611", "draft"), ("9612", "draft"), ("9614", "cancelled")):
+            j = await s.get(Job, jobs[rid], populate_existing=True)
+            assert j.status == status and "auto_cancelled_at" not in j.params  # type: ignore[union-attr]
+        (await s.get(LifecycleRequest, "9614")).status = "Đã đóng"  # type: ignore[union-attr]
+        await s.commit()
+    r = await admin.post("/api/lifecycle/jobs", json={"request_id": "9614"})
+    assert r.status_code == 400 and r.json()["error"]["code"] == "request_closed", r.text
+
+
+async def test_manual_cancel_after_auto_cancel_is_not_undone_by_sync(admin) -> None:  # type: ignore[no-untyped-def]
+    from app.core.workflow import engine
+    from app.modules.lifecycle.jobs_api import (
+        cancel_closed_jobs,
+        create_job_for_request,
+        reopen_reopened_jobs,
+    )
+
+    person = Actor(None, "supervisor")
+    async with get_sessionmaker()() as s:
+        req = LifecycleRequest(id="9691", display_id="79691", subject="x", employee_id="004491", full_name="P",
+                               kind="offboard", status="Đang mở", effective_date=date(2026, 10, 1), fields={},
+                               parse_errors=[], description_text="")  # fmt: skip
+        s.add(req)
+        await s.flush()
+        job, _ = await create_job_for_request(s, Actor(None, "t"), req)
+        jid = job.id
+        req.status = "Đã đóng"
+        await s.commit()
+        assert await cancel_closed_jobs(s) == 1
+        await s.commit()
+        job = await s.get(Job, jid, populate_existing=True)
+        await engine.reopen_job(s, person, job, "request mở lại rồi")
+        await engine.cancel_job(s, person, job, "trùng, không cần")
+        req.status = "Đang mở"
+        await s.commit()
+        assert await reopen_reopened_jobs(s) == 0
+        await s.commit()
+        job = await s.get(Job, jid, populate_existing=True)
+        assert job.status == "cancelled" and "auto_cancelled_at" not in job.params
+
+
+async def test_failed_job_auto_cancel_only_for_cancelled_request(admin) -> None:  # type: ignore[no-untyped-def]
+    from app.modules.lifecycle.jobs_api import cancel_closed_jobs, create_job_for_request
+
+    jobs: dict[str, uuid.UUID] = {}
+    async with get_sessionmaker()() as s:
+        for rid, emp in (("9621", "004471"), ("9622", "004472")):
+            req = LifecycleRequest(id=rid, display_id=f"7{rid[1:]}", subject="x", employee_id=emp, full_name="P",
+                                   kind="offboard", status="Đang mở", effective_date=date(2026, 10, 1), fields={},
+                                   parse_errors=[], description_text="")  # fmt: skip
+            s.add(req)
+            await s.flush()
+            job, _ = await create_job_for_request(s, Actor(None, "t"), req)
+            job.status, job.current_step = "failed", job.steps[-1].key
+            req.status = "Đã xử lý" if rid == "9621" else "Đã huỷ"
+            jobs[rid] = job.id
+        await s.commit()
+        assert await cancel_closed_jobs(s) == 1
+        await s.commit()
+        assert (await s.get(Job, jobs["9621"], populate_existing=True)).status == "failed"  # type: ignore[union-attr]
+        assert (await s.get(Job, jobs["9622"], populate_existing=True)).status == "cancelled"  # type: ignore[union-attr]
 
 
 async def test_transfer_request_gets_a_manual_group_job(admin) -> None:  # type: ignore[no-untyped-def]

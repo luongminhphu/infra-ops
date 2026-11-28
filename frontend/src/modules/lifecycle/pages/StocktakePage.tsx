@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, ClipboardCheck, Download, FileSignature, PackagePlus, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
+import { AssetTagLink, EmpLink } from "./EmployeePanel";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { formatDate, formatDateTime } from "@/core/lib/format";
 import { Button, buttonVariants } from "@/core/ui/button";
@@ -550,10 +551,10 @@ function ItemRow({ item: i, heading, zoneName, zones, stocktakeId, status, canCo
         </p>
         <p className="mt-0.5 flex flex-wrap gap-x-4 text-sm text-muted">
           {i.product_type && <span>{i.product_type}</span>}
-          <span>Tag <Mono>{i.asset_tag || "—"}</Mono></span>
+          <span>Tag <Mono>{i.asset_tag ? <AssetTagLink tag={i.asset_tag} /> : "—"}</Mono></span>
           <span>Serial <Mono>{i.serial || "—"}</Mono></span>
           <span>Mã TSCĐ <Mono>{i.fa_code || "—"}</Mono></span>
-          {i.user_name && <span>{i.user_name}</span>}
+          {i.user_name && <span>{i.user_name}{i.employee_id && <> · <EmpLink id={i.employee_id} /></>}</span>}
           {i.department && <span>{i.department}</span>}
           {i.site && <span>Site {i.site}</span>}
           <span>Khu {zoneName}</span>

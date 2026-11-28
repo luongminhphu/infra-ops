@@ -5,6 +5,7 @@ import { CalendarClock, CheckCircle2, Coffee, Hand, LayoutList, Play, Plus, Recy
 import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { formatDate } from "@/core/lib/format";
+import { useDebounced } from "@/core/lib/useDebounced";
 import { Button } from "@/core/ui/button";
 import { EmptyState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input } from "@/core/ui/field";
@@ -144,13 +145,14 @@ function PrepareWizard({ job, act, canRun }: { job: Job; act: ReturnType<typeof 
   ];
   const [i, setI] = useState(0);
   const [userQ, setUserQ] = useState("");
+  const debouncedUserQ = useDebounced(userQ, 250);
   const [assets, setAssets] = useState<JobAsset[] | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const prep = useQuery({ queryKey: ["job-prepare", job.id], queryFn: () => api<Prepare>(`/api/lifecycle/jobs/${job.id}/prepare`) });
   const users = useQuery({
-    queryKey: ["sdp-users", userQ],
-    queryFn: () => api<{ id: string; name: string; email: string | null; employee_id: string | null }[]>(`/api/lifecycle/sdp-users?q=${encodeURIComponent(userQ)}`),
-    enabled: userQ.trim().length >= 2,
+    queryKey: ["sdp-users", debouncedUserQ],
+    queryFn: () => api<{ id: string; name: string; email: string | null; employee_id: string | null }[]>(`/api/lifecycle/sdp-users?q=${encodeURIComponent(debouncedUserQ)}`),
+    enabled: debouncedUserQ.trim().length >= 2,
   });
   const { can } = useAuth();
   const purchases = useQuery({

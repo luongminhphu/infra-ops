@@ -52,6 +52,11 @@ export interface Assignment {
   at: string;
 }
 
+/** Step as returned by `GET /api/core/jobs?lean=1` (heavy fields omitted). */
+export type JobListStep = Omit<JobStep, "before_state" | "output" | "checklist" | "evidence" | "message" | "verify_note">;
+/** Job as returned by `GET /api/core/jobs?lean=1`: no assignments, lean steps. Every full Job is assignable. */
+export type JobListItem = Omit<Job, "assignments" | "steps"> & { steps: JobListStep[] };
+
 /** Onboard / offboard / transfer (the reassignment workflow is an internal helper). */
 export const JOB_WORKFLOWS = "lifecycle.onboard,lifecycle.offboard,lifecycle.transfer";
 
@@ -130,7 +135,7 @@ export function idleText(minutes: number): string {
   return minutes >= 60 * 24 ? `${Math.floor(minutes / 1440)} ngày` : minutes >= 60 ? `${Math.floor(minutes / 60)} giờ` : `${minutes} phút`;
 }
 
-export function jobStatusLabel(job: Pick<Job, "status" | "current_step" | "steps"> & { stalled_minutes?: number | null }): string {
+export function jobStatusLabel(job: Pick<JobListItem, "status" | "current_step" | "steps"> & { stalled_minutes?: number | null }): string {
   if (job.stalled_minutes) {
     const cur = job.steps.find((x) => x.key === job.current_step);
     return `Đứng yên ${idleText(job.stalled_minutes)}${cur ? ` ở bước ${cur.seq}` : ""}`;
@@ -145,7 +150,7 @@ export function jobStatusLabel(job: Pick<Job, "status" | "current_step" | "steps
 }
 
 /** What the operator has to do now on a running job – an instruction, or that nothing is needed. */
-export function operatorTask(job: Pick<Job, "status" | "current_step" | "steps"> & { stalled_minutes?: number | null }): { act: boolean; text: string } {
+export function operatorTask(job: Pick<JobListItem, "status" | "current_step" | "steps"> & { stalled_minutes?: number | null }): { act: boolean; text: string } {
   const s = job.steps.find((x) => x.key === job.current_step);
   const at = s ? `bước ${s.seq} “${s.title}”` : "bước hiện tại";
   if (job.status === "failed") return { act: true, text: `Bạn cần: đọc lỗi ở ${at}, sửa nguyên nhân rồi bấm Chạy lại bước (không rõ thì báo Supervisor).` };

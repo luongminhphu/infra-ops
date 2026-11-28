@@ -21,9 +21,13 @@ import { formatDate, formatDateTime } from "@/core/lib/format";
 import { cn } from "@/core/lib/cn";
 import { JOB_STATUS, STEP_STATUS, idleText, jobStatusLabel, SYSTEM_WRITE_LABEL, WORKFLOW_LABEL, useJob, type Job, type JobAsset, type JobStep } from "../jobs";
 import { CollectAssetsForm, DocumentLink, DraftConfig, EnrollForm } from "./JobStepPanels";
+import { EmpLink } from "./EmployeePanel";
 import { StepVerification } from "./StepVerification";
 import { AssignJobButton, PendingAssignment } from "./AssignJob";
 import { Swimlane } from "@/core/ui/swimlane";
+
+// Workflows whose subject_key is an employee ID (asset jobs use a count, e.g. "3 tài sản").
+const EMPLOYEE_WORKFLOWS = new Set(["lifecycle.onboard", "lifecycle.offboard", "lifecycle.transfer"]);
 
 interface PreviewStep {
   key: string;
@@ -311,6 +315,7 @@ export function JobPage() {
               {job.current_step ? `Đang ở bước ${job.steps.find((s) => s.key === job.current_step)?.seq}/${job.progress.total}` : `${job.progress.total} bước`} · xong {job.progress.done}
             </span>
             <span>Phụ trách: <strong className="font-medium text-ink">{job.assignee?.name ?? "chưa có"}</strong></span>
+            {EMPLOYEE_WORKFLOWS.has(job.workflow_key) && <span>Mã NV <Mono><EmpLink id={job.subject_key} /></Mono></span>}
             <span>Request <Mono>#{job.params.request_display_id ?? job.external_ref}</Mono></span>
             <span>Hiệu lực {formatDate(eff)}</span>
             {job.scheduled_for && job.status === "scheduled" && <span>Chạy ngày {formatDate(job.scheduled_for)}</span>}

@@ -204,7 +204,9 @@ class StocktakeItem(Base):
     employee_id: Mapped[str | None] = mapped_column(String(32))
     department: Mapped[str | None] = mapped_column(String(256))
     zone_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("lifecycle_stocktake_zone.id", ondelete="SET NULL")
+        UUID(as_uuid=True),
+        ForeignKey("lifecycle_stocktake_zone.id", ondelete="SET NULL"),
+        index=True,
     )
     count: Mapped[str] = mapped_column(
         String(16), nullable=False, default="pending"

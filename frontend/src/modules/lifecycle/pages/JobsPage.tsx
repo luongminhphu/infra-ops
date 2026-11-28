@@ -12,7 +12,7 @@ import { Field, Input, Select } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
 import { formatDate, formatRelative, isoDateVn } from "@/core/lib/format";
 import { useDebounced } from "@/core/lib/useDebounced";
-import { JOB_STATUS, JOB_WORKFLOWS, WORKFLOW_LABEL, jobStatusLabel, type Job, type JobStatus } from "../jobs";
+import { JOB_STATUS, JOB_WORKFLOWS, WORKFLOW_LABEL, jobStatusLabel, type JobListItem, type JobStatus } from "../jobs";
 
 const CHIPS: { value: string; label: string }[] = [
   { value: "open", label: "Đang mở" },
@@ -28,7 +28,7 @@ const CHIPS: { value: string; label: string }[] = [
 ];
 
 /** Views over the open jobs, filtered here (links from "Việc của tôi" land on exactly the counted jobs). */
-const VIEWS: Record<string, ((j: Job) => boolean) | undefined> = {
+const VIEWS: Record<string, ((j: JobListItem) => boolean) | undefined> = {
   // Waiting for a person or stalled (worker not advancing it): the dashboard's "Cần xử lý tiếp".
   needs: (j) => j.status === "waiting" || !!j.stalled_minutes,
   // Past the effective date and waiting on a person (a job stuck on an automatic step is not late work).
@@ -52,8 +52,8 @@ export function JobsPage() {
   };
   const list = useQuery({
     queryKey: ["jobs", status, workflow, assignee, debounced],
-    queryFn: () => api<{ total: number; counts: Record<string, number>; items: Job[] }>(
-      `/api/core/jobs?${new URLSearchParams({ status: VIEWS[status] ? "open" : status, workflow, assignee, workflows: JOB_WORKFLOWS, q: debounced, limit: "500" })}`),
+    queryFn: () => api<{ total: number; counts: Record<string, number>; items: JobListItem[] }>(
+      `/api/core/jobs?${new URLSearchParams({ status: VIEWS[status] ? "open" : status, workflow, assignee, workflows: JOB_WORKFLOWS, lean: "1", q: debounced, limit: "500" })}`),
     refetchInterval: 10000,
   });
   const items = (list.data?.items ?? []).filter((j) => !VIEWS[status] || VIEWS[status]!(j));
@@ -63,7 +63,7 @@ export function JobsPage() {
       : v === "" ? Object.values(counts).reduce((n, c) => n + c, 0)
       : VIEWS[v] ? (status === v ? items.length : null) : counts[v] ?? 0;
 
-  const columns = useMemo<ColumnDef<Job, unknown>[]>(
+  const columns = useMemo<ColumnDef<JobListItem, unknown>[]>(
     () => [
       {
         accessorKey: "subject_label",
