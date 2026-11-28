@@ -8,7 +8,7 @@ import { useAuth } from "@/core/auth/AuthProvider";
 import { formatDate, formatDateTime } from "@/core/lib/format";
 import { isSettled } from "@/core/lib/jobs";
 import { Button } from "@/core/ui/button";
-import { EmptyState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
+import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input } from "@/core/ui/field";
 import { HelpTip } from "@/core/ui/help-tip";
 import { announce } from "@/core/ui/live-region";
@@ -206,6 +206,7 @@ export function ReceivePage() {
       <PageHeader title="Nhận hàng theo PO" description="Quét serial từng thiết bị; hệ thống tạo tài sản In Store trên ServiceDesk Plus và cập nhật Kho thiết bị." />
     </>
   );
+  if (pos.isError) return <>{header}<ErrorState error={pos.error} onRetry={() => pos.refetch()} /></>;
   if (pos.isLoading) return <>{header}<LoadingRows rows={5} /></>;
 
   if (i === 0) {

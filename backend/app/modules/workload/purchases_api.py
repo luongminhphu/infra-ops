@@ -31,6 +31,7 @@ from app.core.storage.models import StoredFile
 from app.core.storage.service import check_size, get_storage, read_file, safe_filename, save_file, sniff
 from app.core.workflow.engine import create_job, start_job
 from app.core.workflow.models import Job
+from app.core.xlsx import header, safe
 from app.modules.workload import handover
 from app.modules.workload import po as pos
 from app.modules.workload.api import VIEW_ALL, _my_technician, ticket_out
@@ -59,6 +60,7 @@ PRICE = "workload.price.view"
 price_view = require(PRICE)
 EVIDENCE_MIME = {"image/png", "image/jpeg", "application/pdf"}
 MAX_EVIDENCE = 10
+EXPORT_MAX_ROWS = 20_000
 
 Kind = Literal["replace", "upgrade", "repair", "new"]
 Status = Literal["proposed", "approved", "ordered", "received", "rejected"]
@@ -1067,15 +1069,23 @@ async def quote_file(
 async def export_purchases(
     user: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
 ) -> Response:
-    rows = await _full(
-        session, list((await session.scalars(_scoped(user).order_by(PurchaseRequest.created_at))).all()), user
+    found = list(
+        (
+            await session.scalars(
+                _scoped(user).order_by(PurchaseRequest.created_at).limit(EXPORT_MAX_ROWS + 1)
+            )
+        ).all()
     )
+    if len(found) > EXPORT_MAX_ROWS:
+        raise AppError(f"Quá {EXPORT_MAX_ROWS} đề xuất, không thể xuất một lần.", code="export_too_large")
+    rows = await _full(session, found, user)
     priced = user.has(PRICE)
     keep = (lambda r: r) if priced else (lambda r: [v for i, v in enumerate(r) if i not in (6, 7, 10)])
     wb = Workbook()
     ws = wb.active
     ws.title = "De xuat mua thiet bi"
-    ws.append(
+    header(
+        ws,
         keep(
             [
                 "Ngày",
@@ -1092,28 +1102,36 @@ async def export_purchases(
                 "Ghi chú",
                 "Người đề xuất",
             ]
-        )
+        ),
     )
     for p in rows:
         ws.append(
             keep(
                 [
                     p["created_at"].astimezone(pos.TZ).strftime("%d/%m/%Y"),
-                    f"#{p['ticket_display_id']}" if p["ticket_display_id"] else (p["source_ref"] or ""),
-                    p["employee"] or "",
+                    safe(f"#{p['ticket_display_id']}" if p["ticket_display_id"] else (p["source_ref"] or "")),
+                    safe(p["employee"] or ""),
                     KIND_LABEL.get(p["kind"], p["kind"]),
-                    p["catalog_item"]["name"] if p["catalog_item"] else p["item"],
+                    safe(p["catalog_item"]["name"] if p["catalog_item"] else p["item"]),
                     p["quantity"],
                     p["unit_price"],
                     p["amount"],
-                    p["reason"],
+                    safe(p["reason"]),
                     STATUS_LABEL.get(p["status"], p["status"]),
-                    (p["po"]["number"] or "PO nháp") if p["po"] else "",
-                    p["note"],
-                    p["created_by"],
+                    safe((p["po"]["number"] or "PO nháp") if p["po"] else ""),
+                    safe(p["note"]),
+                    safe(p["created_by"]),
                 ]
             )
         )
+    await record(
+        session,
+        actor=user.actor,
+        module_id=MODULE_ID,
+        action="workload.purchases_exported",
+        message=f"{len(rows)} purchase requests",
+    )
+    await session.commit()
     buf = io.BytesIO()
     wb.save(buf)
     return Response(

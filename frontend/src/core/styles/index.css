@@ -58,6 +58,8 @@
     text-rendering: optimizeLegibility;
     /* Keep focused/anchored elements clear of the sticky topbar (WCAG 2.4.11). */
     scroll-padding-top: calc(var(--topbar-h) + 8px);
+    /* Phones: keep focused elements clear of the fixed bottom tab bar and sticky action bars. */
+    scroll-padding-bottom: calc(var(--tabbar-h) + 72px);
   }
   body {
     font-size: var(--text-base);

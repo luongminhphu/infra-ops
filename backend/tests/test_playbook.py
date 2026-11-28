@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from app.core.config import get_settings
 from app.modules.playbook.tree import Tree, unreachable
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 32
@@ -73,6 +74,11 @@ async def test_guide_draft_publish_versions_and_readers(admin, client) -> None: 
         f"/api/playbook/guides/{gid}/images", files={"file": ("a.png", b"<svg/>", "image/png")}
     )
     assert fake.json()["error"]["code"] == "unsupported_file"
+    big = await admin.post(
+        f"/api/playbook/guides/{gid}/images",
+        files={"file": ("a.png", PNG + b"0" * (get_settings().max_upload_mb * 1024 * 1024), "image/png")},
+    )
+    assert big.json()["error"]["code"] == "file_too_large"
 
     # An IT Support operator reads the published version only, and cannot edit.
     roles = {x["code"]: x["id"] for x in (await admin.get("/api/core/roles")).json()}

@@ -35,7 +35,7 @@ All colours use `light-dark()`; never hard-code hex in components – use Tailwi
 | `line` / `line-strong` | #E4E8EE / #C2CCDA | #233049 / #33425F | Dividers (decorative) |
 | `control-border` | #74819A | #6F7D97 | Form control borders (≥ 3:1) |
 | `primary` (logo blue) | #074B9B | #79AEF0 | Primary buttons, links, active nav |
-| `focus` | #2F5BD3 | #A1B8FF | Focus ring (2px outline, offset 2) |
+| `focus` | #074B9B | #A5C9F5 | Focus ring (2px outline, offset 2) |
 | `shadow-card` | slate 7 % | none | Cards and panels (light theme only) |
 
 Status colours (`done` #166534 / #4ADE80, `progress` #1D4ED8 / #93B4FF, `waiting` #92400E / #FBBF24,
@@ -60,8 +60,8 @@ has a legend, hover/focus values per period and a "Xem dạng bảng" table view
 
 ## Layout & density
 
-- **Rail** 76px (`core/layout/AppShell.tsx` + `nav.ts`): Tổng quan, one entry per module (short label), and
-  *Hệ thống* (platform settings) at the bottom. Opening an entry goes to its first page.
+- **Rail** 76px (`core/layout/AppShell.tsx` + `nav.ts`): Playbook (entry), Việc của tôi (with a count badge of the
+  next-actions queue), Công cụ, Báo cáo, and *Hệ thống* (platform settings) at the bottom. "/" is named Trang chủ. Opening an entry goes to its first page.
 - **Sub-navigation** 220px with the pages of the active module (headed by the module name); below 1024px it
   becomes a horizontally scrolling bar under the topbar. Detail pages highlight their module.
 - Topbar 48px: search / command palette (Ctrl K), theme, account. On phones the search shows its icon only.
@@ -111,7 +111,7 @@ what it means, next action), **error** (`role=alert`, message from the API + "Th
 ## Accessibility baseline (WCAG 2.2 AA)
 
 - Skip link, landmarks (`nav`, `main`, `aside`), one `h1` per page, focus moved to `h1` on navigation.
-- Visible focus ring everywhere; `scroll-padding-top` keeps focus clear of the sticky topbar.
+- Visible focus ring everywhere; `scroll-padding-top` keeps focus clear of the sticky topbar and `scroll-padding-bottom` of the phone tab bar.
 - Theme: three states (system/light/dark) through `<meta name="color-scheme">`; works without JS.
 - `prefers-reduced-motion` disables animation.
 - Verified with axe-core on every screen in light and dark (0 violations, re-checked in Phase 7 on 16 pages + login).

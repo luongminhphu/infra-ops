@@ -25,7 +25,8 @@ from app.core.modules.manifest import (
 from app.modules.workload import next_actions
 from app.modules.workload.api import router
 from app.modules.workload.purchases_api import router as purchases_router
-from app.modules.workload.workflows import REASSIGN, RECEIVE
+from app.modules.workload.search import SEARCH
+from app.modules.workload.workflows import REASSIGN, RECEIVE, TICKET_CLOSE, TICKET_NOTE
 
 
 async def _sync(session: AsyncSession) -> dict[str, Any]:
@@ -58,6 +59,11 @@ manifest = ModuleManifest(
             "workload.tickets.assign",
             "Giao và chuyển task giữa các Operator (ghi sang SDP)",
             ("manager", "supervisor"),
+        ),
+        Permission(
+            "workload.tickets.update",
+            "Ghi chú / đóng request của mình trên SDP",
+            ("manager", "supervisor", "operator"),
         ),
         Permission(
             "workload.tickets.view_all",
@@ -97,12 +103,14 @@ manifest = ModuleManifest(
         ),
     ],
     routers=[router, purchases_router],
+    search_sources=SEARCH,
     next_actions=[
         NextActionSource("workload.mine", "workload.tickets.view", next_actions.load, next_actions.summary)
     ],
-    workflows=[REASSIGN, RECEIVE],
+    workflows=[REASSIGN, RECEIVE, TICKET_NOTE, TICKET_CLOSE],
     nav=[
         NavItem("Công việc", "/workload/tickets", "list-checks", "workload.tickets.view", NAV_WORK),
+        NavItem("SLA & tuổi ticket", "/workload/sla", "clock", "workload.tickets.view", NAV_WORK),
         NavItem("Thống kê công việc", "/workload/stats", "chart-column", "workload.stats.view", NAV_STATS),
         NavItem(
             "Đề xuất mua thiết bị",
@@ -111,6 +119,7 @@ manifest = ModuleManifest(
             "workload.tickets.view",
             NAV_ASSETS,
         ),
+        NavItem("Nhận hàng", "/workload/purchases/receive", "package", "workload.purchase.receive", NAV_WORK),
         NavItem(
             "Cấu hình công việc", "/workload/settings", "settings", "workload.settings.manage", NAV_SETUP
         ),

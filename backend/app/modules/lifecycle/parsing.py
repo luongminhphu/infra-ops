@@ -4,22 +4,15 @@ from __future__ import annotations
 
 import html
 import re
-import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
+from app.core.text import fold
 from app.modules.lifecycle.settings import FIELD_TITLES, REQUIRED_FIELDS, EventKind, LifecycleSettings
 
 _BLOCK_TAGS = re.compile(r"<\s*(br|/p|/div|/li|/tr|/h\d)\b[^>]*>", re.IGNORECASE)
 _TAGS = re.compile(r"<[^>]+>")
 _NULLS = {"", "null", "none", "n/a", "-"}
-
-
-def fold(text: str) -> str:
-    """Lower-case and strip Vietnamese diacritics (đ → d) for tolerant comparisons."""
-    text = text.replace("đ", "d").replace("Đ", "D")
-    decomposed = unicodedata.normalize("NFD", text)
-    return re.sub(r"\s+", " ", "".join(c for c in decomposed if not unicodedata.combining(c))).strip().lower()
 
 
 def name_key(name: str) -> tuple[str, ...]:

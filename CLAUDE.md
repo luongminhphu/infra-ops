@@ -8,7 +8,7 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 - `backend/app/core/*` – platform core. `backend/app/modules/<id>/` – modules (manifest.py required).
 - `frontend/src/core/*` – shell, design system (`ui/`), core pages. `frontend/src/modules/<id>/` – module UI.
 - `backend/migrations/<branch>/versions` – one Alembic branch per module (`core`, `lifecycle`, `workload`, `playbook`).
-- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §71).
+- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §73).
 
 ## Conventions
 
@@ -39,6 +39,12 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 - Operator flows are step-by-step (core `Wizard`): pre-fill everything the system knows (with its source) and ask for
   confirmation; supervisors keep the full screen. New operator flows follow this pattern.
 - Things a person must act on go into the "Việc tiếp theo" queue: declare a `NextActionSource` in the manifest.
+  Records a person may find from the Ctrl+K palette: declare a `SearchSource` (match only fields the list shows, same
+  permission + row scope as the list endpoint, accent-free via `core.text.fold`/`fold_sql`). The opt-in e-mail/Teams
+  digest (`core.notifications`) re-uses the queue with the recipient's own permissions – never put names on Teams.
+- Spreadsheet exports use `core.xlsx` (`safe` against formula injection, `header`), a row limit and an audit record.
+  Printable records with personal data set `DocumentKind.view_all_permission` (row scope by Job / creator); drafts made
+  by a Job pass `create_draft(job_id=…)`. Never show raw exception text to users (generic message + log reference).
 - Playbook is the entry point (`/`): module pages are tools a step opens (key = page path without slashes, keep
   paths stable). Data a check step tests is a `FactSource` in the module manifest (read from synced data, None when
   unknown). Only Administrator / Manager / Supervisor design playbooks.

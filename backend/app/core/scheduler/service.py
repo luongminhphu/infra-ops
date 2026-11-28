@@ -154,7 +154,7 @@ async def worker_loop(
                 pass
 
 
-def task_out(row: ScheduledTaskRow) -> dict[str, Any]:
+def task_out(row: ScheduledTaskRow, *, show_error: bool = False) -> dict[str, Any]:
     return {
         "key": row.key,
         "module_id": row.module_id,
@@ -165,6 +165,9 @@ def task_out(row: ScheduledTaskRow) -> dict[str, Any]:
         "last_started_at": row.last_started_at,
         "last_finished_at": row.last_finished_at,
         "last_status": row.last_status,
-        "last_error": row.last_error,
+        # Raw errors may carry hostnames/DNs/SQL: only privileged callers see them.
+        "last_error": row.last_error
+        if show_error or not row.last_error
+        else "Lần chạy gần nhất lỗi – xem nhật ký hệ thống.",
         "last_result": row.last_result,
     }

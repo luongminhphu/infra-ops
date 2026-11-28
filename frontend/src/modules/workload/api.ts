@@ -194,3 +194,27 @@ export interface Supplier {
 
 export const useSuppliers = (enabled = true) =>
   useQuery({ queryKey: ["workload", "suppliers"], queryFn: () => api<Supplier[]>("/api/workload/suppliers"), enabled });
+
+export type SlaGroup = "overdue" | "due_soon" | "on_track" | "on_hold" | "no_due";
+export interface SlaBreakdownRow {
+  key: string;
+  label: string;
+  overdue: number;
+  due_soon: number;
+  open: number;
+}
+export interface Sla {
+  now: string;
+  due_soon_hours: number;
+  groups: Record<SlaGroup, number>;
+  aging: { bucket: string; count: number }[];
+  /** `technician` is absent for operators (they only see their own tasks). */
+  by: { technician?: SlaBreakdownRow[]; group: SlaBreakdownRow[]; category: SlaBreakdownRow[]; priority: SlaBreakdownRow[] };
+  items: (Ticket & { category: string | null })[];
+}
+
+export const useSla = (filters: { tech: string; group: string; category: string }) =>
+  useQuery({
+    queryKey: ["workload", "sla", filters],
+    queryFn: () => api<Sla>(`/api/workload/sla?${new URLSearchParams(filters)}`),
+  });

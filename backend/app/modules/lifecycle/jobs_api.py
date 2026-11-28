@@ -432,19 +432,24 @@ async def assignees(
 ) -> list[dict[str, Any]]:
     """Active people who can run jobs (and have an e-mail to find them on SDP)."""
     from app.core.auth.models import User
-    from app.core.modules.registry import get_registry
-    from app.core.rbac.service import permissions_for_user
+    from app.core.rbac.models import Role, RolePermission, UserRole
 
+    # Same rule as permissions_for_user: an all-permissions role, or a role granting the code.
+    can_execute = (
+        select(UserRole.user_id)
+        .join(Role, Role.id == UserRole.role_id)
+        .outerjoin(
+            RolePermission,
+            (RolePermission.role_id == Role.id) & (RolePermission.permission_code == "lifecycle.job.execute"),
+        )
+        .where(Role.all_permissions.is_(True) | RolePermission.role_id.is_not(None))
+    )
     users = (
-        await session.scalars(select(User).where(User.is_active.is_(True)).order_by(User.display_name))
+        await session.scalars(
+            select(User).where(User.is_active.is_(True), User.id.in_(can_execute)).order_by(User.display_name)
+        )
     ).all()
-    out = []
-    for u in users:
-        if (u.email or "@" in u.upn) and "lifecycle.job.execute" in await permissions_for_user(
-            session, u.id, get_registry()
-        ):
-            out.append({"id": str(u.id), "name": u.display_name, "upn": u.upn})
-    return out
+    return [{"id": str(u.id), "name": u.display_name, "upn": u.upn} for u in users if u.email or "@" in u.upn]
 
 
 class AssignIn(BaseModel):

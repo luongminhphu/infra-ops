@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -11,6 +11,7 @@ import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui
 import { Field, Input, Select } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
 import { formatDate, formatRelative, isoDateVn } from "@/core/lib/format";
+import { TruncationNotice } from "../TruncationNotice";
 import { useDebounced } from "@/core/lib/useDebounced";
 import { JOB_STATUS, JOB_WORKFLOWS, WORKFLOW_LABEL, jobStatusLabel, type JobListItem, type JobStatus } from "../jobs";
 
@@ -43,18 +44,20 @@ export function JobsPage() {
   const status = params.get("status") ?? "open";
   const workflow = params.get("workflow") ?? "";
   const assignee = params.get("assignee") === "me" ? "me" : ""; // from "Việc của tôi": only my Jobs
-  const [q, setQ] = useState("");
+  const q = params.get("q") ?? ""; // in the URL so back / refresh keep the search
   const debounced = useDebounced(q);
   const set = (key: string, value: string) => {
     const next = new URLSearchParams(params);
-    next.set(key, value);
+    if (value) next.set(key, value);
+    else next.delete(key);
     setParams(next, { replace: true });
   };
   const list = useQuery({
     queryKey: ["jobs", status, workflow, assignee, debounced],
     queryFn: () => api<{ total: number; counts: Record<string, number>; items: JobListItem[] }>(
       `/api/core/jobs?${new URLSearchParams({ status: VIEWS[status] ? "open" : status, workflow, assignee, workflows: JOB_WORKFLOWS, lean: "1", q: debounced, limit: "500" })}`),
-    refetchInterval: 10000,
+    // Poll only while a job can still move on its own.
+    refetchInterval: (query) => (query.state.data?.items.some((j) => ["running", "scheduled"].includes(j.status)) ? 10000 : false),
   });
   const items = (list.data?.items ?? []).filter((j) => !VIEWS[status] || VIEWS[status]!(j));
   const counts = list.data?.counts ?? {};
@@ -151,7 +154,7 @@ export function JobsPage() {
       </div>
       <form role="search" aria-label="Lọc Job" className="mb-3 grid gap-3 sm:grid-cols-[2fr_1fr]" onSubmit={(e) => e.preventDefault()}>
         <Field label="Tìm kiếm">
-          <Input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Mã NV, họ tên, số request" />
+          <Input type="search" value={q} onChange={(e) => set("q", e.target.value)} placeholder="Mã NV, họ tên, số request" />
         </Field>
         <Field label="Quy trình">
           <Select value={workflow} onChange={(e) => set("workflow", e.target.value)}>
@@ -163,8 +166,9 @@ export function JobsPage() {
           </Select>
         </Field>
       </form>
-      {list.isError && <ErrorState error={list.error} onRetry={() => list.refetch()} />}
-      {list.isLoading ? (
+      {list.isError ? (
+        <ErrorState error={list.error} onRetry={() => list.refetch()} />
+      ) : list.isLoading ? (
         <div className="rounded-md border border-line bg-surface"><LoadingRows rows={6} /></div>
       ) : (
         <DataTable
@@ -192,6 +196,7 @@ export function JobsPage() {
           }
         />
       )}
+      <TruncationNotice shown={list.data?.items.length ?? 0} total={list.data?.total} />
     </>
   );
 }

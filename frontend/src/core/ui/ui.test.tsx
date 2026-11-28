@@ -5,6 +5,7 @@ import { Field, Input } from "./field";
 import { StatusBadge } from "./status";
 import { SystemRail } from "./system-rail";
 import { ConfirmDangerDialog } from "./confirm-danger-dialog";
+import { ConfirmDialog } from "./confirm-dialog";
 import { fold } from "@/core/lib/format";
 
 beforeAll(() => {
@@ -167,5 +168,36 @@ describe("Field keeps the control's own id", () => {
       </Field>,
     );
     expect(screen.getByLabelText("Serial máy 1")).toHaveAttribute("id", "serial-1");
+  });
+});
+
+describe("Field aria-describedby", () => {
+  it("keeps the control's own aria-describedby next to the hint id", () => {
+    render(
+      <>
+        <p id="extra">Thêm</p>
+        <Field label="Tên" hint="Gợi ý">
+          <Input aria-describedby="extra" />
+        </Field>
+      </>,
+    );
+    const ids = screen.getByLabelText("Tên").getAttribute("aria-describedby")!.split(" ");
+    expect(ids).toContain("extra");
+    expect(ids).toHaveLength(2);
+  });
+
+  it("leaves it unset when there is nothing to describe", () => {
+    render(<Field label="Tên"><Input /></Field>);
+    expect(screen.getByLabelText("Tên")).not.toHaveAttribute("aria-describedby");
+  });
+});
+
+describe("ConfirmDialog", () => {
+  it("runs the action only after the confirm button is pressed", async () => {
+    const onConfirm = vi.fn();
+    render(<ConfirmDialog open onClose={() => {}} onConfirm={onConfirm} title="Xoá thử" confirmLabel="Xoá ngay">Nội dung</ConfirmDialog>);
+    expect(onConfirm).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Xoá ngay" }));
+    expect(onConfirm).toHaveBeenCalledOnce();
   });
 });

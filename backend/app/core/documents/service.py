@@ -7,10 +7,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import select, text, update
+from sqlalchemy import and_, exists, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit.service import Actor, diff, record
+from app.core.auth.deps import CurrentUser
 from app.core.branding.service import logo_bytes
 from app.core.documents.engine import docx_to_pdf, render_docx, template_variables
 from app.core.documents.models import Document, TemplateVersion
@@ -19,6 +20,7 @@ from app.core.modules.manifest import DocumentKind
 from app.core.modules.registry import ModuleRegistry, get_registry
 from app.core.storage.service import read_file, save_file
 from app.core.timeutil import TZ
+from app.core.workflow.models import Job
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 DRAFT_NUMBER = "(bản nháp – chưa có số)"
@@ -193,8 +195,52 @@ async def get_document(session: AsyncSession, doc_id: uuid.UUID, *, for_update: 
     return doc
 
 
+def scope_clause(user: CurrentUser, kind: DocumentKind) -> Any | None:
+    """SQL filter for the records `user` may see; None = all. Same Job rule as `check_job_scope`."""
+    if (
+        kind.view_all_permission is None
+        or user.has(kind.view_all_permission)
+        or user.has(kind.manage_permission)
+    ):
+        return None
+    mine = exists().where(
+        Job.id == Document.job_id, or_(Job.assignee_user_id.is_(None), Job.assignee_user_id == user.id)
+    )
+    return or_(Document.created_by == user.upn, and_(Document.job_id.is_not(None), mine))
+
+
+async def check_doc_scope(
+    session: AsyncSession, user: CurrentUser, kind: DocumentKind, doc: Document
+) -> None:
+    """Out-of-scope records are reported as missing (404), not forbidden."""
+    clause = scope_clause(user, kind)
+    if (
+        clause is not None
+        and await session.scalar(select(Document.id).where(Document.id == doc.id, clause)) is None
+    ):
+        raise NotFound("Không tìm thấy biên bản.")
+
+
+async def can_edit_draft(session: AsyncSession, user: CurrentUser, kind: DocumentKind, doc: Document) -> bool:
+    """Creator, manager, or the person running the Job the record belongs to (the worker creates the draft)."""
+    if kind.view_all_permission is None or doc.created_by == user.upn or user.has(kind.manage_permission):
+        return True
+    if doc.job_id is None or not user.has(kind.create_permission):
+        return False
+    clause = scope_clause(user, kind)
+    return (
+        clause is None
+        or await session.scalar(select(Document.id).where(Document.id == doc.id, clause)) is not None
+    )
+
+
 async def create_draft(
-    session: AsyncSession, actor: Actor, kind: DocumentKind, module_id: str, data: dict[str, Any]
+    session: AsyncSession,
+    actor: Actor,
+    kind: DocumentKind,
+    module_id: str,
+    data: dict[str, Any],
+    job_id: uuid.UUID | None = None,
 ) -> Document:
     model = validate_data(kind, data)
     key, label, ref = kind.subject(model)
@@ -207,6 +253,7 @@ async def create_draft(
         external_ref=ref,
         data=model.model_dump(mode="json"),
         created_by=actor.upn or "system",
+        job_id=job_id,
         events=[],
     )
     session.add(doc)

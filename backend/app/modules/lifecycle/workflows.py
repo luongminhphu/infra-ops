@@ -19,6 +19,7 @@ from app.core.connectors.http import ConnectorHttpError
 from app.core.connectors.sdp import SdpClient
 from app.core.documents import service as documents
 from app.core.errors import AppError, PersonalCredentialMissing
+from app.core.logging import get_logger
 from app.core.storage.service import read_file
 from app.core.timeutil import today_vn
 from app.core.workflow.definitions import StepContext, StepDefinition, StepOutcome, WorkflowDefinition
@@ -62,6 +63,8 @@ from app.modules.lifecycle.models import ReconRow, Snapshot
 from app.modules.lifecycle.queries import latest_run
 from app.modules.lifecycle.settings import MODULE_ID
 from app.modules.lifecycle.settings import load as load_module_settings
+
+log = get_logger(__name__)
 
 VIEW, EXECUTE, OVERRIDE = "lifecycle.job.view", "lifecycle.job.execute", "lifecycle.job.override_close"
 # Without it an Operator sees only the jobs assigned to them and the unassigned ones they may take.
@@ -272,7 +275,7 @@ async def _document_step(ctx: StepContext, kind_short: str) -> StepOutcome:
         "request_id": ctx.params.get("request_id"),
         "assets": assets,
     }
-    doc = await documents.create_draft(ctx.session, ctx.actor, kind, MODULE_ID, data)
+    doc = await documents.create_draft(ctx.session, ctx.actor, kind, MODULE_ID, data, job_id=ctx.job.id)
     return StepOutcome(
         "waiting",
         f"Đã lập bản nháp {kind.title.lower()}. Kiểm tra, chốt, in cho các bên ký và tải bản ký lên.",
@@ -551,7 +554,10 @@ async def prepare_collect(ctx: StepContext) -> StepOutcome:
         try:
             async with await _sdp(ctx, Purpose.READ) as c:
                 assets = [normalize.sdp_asset(a) for a in await c.assets_of_user(uid)]
-        except Exception:
+        except PersonalCredentialMissing:
+            raise  # the step waits for the person's own key (engine), no silent fallback
+        except Exception as exc:
+            log.warning("prepare_collect_live_failed", error=type(exc).__name__)
             uid = None
     if not uid:
         source = "lần đồng bộ gần nhất"

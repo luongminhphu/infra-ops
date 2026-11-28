@@ -85,6 +85,8 @@ def normalize_ticket(raw: dict[str, Any], settings: WorkloadSettings) -> dict[st
         "phase": ticket_phase(status, state, settings),
         "device_need": device_need(text, settings),
         "priority": _name(raw.get("priority")),
+        "category": (_name(raw.get("category")) or "")[:256],
+        "subcategory": (_name(raw.get("subcategory")) or "")[:256],
         "created_at": ms_to_dt(raw.get("created_time")),
         "due_by": ms_to_dt(raw.get("due_by_time")),
         # Only finished tickets have a completion time (re-opened tickets drop it).

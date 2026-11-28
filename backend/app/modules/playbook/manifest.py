@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.core.modules.manifest import ModuleManifest, NavItem, Permission
 from app.modules.playbook.api import EDIT, PUBLISH, VIEW, router
+from app.modules.playbook.search import SEARCH
 
 manifest = ModuleManifest(
     id="playbook",
@@ -21,6 +22,7 @@ manifest = ModuleManifest(
         Permission(PUBLISH, "Xuất bản và xoá Playbook", ("manager", "supervisor")),
     ],
     routers=[router],
+    search_sources=[SEARCH],
     nav=[NavItem("Thư viện Playbook", "/playbook", "book-open", VIEW)],
     migrations_branch="playbook",
 )

@@ -49,6 +49,9 @@ class Ticket(Base):
     device_need: Mapped[str | None] = mapped_column(String(16))
     po_dismissed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     priority: Mapped[str | None] = mapped_column(String(64))
+    # SDP category / subcategory; NULL = not read yet (sync re-reads open tickets), "" = none on SDP.
+    category: Mapped[str | None] = mapped_column(String(256))
+    subcategory: Mapped[str | None] = mapped_column(String(256))
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     due_by: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)

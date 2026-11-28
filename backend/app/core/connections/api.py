@@ -167,10 +167,16 @@ def _origin(url: str) -> tuple[str, str | None, int | None]:
 
 
 async def _clear_credentials_if_moved(
-    session: AsyncSession, user: CurrentUser, profile: ConnectionProfile, old_url: str
+    session: AsyncSession,
+    user: CurrentUser,
+    profile: ConnectionProfile,
+    old_url: str,
+    old_config: dict[str, Any] | None = None,
 ) -> bool:
     """Drop stored secrets when the profile now points at another host, so they are never sent there."""
-    if not profile.credentials or _origin(old_url) == _origin(profile.base_url):
+    bound = connector_or_404(profile.system_type).credential_bound_config
+    config_moved = any((old_config or {}).get(k) != (profile.config or {}).get(k) for k in bound)
+    if not profile.credentials or (_origin(old_url) == _origin(profile.base_url) and not config_moved):
         return False
     purposes = [c.purpose for c in profile.credentials]
     profile.credentials.clear()
@@ -183,7 +189,7 @@ async def _clear_credentials_if_moved(
         target_type="connection",
         target_id=str(profile.id),
         target_label=profile.name,
-        message="base_url host changed",
+        message="base_url or host/port/TLS setting changed",
         before={"base_url": old_url, "purposes": purposes},
         after={"base_url": profile.base_url},
     )
@@ -288,7 +294,7 @@ async def import_profiles(
                 errors.append({"name": name, "error": "Trùng tên với kết nối khác loại hệ thống."})
                 continue
             before = profile_snapshot(existing)
-            old_url = existing.base_url
+            old_url, old_config = existing.base_url, dict(existing.config or {})
             existing.base_url = data.base_url.rstrip("/")
             existing.environment = data.environment
             existing.enabled = data.enabled
@@ -309,7 +315,7 @@ async def import_profiles(
                 before=b,
                 after=a,
             )
-            if await _clear_credentials_if_moved(session, user, existing, old_url):
+            if await _clear_credentials_if_moved(session, user, existing, old_url, old_config):
                 cleared.append(name)
             updated.append(name)
         else:
@@ -364,7 +370,7 @@ async def update_profile(
             code="stale_version",
         )
     before = profile_snapshot(profile)
-    old_url = profile.base_url
+    old_url, old_config = profile.base_url, dict(profile.config or {})
     if body.name is not None and body.name != profile.name:
         await _ensure_unique_name(session, body.name, exclude=profile.id)
         profile.name = body.name
@@ -396,7 +402,7 @@ async def update_profile(
             before=b,
             after=a,
         )
-    cleared = await _clear_credentials_if_moved(session, user, profile, old_url)
+    cleared = await _clear_credentials_if_moved(session, user, profile, old_url, old_config)
     await session.commit()
     await session.refresh(profile)
     return _out(profile).model_copy(update={"credentials_cleared": cleared})

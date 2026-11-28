@@ -6,6 +6,7 @@ import { api } from "@/core/api/client";
 import type { ConnectorType, TestResult } from "@/core/api/types";
 import { formatDateTime } from "@/core/lib/format";
 import { Button } from "@/core/ui/button";
+import { ConfirmDialog } from "@/core/ui/confirm-dialog";
 import { EmptyState, ErrorState, LoadingRows, PageHeader, Panel } from "@/core/ui/feedback";
 import { Field, Input, Select } from "@/core/ui/field";
 import { HelpTip } from "@/core/ui/help-tip";
@@ -57,6 +58,7 @@ function CredentialCard({ c }: { c: MyCredential }) {
       await refresh();
     },
   });
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const remove = useMutation({
     mutationFn: () => api(`/api/core/me/credentials/${c.profile_id}`, { method: "DELETE" }),
     onSuccess: async () => {
@@ -99,11 +101,23 @@ function CredentialCard({ c }: { c: MyCredential }) {
             <Button onClick={() => setEditing(true)}>
               <KeyRound className="size-4" aria-hidden="true" />Thay key
             </Button>
-            <Button variant="ghost" onClick={() => remove.mutate()} loading={remove.isPending}>
+            <Button variant="ghost" onClick={() => setConfirmDelete(true)} loading={remove.isPending}>
               <Trash2 className="size-4" aria-hidden="true" />Xoá key
             </Button>
           </div>
           {result && <TestResultView result={result} />}
+          <ConfirmDialog
+            open={confirmDelete}
+            onClose={() => setConfirmDelete(false)}
+            onConfirm={() => {
+              setConfirmDelete(false);
+              remove.mutate();
+            }}
+            title="Xoá API key của bạn"
+            confirmLabel="Xoá key"
+          >
+            Các việc dùng key này sẽ chờ cho đến khi bạn nhập key mới.
+          </ConfirmDialog>
         </div>
       )}
       {editing && (

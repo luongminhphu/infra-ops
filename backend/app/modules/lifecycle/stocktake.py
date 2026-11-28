@@ -10,6 +10,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from app.core.branding.service import xlsx_logo
+from app.core.xlsx import header, safe
 
 Count = Literal["pending", "found", "missing", "extra"]
 Condition = Literal["good", "damaged", "broken"]
@@ -130,10 +131,6 @@ def summary(items: list[dict[str, Any]], rules_version: int = 2) -> dict[str, in
     return out
 
 
-def _safe(v: Any) -> Any:
-    return f"'{v}" if isinstance(v, str) and v[:1] in ("=", "+", "-", "@") else v
-
-
 HEADERS = ["STT", "Khu", "Tên tài sản", "Loại", "Asset tag", "Serial", "Mã TSCĐ", "Trạng thái SDP", "Người dùng",
            "Mã NV", "Phòng ban", "Site", "Kết quả kiểm", "Tình trạng", "Nơi thấy", "Ghi chú kiểm", "Chênh lệch", "Hướng xử lý", "Ghi chú xử lý",
            "Người kiểm"]  # fmt: skip
@@ -171,14 +168,9 @@ def _row(n: int, i: dict[str, Any], rules_version: int = 2) -> list[Any]:
 
 
 def _sheet(ws: Any, rows: list[dict[str, Any]], rules_version: int = 2) -> None:
-    ws.append(HEADERS)
+    header(ws, HEADERS, WIDTHS)
     for n, i in enumerate(rows, 1):
-        ws.append([_safe(v) for v in _row(n, i, rules_version)])
-    for cell in ws[1]:
-        cell.font = Font(bold=True)
-        cell.fill = PatternFill("solid", fgColor="E3F0F1")
-    for n, w in enumerate(WIDTHS, start=1):
-        ws.column_dimensions[get_column_letter(n)].width = w
+        ws.append([safe(v) for v in _row(n, i, rules_version)])
     for row in ws.iter_rows(min_row=2):
         for cell in row:
             cell.alignment = Alignment(vertical="top", wrap_text=True)
@@ -223,7 +215,7 @@ def _mau05(wb: Workbook, title: str, lines: list[dict[str, Any]], head: dict[str
         vals = [n, ln["name"], ln["code"], ln["place"]]
         for k in ("book", "counted", "diff"):
             vals += [ln[k]["qty"], ln[k]["cost"], ln[k]["net"]]
-        ws.append([_safe(v) for v in vals] + [_safe(ln["note"])])
+        ws.append([safe(v) for v in vals] + [safe(ln["note"])])
         r = ws.max_row
         ws.cell(r, 3).number_format = "@"  # codes are text: keep leading zeros
         for c in (6, 7, 9, 10, 12, 13):
@@ -237,14 +229,9 @@ def _mau05(wb: Workbook, title: str, lines: list[dict[str, Any]], head: dict[str
 
 def _simple(wb: Workbook, title: str, headers: list[str], rows: list[list[Any]]) -> None:
     ws = wb.create_sheet(title)
-    ws.append(headers)
+    header(ws, headers, [22] * len(headers))
     for r in rows:
-        ws.append([_safe(v) for v in r])
-    for cell in ws[1]:
-        cell.font = Font(bold=True)
-        cell.fill = PatternFill("solid", fgColor="E3F0F1")
-    for n in range(1, len(headers) + 1):
-        ws.column_dimensions[get_column_letter(n)].width = 22
+        ws.append([safe(v) for v in r])
     for row in ws.iter_rows(min_row=2):
         row[0].number_format = "@"
 
@@ -336,7 +323,7 @@ def to_xlsx(
         ["Chênh lệch cần xử lý", s["differences"]],
         ["Chưa có hướng xử lý", s["unresolved"]],
     ]:
-        ws.append([_safe(v) for v in row])
+        ws.append([safe(v) for v in row])
     ws.column_dimensions["A"].width = 26
     ws.column_dimensions["B"].width = 40
     for r in ws.iter_rows(max_col=1):
@@ -348,7 +335,7 @@ def to_xlsx(
             ["Khu", "Người kiểm", "Trên sổ", "Có", "Không tìm thấy", "Chưa kiểm", "Ngoài sổ", "Chênh lệch"]
         )
         for z in zone_progress(zones, items, rules_version):
-            zs.append([_safe(z["name"]), _safe(z.get("assignee_name") or ""), z["book"], z["found"], z["missing"],
+            zs.append([safe(z["name"]), safe(z.get("assignee_name") or ""), z["book"], z["found"], z["missing"],
                        z["pending"], z["extra"], z["differences"]])  # fmt: skip
         for cell in zs[1]:
             cell.font = Font(bold=True)

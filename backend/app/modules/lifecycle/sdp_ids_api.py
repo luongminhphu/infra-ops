@@ -9,8 +9,6 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Response
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill
-from openpyxl.utils import get_column_letter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +16,7 @@ from app.core.audit.service import record
 from app.core.auth.deps import CurrentUser, require
 from app.core.db import get_session
 from app.core.errors import NotFound
+from app.core.xlsx import header, safe
 from app.modules.lifecycle.id_suggest import failed_sources, suggest
 from app.modules.lifecycle.models import Snapshot
 from app.modules.lifecycle.queries import latest_run
@@ -90,11 +89,6 @@ async def _build(session: AsyncSession, only_candidates: bool) -> dict[str, Any]
     return out
 
 
-def _cell(v: Any) -> Any:
-    # Neutralise spreadsheet formula injection from external data.
-    return f"'{v}" if isinstance(v, str) and v[:1] in ("=", "+", "-", "@") else v
-
-
 def _candidate_line(c: dict[str, Any]) -> str:
     flags = [f for f, on in (("đã khoá", not c.get("active", True)), ("đã nghỉ", c.get("retired"))) if on]
     text = f"{c['employee_id']} (mã BioStar {c['biostar_user_id']}) - {c['biostar_name']} ({c['source']})"
@@ -106,7 +100,7 @@ def to_xlsx(items: list[dict[str, Any]]) -> bytes:
     ws = wb.active
     assert ws is not None
     ws.title = "User SDP thiếu Mã NV"
-    ws.append(HEADERS)
+    header(ws, HEADERS, [26, 30, 22, 16, 22, 16, 16, 26, 20, 12, 50, 50])
     for r in items:
         s = r["suggestion"] or {}
         others = [c for c in r["candidates"] if c is not r["suggestion"]]
@@ -115,7 +109,7 @@ def to_xlsx(items: list[dict[str, Any]]) -> bytes:
         )
         ws.append(
             [
-                _cell(v)
+                safe(v)
                 for v in (
                     r["name"],
                     r["email"] or "",
@@ -132,11 +126,6 @@ def to_xlsx(items: list[dict[str, Any]]) -> bytes:
                 )
             ]
         )
-    for cell in ws[1]:
-        cell.font = Font(bold=True)
-        cell.fill = PatternFill("solid", fgColor="E3F0F1")
-    for i, w in enumerate([26, 30, 22, 16, 22, 16, 16, 26, 20, 12, 50, 50], start=1):
-        ws.column_dimensions[get_column_letter(i)].width = w
     ws.freeze_panes = "A2"
     buf = io.BytesIO()
     wb.save(buf)

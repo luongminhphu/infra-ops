@@ -4,10 +4,10 @@ import { useQuery } from "@tanstack/react-query";
 import { CalendarClock, CheckCircle2, Coffee, Hand, LayoutList, Play, Plus, Recycle, ShoppingCart, Trash2, UserCheck } from "lucide-react";
 import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
-import { formatDate } from "@/core/lib/format";
+import { formatDate, isoDateVn } from "@/core/lib/format";
 import { useDebounced } from "@/core/lib/useDebounced";
 import { Button } from "@/core/ui/button";
-import { EmptyState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
+import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
 import { From, Wizard, WizardProgress } from "@/core/ui/wizard";
@@ -167,6 +167,7 @@ function PrepareWizard({ job, act, canRun }: { job: Job; act: ReturnType<typeof 
     queryFn: () => api<PreviewStep[]>(`/api/core/jobs/${job.id}/preview`),
     enabled: steps[i]?.key === "start",
   });
+  if (prep.isError) return <ErrorState error={prep.error} onRetry={() => prep.refetch()} />;
   if (prep.isLoading || !prep.data) return <LoadingRows rows={6} />;
   const p = prep.data;
   const lines = p.allocation?.lines ?? [];
@@ -178,7 +179,7 @@ function PrepareWizard({ job, act, canRun }: { job: Job; act: ReturnType<typeof 
   const back = i > 0 ? () => go(i - 1) : undefined;
   const key = steps[i]!.key;
   const eff = job.params.effective_date;
-  const future = !!eff && eff > new Date().toISOString().slice(0, 10);
+  const future = !!eff && eff > isoDateVn();
   const readOnly = !canRun;
 
   if (key === "info") {
@@ -219,6 +220,7 @@ function PrepareWizard({ job, act, canRun }: { job: Job; act: ReturnType<typeof 
           label: useMatch ? "Đúng – dùng user này" : "Tiếp tục",
           loading: act.params.isPending,
           disabled: readOnly && useMatch,
+          reason: readOnly && useMatch ? "Bạn không có quyền chạy Job này, nên không xác nhận user SDP được." : null,
           onClick: () => (useMatch ? act.params.mutate({ sdp_user_id: match!.id, sdp_user_name: match!.name }, { onSuccess: next }) : next()),
         }}
       >

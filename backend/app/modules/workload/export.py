@@ -7,11 +7,11 @@ from datetime import datetime
 from typing import Any
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
+from openpyxl.styles import Alignment, Font
 from openpyxl.worksheet.worksheet import Worksheet
 
 from app.core.timeutil import TZ
+from app.core.xlsx import header, safe
 from app.modules.workload.models import Ticket
 
 PHASE_LABEL = {"pending": "Chưa bắt đầu", "in_progress": "Đang thực hiện", "on_hold": "Tạm dừng"}
@@ -49,9 +49,7 @@ DETAIL_HEADERS = [
 
 
 def _text(v: str | None) -> str:
-    # Neutralise spreadsheet formula injection from SDP data.
-    v = v or ""
-    return f"'{v}" if v[:1] in ("=", "+", "-", "@") else v
+    return safe(v or "")
 
 
 def _local(d: datetime | None) -> datetime | None:
@@ -113,16 +111,11 @@ def detail_row(t: Ticket, now: datetime) -> list[Any]:
 
 
 def _sheet(ws: Worksheet, headers: list[str], rows: list[list[Any]], widths: list[int]) -> None:
-    ws.append(headers)
+    header(ws, headers, widths)
+    for cell in ws[1]:
+        cell.alignment = Alignment(vertical="top", wrap_text=True)
     for r in rows:
         ws.append(r)
-    fill = PatternFill("solid", fgColor="E3F0F1")
-    for cell in ws[1]:
-        cell.font = Font(bold=True)
-        cell.fill = fill
-        cell.alignment = Alignment(vertical="top", wrap_text=True)
-    for i, w in enumerate(widths, start=1):
-        ws.column_dimensions[get_column_letter(i)].width = w
     for row in ws.iter_rows(min_row=2):
         for cell in row:
             if isinstance(cell.value, datetime):

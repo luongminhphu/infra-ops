@@ -10,6 +10,7 @@ import { cn } from "@/core/lib/cn";
 import { formatDate, formatVnd } from "@/core/lib/format";
 import { Button } from "@/core/ui/button";
 import { DataTable } from "@/core/ui/data-table";
+import { ConfirmDialog } from "@/core/ui/confirm-dialog";
 import { Dialog } from "@/core/ui/dialog";
 import { EmptyState, ErrorState, LoadingRows, Mono } from "@/core/ui/feedback";
 import { Field, Select, Textarea } from "@/core/ui/field";
@@ -54,16 +55,17 @@ export function sourceLabel(p: Purchase): string {
 }
 
 /** Evidence files of one proposal: open, add (file / pasted screenshot) and remove while not yet approved. */
-function EvidenceBlock({ p, onChange }: { p: Purchase; onChange: (p: Purchase) => void }) {
+export function EvidenceBlock({ p, onChange }: { p: Purchase; onChange: (p: Purchase) => void }) {
   const { me, can } = useAuth();
   const editable = p.status === "proposed" && (p.created_by === me?.upn || can("workload.purchase.manage"));
   const add = useMutation({
     mutationFn: (f: File) => uploadEvidence(p.id, f),
     onSuccess: (np) => { onChange(np); toast.success("Đã đính kèm bằng chứng."); },
   });
+  const [confirmDel, setConfirmDel] = useState<{ id: string; filename: string } | null>(null);
   const remove = useMutation({
     mutationFn: (id: string) => api<Purchase>(`/api/workload/purchases/${p.id}/evidence/${id}`, { method: "DELETE" }),
-    onSuccess: onChange,
+    onSuccess: (np) => { setConfirmDel(null); onChange(np); },
   });
   return (
     <section aria-label="Bằng chứng Function Head" onPaste={(e) => { const f = editable && pastedImage(e); if (f) add.mutate(f); }}>
@@ -76,7 +78,7 @@ function EvidenceBlock({ p, onChange }: { p: Purchase; onChange: (p: Purchase) =
             <a className="truncate text-primary underline-offset-2 hover:underline" href={`/api/workload/purchases/${p.id}/evidence/${e.id}`} target="_blank" rel="noreferrer">{e.filename}</a>
             <span className="shrink-0 text-xs text-muted">{e.created_by}</span>
             {editable && (
-              <Button size="icon" variant="ghost" aria-label={`Xoá ${e.filename}`} loading={remove.isPending && remove.variables === e.id} onClick={() => remove.mutate(e.id)}>
+              <Button size="icon" variant="ghost" aria-label={`Xoá ${e.filename}`} loading={remove.isPending && remove.variables === e.id} onClick={() => setConfirmDel({ id: e.id, filename: e.filename })}>
                 <Trash2 className="size-4" aria-hidden="true" />
               </Button>
             )}
@@ -89,6 +91,9 @@ function EvidenceBlock({ p, onChange }: { p: Purchase; onChange: (p: Purchase) =
           <input type="file" accept={EVIDENCE_ACCEPT} className="sr-only" disabled={add.isPending} onChange={(e) => { const f = e.target.files?.[0]; if (f) add.mutate(f); e.target.value = ""; }} />
         </label>
       )}
+      <ConfirmDialog open={!!confirmDel} onClose={() => setConfirmDel(null)} onConfirm={() => confirmDel && remove.mutate(confirmDel.id)} title="Xoá bằng chứng?" confirmLabel="Xoá">
+        Xoá file “{confirmDel?.filename}” khỏi đề xuất này? Không hoàn tác được.
+      </ConfirmDialog>
     </section>
   );
 }

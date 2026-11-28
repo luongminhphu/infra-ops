@@ -52,6 +52,8 @@ class WorkloadSettings(BaseModel):
     # Open tasks split by SDP status: being worked on / paused; any other open status is "pending".
     in_progress_statuses: list[str] = Field(default_factory=lambda: ["In Progress", "Đang xử lý"])
     on_hold_statuses: list[str] = Field(default_factory=lambda: ["On Hold", "Onhold", "Pending", "Tạm dừng"])
+    # SDP status set by the "close request" quick action.
+    close_status: str = Field("Resolved", min_length=1, max_length=64)
     # Words in the subject/category that mark a device request (suggest a purchase request).
     device_keywords: dict[str, list[str]] = Field(
         default_factory=lambda: {
@@ -60,6 +62,8 @@ class WorkloadSettings(BaseModel):
             "repair": ["sửa chữa", "sửa máy", "bảo hành", "hỏng", "repair"],
         }
     )
+    # SLA board: an open task is "due soon" when its due time is within this many hours.
+    sla_due_soon_hours: int = Field(24, ge=1, le=168)
     # SDP asset state given to devices created when purchased goods are received.
     asset_state_in_store: str = Field("In Store", min_length=1, max_length=64)
     # Suggested asset tag on receipt: <prefix>-<year>-<code of the price-list group>-<last 4 of serial>.

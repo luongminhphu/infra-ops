@@ -18,7 +18,7 @@ from app.core.connectors.http import ConnectorHttpError
 from app.core.connectors.sdp import SdpClient
 from app.core.db import get_session
 from app.core.documents.api import document_out
-from app.core.documents.service import add_event, get_document
+from app.core.documents.service import add_event, check_doc_scope, get_document, kind_or_404
 from app.core.errors import AppError, Conflict, NotFound
 from app.core.storage.service import read_file
 from app.core.timeutil import today_vn
@@ -163,6 +163,7 @@ async def attach_to_sdp(
     doc = await get_document(session, doc_id, for_update=True)
     if doc.kind not in {k.key for k in KIND_BY_SHORT.values()}:
         raise NotFound("Không tìm thấy biên bản.")
+    await check_doc_scope(session, user, kind_or_404(doc.kind)[1], doc)
     if doc.status != "signed" or doc.signed_file_id is None:
         raise Conflict("Chỉ đính kèm bản đã ký. Tải bản scan đã ký lên trước.", code="not_signed")
     request_id = body.request_id or doc.external_ref
@@ -223,4 +224,4 @@ async def attach_to_sdp(
         after={"request_id": request_id},
     )
     await session.commit()
-    return document_out(doc)
+    return document_out(doc, kind_or_404(doc.kind)[1], user)

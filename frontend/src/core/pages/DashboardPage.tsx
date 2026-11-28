@@ -200,11 +200,11 @@ export function DashboardPage() {
   return (
     <>
       <PageHeader
-        title="Tổng quan"
+        title="Tổng quan số liệu"
         description={
           <>
             Việc cần bạn làm tiếp theo, rồi tình hình Infra Support, Job và đối soát của nhóm.{" "}
-            <HelpTip title="Tổng quan">
+            <HelpTip title="Tổng quan số liệu">
               <span className="block">“Việc tiếp theo của bạn” là việc của riêng bạn (giống trang Việc của tôi). Các khối bên dưới là số liệu của cả nhóm theo quyền của bạn; bấm vào số hoặc dòng để mở danh sách đã lọc.</span>
             </HelpTip>
           </>

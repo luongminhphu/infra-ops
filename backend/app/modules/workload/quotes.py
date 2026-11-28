@@ -6,17 +6,12 @@ from __future__ import annotations
 
 import io
 import re
-import unicodedata
 from typing import Any
 
 from app.core.errors import AppError
+from app.core.text import fold
 
 MONEY = re.compile(r"(?<![\d.,])(\d{1,3}(?:[.,]\d{3})+|\d{5,})(?![\d.,]*\d)")
-
-
-def fold(text: str) -> str:
-    text = unicodedata.normalize("NFD", text.replace("đ", "d").replace("Đ", "D"))
-    return "".join(c for c in text if unicodedata.category(c) != "Mn").lower()
 
 
 def needs_quotes(category: str, categories: list[str]) -> bool:

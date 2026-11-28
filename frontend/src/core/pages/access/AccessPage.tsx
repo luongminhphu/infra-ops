@@ -6,6 +6,7 @@ import { api } from "@/core/api/client";
 import type { AppUser, PermissionGroup, Role } from "@/core/api/types";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { Button } from "@/core/ui/button";
+import { ConfirmDialog } from "@/core/ui/confirm-dialog";
 import { ConfirmDangerDialog } from "@/core/ui/confirm-danger-dialog";
 import { EmptyState, ErrorState, LoadingRows, PageHeader, Panel } from "@/core/ui/feedback";
 import { StatusBadge } from "@/core/ui/status";
@@ -110,6 +111,7 @@ function UsersTab({ users, roles }: { users: AppUser[]; roles: Role[] }) {
 
 function RolesTab({ roles, perms }: { roles: Role[]; perms: PermissionGroup[] }) {
   const [editing, setEditing] = useState<Role | null | "new">(null);
+  const [deleting, setDeleting] = useState<Role | null>(null);
   const qc = useQueryClient();
   const remove = useMutation({
     mutationFn: (id: string) => api(`/api/core/roles/${id}`, { method: "DELETE" }),
@@ -149,7 +151,7 @@ function RolesTab({ roles, perms }: { roles: Role[]; perms: PermissionGroup[] })
                 {r.all_permissions ? "Xem quyền" : "Sửa quyền"}
               </Button>
               {!r.is_system && (
-                <Button size="sm" variant="ghost" className="text-failed" onClick={() => remove.mutate(r.id)} disabled={r.user_count > 0} title={r.user_count > 0 ? "Gỡ vai trò khỏi người dùng trước khi xoá" : undefined}>
+                <Button size="sm" variant="ghost" className="text-failed" onClick={() => setDeleting(r)} disabled={r.user_count > 0} title={r.user_count > 0 ? "Gỡ vai trò khỏi người dùng trước khi xoá" : undefined}>
                   Xoá
                 </Button>
               )}
@@ -157,6 +159,18 @@ function RolesTab({ roles, perms }: { roles: Role[]; perms: PermissionGroup[] })
           </Panel>
         ))}
       </div>
+      <ConfirmDialog
+        open={deleting !== null}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => {
+          if (deleting) remove.mutate(deleting.id);
+          setDeleting(null);
+        }}
+        title={`Xoá vai trò ${deleting?.name ?? ""}`}
+        confirmLabel="Xoá vai trò"
+      >
+        Vai trò bị xoá vĩnh viễn và không hoàn tác được.
+      </ConfirmDialog>
       <RoleDialog open={editing !== null} onClose={() => setEditing(null)} role={editing === "new" ? null : editing} groups={perms} />
     </>
   );

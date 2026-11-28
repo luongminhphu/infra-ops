@@ -22,7 +22,7 @@ from app.core.documents import service as documents
 from app.core.documents.models import Document
 from app.core.errors import AppError, Conflict, NotFound, PermissionDenied
 from app.core.storage.service import check_size, sniff
-from app.core.timeutil import fmt_date
+from app.core.timeutil import fmt_date, today_vn
 from app.modules.lifecycle.attendance_input import HEADER_ID, _norm_id
 from app.modules.lifecycle.fa_register import (
     KINDS,
@@ -940,7 +940,7 @@ def _record_data(
         "stocktake_id": str(s.id),
         "title": s.name,
         "cutoff": s.cutoff.isoformat(),
-        "date": datetime.now(UTC).date().isoformat(),
+        "date": today_vn().isoformat(),
         "synced_at": fmt_date(s.source_synced_at) if s.source_synced_at else "",
         "totals": {
             "book": totals["book"],

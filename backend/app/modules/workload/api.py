@@ -21,7 +21,8 @@ from app.core.scheduler.service import get_task, request_run, task_out
 from app.core.settings.service import save_settings
 from app.core.timeutil import TZ
 from app.core.workflow.api import job_out
-from app.core.workflow.engine import create_job, start_job
+from app.core.workflow.engine import create_job, set_assignee, start_job
+from app.core.workflow.models import Job as CoreJob
 from app.modules.workload.export import to_xlsx
 from app.modules.workload.models import Technician, Ticket
 from app.modules.workload.po import repack
@@ -29,6 +30,7 @@ from app.modules.workload.rules import pick_bucket
 from app.modules.workload.settings import MODULE_ID, SETTINGS_KEY, WorkloadSettings
 from app.modules.workload.settings import load as load_module_settings
 from app.modules.workload.sync import SYNC_TASK_KEY, auto_link, create_account, reclassify
+from app.modules.workload.workflows import open_job_error, open_job_for_ticket
 
 router = APIRouter(tags=["workload"])
 view = require("workload.tickets.view")
@@ -250,6 +252,89 @@ async def tickets(
     return {"total": total, "items": [ticket_out(t, now) for t in rows]}
 
 
+AGING = [("0-1d", 1), ("1-3d", 3), ("3-7d", 7), ("7-14d", 14)]
+
+
+@router.get("/sla")
+async def sla(
+    user: CurrentUser = Depends(view),
+    session: AsyncSession = Depends(get_session),
+    tech: str = Query("", max_length=32, description="'me', 'none' (unassigned) or a technician id"),
+    group: str = Query("", max_length=256),
+    category: str = Query("", max_length=256),
+) -> dict[str, Any]:
+    """Open tasks by SLA status, age and technician / group / category / priority (counted in SQL)."""
+    now = _now()
+    soon_hours = (await load_module_settings(session)).sla_due_soon_hours
+    soon = now + timedelta(hours=soon_hours)
+    cls = case(
+        (Ticket.phase == "on_hold", "on_hold"),
+        (Ticket.due_by.is_(None), "no_due"),
+        (Ticket.due_by < now, "overdue"),
+        (Ticket.due_by < soon, "due_soon"),
+        else_="on_track",
+    )
+    tech = await _scope(session, user, tech)
+    where = [Ticket.state == "open", IN_APP]
+    if tech == "none":
+        where.append(Ticket.technician_id.is_(None))
+    elif tech:
+        where.append(Ticket.technician_id == tech)
+    if group:
+        where.append(Ticket.group_name == group)
+    if category:
+        where.append(Ticket.category == category)
+
+    counts = dict((await session.execute(select(cls, func.count()).where(*where).group_by(cls))).all())
+    age = case(*[(Ticket.created_at >= now - timedelta(days=d), label) for label, d in AGING], else_=">14d")
+    # Tickets without a creation time have no age and are left out of the aging bars.
+    aged = dict(
+        (
+            await session.execute(
+                select(age, func.count()).where(*where, Ticket.created_at.is_not(None)).group_by(age)
+            )
+        ).all()
+    )
+    dims: dict[str, tuple[Any, Any]] = {
+        "group": (Ticket.group_name, Ticket.group_name),
+        "category": (Ticket.category, Ticket.category),
+        "priority": (Ticket.priority, Ticket.priority),
+    }
+    if user.has(VIEW_ALL):
+        dims = {"technician": (Ticket.technician_id, func.max(Ticket.technician_name)), **dims}
+    by: dict[str, list[dict[str, Any]]] = {}
+    for name, (key_col, label_col) in dims.items():
+        overdue_n = func.count().filter(cls == "overdue")
+        soon_n = func.count().filter(cls == "due_soon")
+        rows = await session.execute(
+            select(key_col, label_col, overdue_n, soon_n, func.count())
+            .where(*where)
+            .group_by(key_col)
+            .order_by(overdue_n.desc(), soon_n.desc(), func.count().desc())
+            .limit(50)
+        )
+        by[name] = [
+            {"key": k or "", "label": lbl or "(Không có)", "overdue": o, "due_soon": s, "open": n}
+            for k, lbl, o, s, n in rows.all()
+        ]
+    urgent = (
+        await session.scalars(
+            select(Ticket)
+            .where(*where, cls.in_(("overdue", "due_soon")))
+            .order_by(Ticket.due_by.asc())
+            .limit(50)
+        )
+    ).all()
+    return {
+        "now": now,
+        "due_soon_hours": soon_hours,
+        "groups": {k: counts.get(k, 0) for k in ("overdue", "due_soon", "on_track", "on_hold", "no_due")},
+        "aging": [{"bucket": b, "count": aged.get(b, 0)} for b in [x[0] for x in AGING] + [">14d"]],
+        "by": by,
+        "items": [{**ticket_out(t, now), "category": t.category} for t in urgent],
+    }
+
+
 @router.get("/tickets/export")
 async def export_tickets(
     user: CurrentUser = Depends(view),
@@ -360,6 +445,102 @@ async def reassign(
     return job_out(job)
 
 
+class NoteIn(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class CloseIn(BaseModel):
+    result: str = Field(min_length=5, max_length=2000)
+
+
+async def _own_open_ticket(
+    session: AsyncSession, user: CurrentUser, ticket_id: str, lock: bool = False
+) -> Ticket:
+    """Quick actions: the ticket must be open and, without `tickets.assign`, the user's own."""
+    ticket = await session.get(Ticket, ticket_id, with_for_update=lock)
+    if ticket is None:
+        raise NotFound("Không tìm thấy request.")
+    if not user.has("workload.tickets.assign"):
+        me = await _my_technician(session, user)
+        if me is None or ticket.technician_id != me.id:
+            raise NotFound("Không tìm thấy request.")  # same answer as unknown: no oracle on others' tickets
+    if ticket.state != "open":
+        raise AppError("Chỉ thao tác được trên request đang mở.", code="ticket_not_open")
+    return ticket
+
+
+async def _start_ticket_job(
+    session: AsyncSession,
+    user: CurrentUser,
+    ticket: Ticket,
+    workflow: str,
+    label: str,
+    params: dict[str, Any],
+) -> CoreJob:
+    job, _ = await create_job(
+        session,
+        user.actor,
+        workflow,
+        params={"ticket_id": ticket.id, **params},
+        subject_key=ticket.display_id or ticket.id,
+        subject_label=f"{label} #{ticket.display_id}"[:256],
+        external_ref=ticket.id if workflow.endswith("close") else None,
+    )
+    await set_assignee(session, job, user_id=user.id, name=user.display_name, actor=user.upn, source="app")
+    await start_job(session, user.actor, job, None)
+    await record(
+        session,
+        actor=user.actor,
+        module_id=MODULE_ID,
+        action=f"workload.{workflow.split('.')[-1]}_requested",
+        system_type="sdp",
+        target_type="job",
+        target_id=str(job.id),
+        target_label=job.subject_label,
+        after={"ticket": ticket.id, **{k: v for k, v in params.items() if k == "close_status"}},
+    )
+    await session.commit()
+    return job
+
+
+@router.post("/tickets/{ticket_id}/note", status_code=201)
+async def ticket_note(
+    ticket_id: str,
+    body: NoteIn,
+    user: CurrentUser = Depends(require("workload.tickets.update")),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    ticket = await _own_open_ticket(session, user, ticket_id)
+    job = await _start_ticket_job(
+        session, user, ticket, "workload.ticket_note", "Ghi chú request", {"text": body.text}
+    )
+    return job_out(job)
+
+
+@router.post("/tickets/{ticket_id}/close", status_code=201)
+async def ticket_close(
+    ticket_id: str,
+    body: CloseIn,
+    user: CurrentUser = Depends(require("workload.tickets.update")),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    # Row lock: a second concurrent POST waits here and then sees the first one's Job.
+    ticket = await _own_open_ticket(session, user, ticket_id, lock=True)
+    other = await open_job_for_ticket(session, ticket.id)
+    if other is not None:
+        raise open_job_error(other)
+    close_status = (await load_module_settings(session)).close_status
+    job = await _start_ticket_job(
+        session,
+        user,
+        ticket,
+        "workload.ticket_close",
+        "Đóng request",
+        {"text": body.result, "close_status": close_status},
+    )
+    return job_out(job)
+
+
 # ---------------------------------------------------------------- statistics
 @router.get("/stats")
 async def stats(
@@ -441,11 +622,14 @@ async def stats(
 # ---------------------------------------------------------------- sync + settings
 @router.get("/sync")
 async def sync_status(
-    _: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
+    user: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
     task = await get_task(session, SYNC_TASK_KEY)
     last = await session.scalar(select(func.max(Ticket.synced_at)))
-    return {"task": task_out(task) if task else None, "last_synced_at": last}
+    return {
+        "task": task_out(task, show_error=user.has("workload.sync.run")) if task else None,
+        "last_synced_at": last,
+    }
 
 
 @router.post("/sync")
@@ -455,7 +639,7 @@ async def sync_now(
     row = await request_run(session, SYNC_TASK_KEY, user.upn)
     await record(session, actor=user.actor, module_id=MODULE_ID, action="workload.sync_requested")
     await session.commit()
-    return task_out(row)
+    return task_out(row, show_error=True)
 
 
 @router.get("/settings")

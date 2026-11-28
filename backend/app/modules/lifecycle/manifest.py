@@ -35,6 +35,7 @@ from app.modules.lifecycle.jobs_api import router as jobs_router
 from app.modules.lifecycle.offboard_review import next_action as offboard_review_action
 from app.modules.lifecycle.offboard_review_api import router as offboard_review_router
 from app.modules.lifecycle.sdp_ids_api import router as sdp_ids_router
+from app.modules.lifecycle.search import SEARCH
 from app.modules.lifecycle.stock import ASSET_DISPOSE, ASSET_STATE
 from app.modules.lifecycle.stock import router as stock_router
 from app.modules.lifecycle.stocktake_api import next_action as stocktake_action
@@ -206,7 +207,7 @@ manifest = ModuleManifest(
             "/lifecycle/stocktake",
             "clipboard-check",
             "lifecycle.stocktake.view",
-            NAV_REVIEWS,
+            NAV_WORK,
         ),
         NavItem("Request RTR", "/lifecycle/requests", "ticket", RECON_VIEW, NAV_SOURCES),
         NavItem("Đồng bộ dữ liệu", "/lifecycle/sync", "refresh-cw", RECON_VIEW, NAV_SOURCES),
@@ -220,6 +221,7 @@ manifest = ModuleManifest(
     # Microsoft connectors are used only by steps that run when `microsoft_enabled` is on (Phase 69).
     connectors_used=["sdp", "biostar", "exchange", "active_directory", "msgraph"],
     facts=FACTS,
+    search_sources=[SEARCH],
     scheduled_tasks=[
         ScheduledTask(
             "lifecycle.sync",

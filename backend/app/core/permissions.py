@@ -14,6 +14,7 @@ from app.core.modules.manifest import (
     Permission,
     ScheduledTask,
 )
+from app.core.search.sources import SEARCH_SOURCES
 
 DASHBOARD_VIEW = "core.dashboard.view"
 CONNECTIONS_VIEW = "core.connections.view"
@@ -23,6 +24,7 @@ AUDIT_VIEW = "core.audit.view"
 RBAC_MANAGE = "core.rbac.manage"
 CHECKLIST_MANAGE = "core.workflow.checklist.manage"
 BRANDING_MANAGE = "core.branding.manage"
+NOTIFICATIONS_MANAGE = "core.notifications.manage"
 
 
 async def _connections_widget(session: AsyncSession) -> dict[str, Any]:
@@ -35,6 +37,12 @@ async def _expiring_widget(session: AsyncSession) -> dict[str, Any]:
     from app.core.dashboard.widgets import expiring_secrets
 
     return await expiring_secrets(session)
+
+
+async def _notifications_run(session: AsyncSession) -> dict[str, Any]:
+    from app.core.notifications.service import run
+
+    return await run(session)
 
 
 async def _workflow_pump(session: AsyncSession) -> dict[str, Any]:
@@ -55,6 +63,7 @@ CORE_MANIFEST = ModuleManifest(
         Permission(AUDIT_VIEW, "Xem nhật ký kiểm tra", ("manager",)),
         Permission(RBAC_MANAGE, "Quản lý người dùng và phân quyền"),
         Permission(BRANDING_MANAGE, "Đổi logo in trên báo cáo và biên bản"),
+        Permission(NOTIFICATIONS_MANAGE, "Cấu hình thư tóm tắt “Việc tiếp theo” (giờ gửi, SMTP, Teams)"),
         Permission(
             CHECKLIST_MANAGE, "Sửa checklist và yêu cầu bằng chứng của các bước quy trình", ("manager",)
         ),
@@ -67,6 +76,14 @@ CORE_MANIFEST = ModuleManifest(
             interval_seconds=15,
             timeout_seconds=600,
             initial_delay_seconds=5,
+        ),
+        ScheduledTask(
+            "core.notifications",
+            "Gửi thư tóm tắt “Việc tiếp theo” theo giờ đã cấu hình",
+            _notifications_run,
+            interval_seconds=300,
+            timeout_seconds=600,
+            initial_delay_seconds=30,
         ),
     ],
     dashboard_widgets=[
@@ -87,9 +104,11 @@ CORE_MANIFEST = ModuleManifest(
             order=20,
         ),
     ],
+    search_sources=SEARCH_SOURCES,
     nav=[
-        NavItem("Tổng quan", "/", "layout-dashboard", DASHBOARD_VIEW),
+        NavItem("Trang chủ", "/", "layout-dashboard", DASHBOARD_VIEW),
         NavItem("Việc của tôi", "/me/work", "user-check", DASHBOARD_VIEW),
+        NavItem("Thông báo", "/me/notifications", "bell", DASHBOARD_VIEW),
         NavItem("Tổng quan số liệu", "/overview", "layout-dashboard", DASHBOARD_VIEW, NAV_STATS),
         NavItem("Kết nối hệ thống", "/settings/connections", "plug", CONNECTIONS_VIEW),
         NavItem("Nhật ký kiểm tra", "/settings/audit", "scroll-text", AUDIT_VIEW),

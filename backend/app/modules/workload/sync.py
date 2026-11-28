@@ -30,6 +30,7 @@ SYNC_TASK_KEY = "workload.sync"
 OVERLAP_MS = 3_600_000
 # shortcut: one sync reads at most this many requests; raise it if a backfill ever hits the cap.
 MAX_ROWS = 50_000
+PAGE_IDS = 100  # request ids per SDP search when re-reading categories
 PAGE = 500  # tickets loaded per query when merging a sync
 
 
@@ -170,7 +171,39 @@ async def sync_tickets(
             ticket.synced_at = now
             session.add(ticket)
         await session.flush()
+    await fill_categories(session, client, settings)
     return rows
+
+
+async def fill_categories(session: AsyncSession, client: SdpClient, settings: WorkloadSettings) -> None:
+    """Read open tickets stored before categories existed (category IS NULL) once more and fill them.
+
+    A chunk SDP fails to answer keeps NULL and is retried by the next sync."""
+    ids = list(
+        await session.scalars(
+            select(Ticket.id).where(Ticket.state == "open", Ticket.category.is_(None)).limit(MAX_ROWS)
+        )
+    )
+    for start in range(0, len(ids), PAGE_IDS):
+        chunk = ids[start : start + PAGE_IDS]
+        try:
+            rows = await client.list_all(
+                "/api/v3/requests",
+                "requests",
+                search_criteria={"field": "id", "condition": "is", "values": chunk},
+                sort_field="id",
+                max_rows=len(chunk),
+            )
+        except SdpError as exc:
+            log.warning("workload_category_reread_failed", error=str(exc))
+            continue
+        found = {str(r["id"]): normalize_ticket(r, settings) for r in rows if r.get("id") is not None}
+        for ticket in (await session.scalars(select(Ticket).where(Ticket.id.in_(list(found))))).all():
+            ticket.category, ticket.subcategory = (
+                found[ticket.id]["category"],
+                found[ticket.id]["subcategory"],
+            )
+        await session.flush()
 
 
 async def run_sync(session: AsyncSession, requested_by: str | None = None) -> dict[str, Any]:

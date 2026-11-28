@@ -270,6 +270,8 @@ Test không bao giờ gọi hệ thống thật: SDP/BioStar được mock bằn
 | 69 | Kết nối Microsoft (AD, Exchange hybrid, Entra/M365) trong Job onboard/offboard | Xong, chưa thử trên tenant thật |
 | 70 | Job thuyên chuyển tự động (AD, license M365, nhóm quyền BioStar theo phòng ban, thiết bị theo cấp mới) | Xong, chưa thử trên tenant thật |
 | 71 | Kiểm kê gọn luồng + đối chiếu sổ TSCĐ/CCDC Kế toán (TT200/TT133), sheet Mẫu 05-TSCĐ | Xong, chưa thử với file sổ thật |
+| 72 | Rà soát tổng thể: phạm vi biên bản theo Job/người lập, xuất Excel chống formula injection (`core.xlsx`), lỗi kỹ thuật không lộ ra UI, `list_requests` phân trang SQL, sửa UI/a11y | Xong, chưa thử với SDP thật |
+| 73 | IT Support: bảng SLA & tuổi ticket, tìm kiếm toàn cục (Ctrl+K), thư tóm tắt "Việc tiếp theo" (SMTP relay + Teams), ghi chú / đóng request ngay từ danh sách | Xong, chưa thử với SDP / relay SMTP / Teams thật |
 
 ## Đăng nhập
 

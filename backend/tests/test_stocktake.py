@@ -664,3 +664,18 @@ async def test_batch_clears_a_stale_resolution_when_the_kind_changes(  # type: i
     )
     out = r.json()["items"][0]
     assert out["difference"] and out["resolution"] is None and out["resolved_by"] is None
+
+
+def test_record_date_is_the_vietnam_date_not_utc(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from types import SimpleNamespace
+
+    from app.modules.lifecycle import stocktake_api as api
+
+    # 17:30 UTC on 30/11 is already 00:30 on 01/12 in Asia/Ho_Chi_Minh.
+    monkeypatch.setattr(api, "today_vn", lambda: date(2026, 12, 1))
+    s = SimpleNamespace(
+        id=uuid.uuid4(), name="KK", cutoff=date(2026, 12, 31), source_synced_at=None, rules_version=1
+    )
+    body = api.RecordIn(it_rep="A", finance_rep="B")
+    data = api._record_data(s, [], [], body, {})  # type: ignore[arg-type]
+    assert data["date"] == "2026-12-01"

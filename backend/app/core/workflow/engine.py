@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit.service import Actor, record
 from app.core.errors import AppError, Conflict, NotFound, PermissionDenied, PersonalCredentialMissing
-from app.core.logging import get_logger
+from app.core.logging import correlation_id_var, get_logger
 from app.core.modules.registry import get_registry
 from app.core.timeutil import today_vn
 from app.core.workflow.checklist import check_verification, snapshot, verifies
@@ -635,6 +635,11 @@ def _blocked_by_earlier(job: Job, step: JobStep) -> bool:
     return any(s.seq < step.seq and s.status not in FINISHED_STEP for s in job.steps)
 
 
+def _error_ref() -> str:
+    """Short reference shown to users; the same value is written to the log line."""
+    return correlation_id_var.get() or uuid4().hex[:8]
+
+
 async def advance(session: AsyncSession, job: Job, worker_actor: Actor) -> None:
     """Run as many steps as possible; stop at a manual step, a wait, a confirmation or a failure."""
     _, wf = workflow_or_404(job.workflow_key)
@@ -658,8 +663,14 @@ async def advance(session: AsyncSession, job: Job, worker_actor: Actor) -> None:
                     try:
                         prep = await definition.prepare(ctx)
                         _apply(step, StepOutcome("waiting", prep.message, prep.output), None)
+                    except AppError as exc:
+                        step.message = f"Không chuẩn bị được dữ liệu: {exc.message}"
                     except Exception as exc:
-                        step.message = f"Không chuẩn bị được dữ liệu: {getattr(exc, 'message', str(exc))}"
+                        ref = _error_ref()
+                        log.warning("workflow_prepare_failed", step=step.key, ref=ref, error=str(exc))
+                        step.message = (
+                            f"Không chuẩn bị được dữ liệu (mã tham chiếu: {ref}). Xem nhật ký hệ thống."
+                        )
                 event(session, job, f"Chờ xác nhận thủ công: “{step.title}”.", step=step.key)
             job.status = "waiting"
             return
@@ -688,10 +699,17 @@ async def advance(session: AsyncSession, job: Job, worker_actor: Actor) -> None:
         except AppError as exc:
             outcome = StepOutcome("failed", exc.message)
         except Exception as exc:
+            ref = _error_ref()
             log.error(
-                "workflow_step_crashed", step=step.key, error=str(exc), trace=traceback.format_exc(limit=5)
+                "workflow_step_crashed",
+                step=step.key,
+                ref=ref,
+                error=str(exc),
+                trace=traceback.format_exc(limit=5),
             )
-            outcome = StepOutcome("failed", f"Lỗi không mong đợi: {type(exc).__name__}: {exc}"[:1000])
+            outcome = StepOutcome(
+                "failed", f"Lỗi không mong đợi khi chạy bước (mã tham chiếu: {ref}). Xem nhật ký hệ thống."
+            )
         if outcome.status == "waiting":
             _apply(step, outcome, None)
             step.status = "waiting"

@@ -1140,3 +1140,31 @@ async def test_step_waits_for_the_responsible_persons_own_sdp_key(admin, systems
         await s.commit()
     await run_worker()
     assert step(await job(admin, j["id"]), "check_request")["status"] == "verify"
+
+
+async def test_prepare_collect_waits_for_personal_key_but_falls_back_on_network_error(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from types import SimpleNamespace
+
+    from app.core.errors import PersonalCredentialMissing
+    from app.modules.lifecycle import workflows as wf
+
+    c = SimpleNamespace(params={"sdp_user_id": "9", "employee": {"id": "003551"}}, outputs={}, session=None)
+
+    async def snap(_s, _emp):  # type: ignore[no-untyped-def]
+        return [{"id": "1", "name": "LT-1"}]
+
+    monkeypatch.setattr(wf, "_snapshot_assets", snap)
+
+    async def no_key(*_a):  # type: ignore[no-untyped-def]
+        raise PersonalCredentialMissing("no key")
+
+    monkeypatch.setattr(wf, "_sdp", no_key)
+    with pytest.raises(PersonalCredentialMissing):
+        await wf.prepare_collect(c)  # type: ignore[arg-type]
+
+    async def down(*_a):  # type: ignore[no-untyped-def]
+        raise httpx.ConnectError("down")
+
+    monkeypatch.setattr(wf, "_sdp", down)
+    out = await wf.prepare_collect(c)  # type: ignore[arg-type]
+    assert out.output["source"] == "lần đồng bộ gần nhất" and out.output["assets"][0]["id"] == "1"

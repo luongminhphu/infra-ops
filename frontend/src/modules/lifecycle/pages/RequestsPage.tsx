@@ -7,6 +7,7 @@ import { Ticket, X } from "lucide-react";
 import { api } from "@/core/api/client";
 import { Button } from "@/core/ui/button";
 import { DataTable } from "@/core/ui/data-table";
+import { TruncationNotice } from "../TruncationNotice";
 import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input, Select } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
@@ -204,6 +205,7 @@ export function RequestsPage() {
         )}
         {open && <RequestPanel id={open} onClose={() => setOpen(null)} />}
       </div>
+      <TruncationNotice shown={list.data?.items.length ?? 0} total={list.data?.total} />
     </>
   );
 }

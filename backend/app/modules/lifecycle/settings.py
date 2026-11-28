@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 import uuid
 from typing import Any, Literal
 
@@ -12,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.connectors.active_directory import inside
 from app.core.settings.service import load_settings
+from app.core.text import fold
 
 EventKind = Literal["onboard", "probation_to_official", "transfer", "offboard", "ignore"]
 
@@ -181,13 +181,6 @@ BUILTIN_CLOSED = [
 CANCELLED_STATUSES = [
     "Cancelled", "Canceled", "Rejected", "Đã huỷ", "Đã hủy", "Huỷ", "Hủy", "Từ chối", "Đã từ chối",
 ]  # fmt: skip
-
-
-def fold(text: str) -> str:
-    """Lower-case without Vietnamese diacritics (same rule as ``parsing.fold``, which imports this module)."""
-    text = text.replace("đ", "d").replace("Đ", "D")
-    decomposed = unicodedata.normalize("NFD", text)
-    return re.sub(r"\s+", " ", "".join(c for c in decomposed if not unicodedata.combining(c))).strip().lower()
 
 
 def _words(text: str) -> str:

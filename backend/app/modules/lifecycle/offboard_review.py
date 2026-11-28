@@ -14,8 +14,7 @@ from html import escape
 from typing import Any
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
+from openpyxl.styles import Alignment
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +22,7 @@ from app.core.audit.models import AuditLog
 from app.core.branding.service import xlsx_logo
 from app.core.timeutil import TZ
 from app.core.workflow.models import Job
+from app.core.xlsx import header, safe
 from app.modules.lifecycle.models import LifecycleRequest, ReconRow
 from app.modules.lifecycle.queries import latest_run
 from app.modules.lifecycle.settings import LifecycleSettings
@@ -214,23 +214,18 @@ def _cells(i: int, r: ReviewRow) -> list[Any]:
     ]
 
 
-def _safe(v: Any) -> Any:
-    return f"'{v}" if isinstance(v, str) and v[:1] in ("=", "+", "-", "@") else v
-
-
 def to_xlsx(rows: list[ReviewRow], month: date, logo: bytes | None = None) -> bytes:
     wb = Workbook()
     ws = wb.active
     assert ws is not None
     ws.title = f"Nghỉ việc {month:%m-%Y}"
-    ws.append([*HEADERS, "HR xác nhận (Đúng / Sai)", "Ghi chú HR"])
+    header(
+        ws,
+        [*HEADERS, "HR xác nhận (Đúng / Sai)", "Ghi chú HR"],
+        [5, 10, 28, 24, 14, 14, 34, 14, 16, 32],
+    )
     for i, r in enumerate(rows, 1):
-        ws.append([_safe(v) for v in _cells(i, r)] + ["", ""])
-    for cell in ws[1]:
-        cell.font = Font(bold=True)
-        cell.fill = PatternFill("solid", fgColor="E3F0F1")
-    for i, w in enumerate([5, 10, 28, 24, 14, 14, 34, 14, 16, 32], start=1):
-        ws.column_dimensions[get_column_letter(i)].width = w
+        ws.append([safe(v) for v in _cells(i, r)] + ["", ""])
     for row in ws.iter_rows(min_row=2):
         for cell in row:
             cell.alignment = Alignment(vertical="top", wrap_text=True)

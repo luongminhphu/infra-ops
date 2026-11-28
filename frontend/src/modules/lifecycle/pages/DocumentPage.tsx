@@ -155,8 +155,10 @@ export function DocumentPage() {
 
   const attach = useMutation({
     mutationFn: () => api<Doc>(`/api/lifecycle/documents/${id}/attach-sdp`, { method: "POST", json: { request_id: attachReq || null } }),
-    onSuccess: async (d) => {
-      await refresh(d);
+    onSuccess: async () => {
+      // attach-sdp response carries no per-user flags: refetch instead of caching it.
+      await qc.invalidateQueries({ queryKey: ["document", id] });
+      await qc.invalidateQueries({ queryKey: ["documents"] });
       toast.success(`Đã đính kèm bản ký vào request #${attachReq}.`);
     },
     onError: async (e) => {
@@ -188,7 +190,7 @@ export function DocumentPage() {
   if (doc.isError) return <><Back /><ErrorState error={doc.error} onRetry={() => doc.refetch()} /></>;
   const d = doc.data;
   const status = d?.status ?? "draft";
-  const editable = status === "draft" && can("lifecycle.documents.create");
+  const editable = status === "draft" && (isNew ? can("lifecycle.documents.create") : !!d?.can_edit);
   const title = d?.number ? `Biên bản ${KIND_SHORT_TITLE[kind].toLowerCase()} ${d.number}` : `Biên bản ${KIND_SHORT_TITLE[kind].toLowerCase()} – bản nháp`;
   const fileUrl = (which: string) => `/api/core/documents/${id}/file/${which}`;
   const linkBtn = (variant: "primary" | "secondary") => cn(buttonVariants({ variant }));
@@ -262,7 +264,7 @@ export function DocumentPage() {
                 {d.has_signed ? `Đã tải lên bởi ${d.signed_by} lúc ${formatDateTime(d.signed_at)}.` : "File PDF, PNG hoặc JPG, tối đa 20 MB."}
               </p>
               <div className="flex flex-wrap gap-2">
-                {status !== "void" && can("lifecycle.documents.create") && (
+                {d.can_upload_signed && (
                   <>
                     <Button onClick={() => fileRef.current?.click()} loading={uploadSigned.isPending} variant={d.has_signed ? "secondary" : "primary"}>
                       <FileUp className="size-4" aria-hidden="true" />
@@ -298,7 +300,7 @@ export function DocumentPage() {
                   <Field label="Request ID" className="w-36">
                     <Input value={attachReq} onChange={(e) => setAttachReq(e.target.value.trim())} inputMode="numeric" className="font-mono" />
                   </Field>
-                  <Button type="submit" loading={attach.isPending} disabled={!attachReq || !can("lifecycle.documents.create")}>
+                  <Button type="submit" loading={attach.isPending} disabled={!attachReq || !d.can_upload_signed}>
                     <Paperclip className="size-4" aria-hidden="true" />
                     Đính kèm
                   </Button>
@@ -337,7 +339,7 @@ export function DocumentPage() {
         )
       )}
 
-      {d && status !== "void" && (can("lifecycle.documents.create") && (status === "draft" || can("lifecycle.templates.manage"))) && (
+      {d && status !== "void" && (d.can_edit && (status === "draft" || can("lifecycle.templates.manage"))) && (
         <div className="mt-6 flex justify-end">
           <Button variant="ghost" className="text-failed" onClick={() => { setVoidReason(""); setVoidOpen(true); }}>
             <XCircle className="size-4" aria-hidden="true" />

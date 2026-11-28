@@ -1638,3 +1638,130 @@ Phase 70a: bỏ "Transfer stays manual" khi bật `microsoft_enabled`; khi tắt
   khi chưa có mẫu, nên vào "Mẫu biên bản" tải bản mới.
 - **Giới hạn:** chưa thử với file sổ thật từ phần mềm kế toán (MISA/Fast…) – nhập thử file thật và kiểm tổng nguyên giá ở bước
   xem trước; xử lý chênh lệch không ghi ngược SDP.
+
+## 72. Rà soát tổng thể: bảo mật, đúng đắn, hiệu năng, UI/UX (28/11/2026)
+
+Sửa các điểm tìm được ở 3 lượt khảo sát (UI/UX, backend, tính năng vận hành). Mọi mục **chỉ thử với fake/respx và test, chưa
+chạy với hệ thống thật**.
+
+- **Lỗi không nuốt quyền cá nhân (Q-01a):** `prepare_collect` chỉ bắt lỗi mạng rồi dùng giá trị dự phòng; `PersonalCredentialMissing`
+  được ném lại để bước chờ khoá cá nhân (đúng quy tắc *không rơi về khoá dùng chung*). Ngày biên bản kiểm kê tính theo giờ VN
+  (`today_vn`). Upload ảnh Playbook đọc có giới hạn (`max_upload_mb`) và dùng `safe_filename`.
+- **Xuất Excel dùng chung (Q-01b):** `core.xlsx` (`safe`, `header`) thay 6–7 bản chép tay. `safe` thêm dấu `'` trước ô chuỗi bắt đầu
+  bằng `= + - @` TAB CR (chống formula injection). Xuất đề xuất mua giờ cũng escape, **ghi audit** `workload.purchases_exported`
+  và giới hạn 20.000 dòng (quá → `export_too_large`).
+- **Không trả lỗi kỹ thuật thô (Q-01c):** lỗi lạ trong bước workflow và bước chuẩn bị chỉ hiện "mã tham chiếu: <ref>" (cùng
+  `ref` ghi trong log, lấy từ correlation id); `AppError` vẫn hiện message tiếng Việt của nó. `last_error` của tác vụ lập lịch
+  chỉ người có quyền sync/quản lý (`workload.sync.run`, `lifecycle.reconciliation.sync`) thấy nguyên văn; người khác chỉ thấy
+  "Lần chạy gần nhất lỗi – xem nhật ký hệ thống."
+- **Phạm vi biên bản (Q-02, Q-02b; quyết định U1, C-01, C-02, C-11–C-14):**
+  - `core_document.job_id` (nullable, FK có tên, migration `0011_core` + backfill từ output bước). `DocumentKind.view_all_permission`:
+    biên bản kiểm kê (STOCKTAKE) = `None` (giữ như cũ); bàn giao / thu hồi = `lifecycle.job.view_all`.
+  - Không có quyền xem toàn bộ (và không có `manage_permission`) → chỉ thấy biên bản do mình lập **hoặc** gắn Job mình được xem
+    (Job chưa giao hoặc giao cho mình – cùng quy tắc `check_job_scope`, viết bằng SQL ở `scope_clause`). Áp cho list, get, tải
+    file/PDF, xem trước, `attach-sdp`; ngoài phạm vi trả **404** (không lộ có tồn tại).
+  - Sửa / chốt / huỷ **bản nháp** (`can_edit_draft`): người lập, người có `manage_permission`, hoặc người đang chạy Job chứa biên
+    bản (cần `create_permission` + trong phạm vi) – vì bản nháp do worker lập. Tải bản ký (`upload_signed`, bản đã chốt) = phạm vi
+    xem + `create_permission`, giống `attach-sdp` (C-13). API trả cờ `can_edit`, `can_upload_signed`; UI dùng cờ, không đoán bằng `can()`.
+  - **Hệ quả chấp nhận:** (1) *Job chưa giao → mọi Operator xem được* biên bản của Job đó (thống nhất với `check_job_scope`);
+    (2) **tái phân công → người cũ mất quyền xem** biên bản đã chốt của Job; (3) biên bản không gắn Job: chỉ người lập + người
+    có view_all; (4) **giới hạn backfill (C-14):** `job_id` chỉ suy ra được từ output bước nên bản đã huỷ rồi lập lại, hoặc Job mở
+    lại, có thể không có `job_id` → chỉ người lập và người có view_all thấy (đóng, không lộ thêm). Muốn gắn lại thì lập lại biên bản.
+- **Hiệu năng (Q-03):** `list_requests` phân trang trong SQL; danh sách người được giao bỏ N+1 (1 truy vấn). `core.text`
+  (`fold`, `fold_sql`) là một bản chung cho lifecycle / workload (hai module giữ alias gọi lại); có test đặc tả.
+- **Core UI & a11y (Q-04a):** `Field` gộp `aria-describedby` (gợi ý + lỗi); thân `Dialog` là `role=region`; toaster và scroll-padding
+  trên điện thoại; một tên cho một khái niệm ("Trang chủ", "Trễ hạn"); màu mức ưu tiên đúng; trạng thái "đang mở" không quay;
+  nhãn nút nói đúng việc; `ConfirmDialog` đơn giản (không mã) cho xoá.
+- **Trang (Q-04b):** Nhận hàng có mục điều hướng cho Operator; Kiểm kê sang nhóm công việc; trạng thái lỗi (`ErrorState`) cho Receive,
+  JobWizard, JobsPage; thông báo cắt "Đang hiện N / tổng" (`TruncationNotice`); ngày theo giờ VN; hiện lý do nút bị khoá; bỏ polling khi
+  không mở; huy hiệu số việc trên rail; tìm kiếm Job lưu trên URL (`?q=`).
+- **Deferred (không làm ở phase này):**
+  - Xác nhận trước khi xoá ở `StepVerification`, `StocktakeAreas`, `GuideEditor`… (mới có cho bằng chứng / báo giá).
+  - Widget còn poll vô điều kiện 30–60 s (ví dụ `MyJobs`, `MyTickets`).
+  - Tên hàng đợi vẫn là "Việc của tôi" (chưa đổi sang "Việc tiếp theo").
+  - `_reassign` / `_receive` (workload) còn đưa `str(exc)` thô vào message của bước – chưa dùng mã tham chiếu.
+  - `sla_due_soon_hours` chưa có ô trong SettingsPage (đặt qua API cấu hình).
+
+## 73. IT Support: bảng SLA, tìm kiếm toàn cục, thư tóm tắt, thao tác nhanh trên ticket (28/11/2026)
+
+Bốn tính năng người dùng chọn. Mỗi tính năng: **chỉ thử với fake/respx, chưa chạy với hệ thống thật** (SDP, relay SMTP, Teams).
+
+### SLA & tuổi ticket (F-01) – `GET /api/workload/sla`, trang `SlaPage`
+
+- Dùng dữ liệu ticket đã đồng bộ (`priority`, `due_by`, `created_at`, `phase`); đếm trong SQL, chỉ ticket đang mở của app.
+- **Thứ tự phân loại** (cái đầu khớp là thắng): `on_hold` ("tạm dừng", theo `phase`) → `due_by` rỗng = "không có hạn" → `due_by` < bây giờ =
+  "trễ hạn" → `due_by` < bây giờ + `sla_due_soon_hours` (mặc định 24, 1–168) = "sắp đến hạn" → "đúng hạn". Ticket không có `created_at` không vào cột tuổi.
+- Tuổi theo nhóm 0–1 ngày, 1–3, 3–7, 7–14, >14. Chia theo nhóm, danh mục, mức ưu tiên; chia theo kỹ thuật viên chỉ khi có `workload.tickets.view_all`
+  (người khác chỉ thấy ticket của mình qua `_scope`). Danh sách khẩn: tối đa 50 ticket trễ / sắp đến hạn, `due_by` tăng dần.
+- **Danh mục:** thêm cột `category`, `subcategory` (migration `0007_workload`). Ticket mở đã lưu trước đó (`category` NULL) được **đọc lại** sau mỗi
+  lần đồng bộ, từng đợt 100 id; đợt SDP trả lỗi giữ NULL và thử lại lần sau.
+- **Chưa kiểm với SDP thật:** cú pháp tìm `{"field":"id","condition":"is","values":[…]}` của lần đọc lại.
+- Deferred: ô `sla_due_soon_hours` trong SettingsPage.
+
+### Tìm kiếm toàn cục (F-02) – `GET /api/search?q=`, Ctrl+K
+
+- **Hook `SearchSource(key, permission, label, search)`** trong manifest (`ModuleManifest.search_sources`), giống `NextActionSource`: mỗi nguồn
+  tự áp **quyền + phạm vi hàng** y như endpoint danh sách của thực thể đó và **chỉ khớp trường danh sách hiển thị cho người đó** (không mô tả task,
+  không giá, không lý do). Nguồn: Job và Biên bản (core, `core/search/sources.py`; Job theo `view_permission` + `view_all_permission` từng workflow, biên
+  bản theo `scope_clause` từng loại), Request SDP (lifecycle), Task + Đề xuất mua (workload), Playbook (người không sửa chỉ thấy guide đã xuất bản).
+- **Giới hạn:** endpoint cần `core.dashboard.view`; `q` đã `strip`, tối đa 100 ký tự; sau `fold` phải ≥ 2 ký tự, nếu không trả rỗng và **không
+  truy vấn**; mỗi nguồn tối đa 5 dòng; các nguồn chạy **tuần tự** trên một session (AsyncSession không an toàn khi song song).
+- **Timeout 2 giây mỗi nguồn** (`asyncio.wait_for`). Nguồn lỗi / quá hạn: ghi log, `rollback` session, thêm **tên module** vào `failed`
+  (không trả lỗi thô); các nguồn khác vẫn trả. Palette ghi chú "không tìm được ở …".
+- **Không dấu:** so khớp `fold_sql(cột).contains(fold(q), autoescape=True)` (`translate`, không cần extension): "nguyen" khớp "Nguyễn".
+- Palette: mục menu trước; từ 2 ký tự, debounce 250 ms, huỷ request cũ; phím mũi tên đi qua mọi dòng; trạng thái đang tải / "Không tìm thấy".
+- Nguồn của module mới: khai `SearchSource` trong manifest (xem `docs/adding-a-module.md`).
+- **Deferred (Gate 2):** C-36 core gắn cứng route lifecycle cho Job workload / biên bản kiểm kê (role mặc định đều có `lifecycle.job.view`; lỗi biên
+  bản kiểm kê vẫn mở được từ danh sách "Tất cả"; sau này khai href trên `WorkflowDefinition` / `DocumentKind`). C-37 `?open=` của đề xuất mua chỉ tìm trong
+  1000 dòng đầu; quét tuần tự, khoảng trắng kép / NFD chưa chuẩn hoá; hiệu năng (Q1) chờ spike `EXPLAIN` khi có số liệu production.
+- **Q2:** Job chưa giao lộ tiêu đề ticket cho mọi Operator qua tìm kiếm, nhất quán với danh sách Job (Operator thấy Job chưa giao).
+- Đã sửa ở Gate 2: href ticket `?state=all&q=` (ticket đã đóng vẫn mở được; `display_id or id`), bỏ trạng thái thô khỏi detail Job / biên bản, guide nháp
+  trỏ `/playbook/{id}/edit`.
+
+### Thư tóm tắt "Việc tiếp theo" (F-03, F-03b) – `core/notifications`, tác vụ `core.notifications`
+
+- **Tuỳ chọn:** mỗi người tự bật ở trang cá nhân (`/me/notifications`, mặc định **tắt**); quản trị đặt công tắc tổng `enabled` (mặc định tắt) cùng giờ
+  gửi, hồ sơ SMTP / Teams, `max_per_run` (quyền `core.notifications.manage`). Người không có email hoặc bị khoá bị bỏ qua; UI cảnh báo khi chưa có email.
+- **Lịch:** giờ theo giờ VN (mặc định 08:00 và 13:30; tối đa 6 giờ). Tác vụ chạy mỗi 5 phút; một "slot" (`YYYY-MM-DDTHH:MM`) được phục vụ bởi lần chạy
+  nào bắt đầu trong **90 phút** sau giờ đó (cửa sổ `WINDOW`); phục vụ muộn hơn 15 phút thì ghi cảnh báo `notification_slot_late`.
+- **Nội dung:** đúng "Việc tiếp theo" của người nhận, tính lại bằng **quyền của chính họ lúc gửi** (`NextActionSource.load`), nên không lộ gì ngoài những gì
+  họ vốn thấy. Chỉ gồm người có `core.dashboard.view`. HTML được escape; link ghép từ `app_base_url`.
+- **Chống trùng (`core_notification_item`):** một mục chỉ gửi lại khi **mức ưu tiên khẩn hơn** (số nhỏ hơn) lần gửi trước **hoặc tiêu đề đổi** (Job sang
+  bước khác, số ticket trễ đổi). Mục biến mất rồi quay lại được coi là tin mới (chỉ quên khi mọi nguồn trả lời đủ, tránh quên nhầm lúc một nguồn lỗi).
+- **Ghi nhận trước khi gửi (C-06):** dòng `core_notification_sent` (duy nhất theo người + kênh + slot) được **claim và commit trước khi gửi**. Trạng thái:
+  - `sent` – đã giao cho relay.
+  - `failed` – relay từ chối rõ ràng (`smtp_refused`, `smtp_invalid_message`, `smtp_error`…): **không gửi lại trong slot đó**; các mục chưa được "nhớ"
+    nên sẽ là tin mới ở slot sau.
+  - `aborted` – chắc chắn chưa gửi do hệ thống (`smtp_auth`, `smtp_connect`, `smtp_tls`, `smtp_insecure_auth`): **dừng cả lượt ngay** (không đập
+    relay / khoá tài khoản), người kế tiếp chưa bị claim; lần chạy sau trong cửa sổ 90 phút **claim lại** dòng `aborted`.
+  - `pending` – crash hoặc **timeout giữa lúc gửi** (`smtp_unknown`, không biết thư đã đi chưa): lượt chạy dừng, dòng giữ `pending` và **không bao giờ tự
+    gửi lại** (claim chỉ lấy lại dòng `aborted`). Thà mất một thư còn hơn trùng; người đó nhận lại ở slot sau nếu mục còn đó, và các mục của họ chưa được ghi nhớ.
+- **Giới hạn lượt:** duyệt mọi người đã bật theo thứ tự id; `max_per_run` (mặc định 200) chỉ đếm thư gửi, phần còn lại xét ở lần chạy sau (claim giữ idempotent).
+  Lỗi đọc của một người chỉ cô lập người đó (`begin_nested`).
+- **Teams:** một tin mỗi slot, đăng sau khi đã duyệt hết người của slot (không đăng khi bị `max_per_run` chặn dở). Nội dung = **tồn đọng hiện tại**: số mục theo
+  mức ưu tiên của mọi người nhận trong slot, **khử trùng theo key**, **không tên / tiêu đề / số tiền**. Không đăng số liệu thiếu (một người đọc lỗi → bỏ).
+- **SMTP (`core/connectors/smtp.py`):** thư viện chuẩn `smtplib` chạy qua `to_thread`; `tls_mode` = `starttls` | `ssl` (cổng 465) | `none` (chỉ khi không đăng
+  nhập – từ chối AUTH trên kênh không mã hoá). `test_connection()` = EHLO / STARTTLS / AUTH / NOOP, không gửi thư. **Credential bị xoá khi đổi `base_url`
+  origin hoặc `host` / `port` / `tls_mode`** (`credential_bound_config`; cả khi nhập cấu hình) để mật khẩu không bị gửi tới máy khác.
+- **Webhook Teams là bí mật:** URL webhook nằm ở credential, **không có hint** (không lưu 4 ký tự cuối), không vào log / audit; `httpx` / `httpcore` ép mức
+  WARNING vì INFO in cả URL. `test_connection()` chỉ DNS + TLS (không đăng tin). URL sai → `teams_invalid_webhook`.
+- **Deferred:** CA nội bộ tuỳ chỉnh cho relay (hiện dùng kho CA hệ thống; relay dùng CA riêng cần cài vào kho của container). Gửi lại khi timeout: xem mục
+  `pending` ở trên – chủ ý không tự gửi lại.
+
+### Thao tác nhanh trên ticket (F-04, F-04b) – `POST /api/workload/tickets/{id}/note` và `/close`, `TicketActions`
+
+- **Quyền:** `workload.tickets.update` (manager, supervisor, operator). Không có `tickets.assign` thì chỉ thao tác ticket **của mình** (technician SDP gắn với người
+  dùng); ticket của người khác hoặc không tồn tại đều trả 404; ticket không còn mở → `ticket_not_open`.
+- **Chạy như Job trong worker** (workflow `workload.ticket_note`, `workload.ticket_close`), `as_user` = người tạo → ghi SDP bằng **khoá API cá nhân**; thiếu khoá thì
+  bước chờ, không dùng khoá chung. `view_all_permission` = `tickets.assign` (người khác không thấy Job của bạn). Có `audit.record` khi yêu cầu (`ticket_note_requested`…).
+- **Ghi chú:** nội dung `html.escape`, thêm hậu tố `(infra-ops #<8 ký tự id Job>)`; trước khi ghi đọc `request_notes`, thấy hậu tố thì bỏ qua (idempotent khi thử lại).
+- **Đóng:** ghi chú kết quả bắt buộc (≥ 5 ký tự), rồi đổi trạng thái sang `close_status` (cấu hình, mặc định "Resolved"). Bước đổi trạng thái `confirm=True`: người dùng
+  **nhập số request** để xác nhận ngay trong dialog (không cần sang trang lifecycle). Lúc chạy **đọc lại request trước**: nếu không còn "mở" trên SDP (đã Closed /
+  Cancelled…) thì **không ghi**, báo "đã ở trạng thái …" và cập nhật Ticket cục bộ theo trạng thái hiện tại (không hạ Closed về Resolved). Kiểm lại quyền lúc chạy: người
+  tạo không còn là technician của request và không có `tickets.assign` → bước `failed`.
+- **Chặn khi có Job đang mở (C-03, C-16, C-17):** Job chưa `completed`/`cancelled` (**kể cả `failed`**) có `external_ref` hoặc `params.request_id` = ticket → `ticket_has_open_job`
+  kèm id Job (UI chỉ link khi `can(lifecycle.job.view)`); kiểm lúc tạo (dưới `SELECT … FOR UPDATE` ticket, chống bấm đúp) **và lại lúc chạy**. Ghi chú đã gửi không bị rollback.
+- **Rủi ro chưa kiểm:** quy tắc đóng của SDP thật có thể **bắt buộc Resolution** (hoặc trường khác) khi chuyển sang Resolved/Closed – chưa thử với SDP thật; nếu SDP
+  từ chối, bước `failed` và người dùng thử lại / đóng tay. `close_status` đổi được trong cấu hình workload.
+- **Bỏ:** nút "Mở Playbook" (Playbook chưa nhận `?q=`); liên kết đề xuất mua dùng URL có sẵn.
+- Ghi chú trước khi xác nhận đóng: đã chấp nhận (ghi chú là bước 1, trạng thái là bước 2 có xác nhận).

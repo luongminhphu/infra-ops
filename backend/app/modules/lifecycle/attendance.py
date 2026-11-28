@@ -9,12 +9,11 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill
-from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from app.core.branding.service import xlsx_logo
 from app.core.timeutil import TZ
+from app.core.xlsx import header, safe
 from app.modules.lifecycle.attendance_input import extract, rows_from_text
 from app.modules.lifecycle.normalize import id_key
 
@@ -120,21 +119,10 @@ def daily_rows(report: Report) -> list[list[Any]]:
     return rows
 
 
-def _text(v: str) -> str:
-    # Neutralise spreadsheet formula injection from BioStar data.
-    return f"'{v}" if v[:1] in ("=", "+", "-", "@") else v
-
-
 def _sheet(ws: Worksheet, headers: list[str], rows: list[list[Any]], widths: list[int]) -> None:
-    ws.append(headers)
+    header(ws, headers, widths)
     for r in rows:
         ws.append(r)
-    fill = PatternFill("solid", fgColor="E3F0F1")
-    for cell in ws[1]:
-        cell.font = Font(bold=True)
-        cell.fill = fill
-    for i, w in enumerate(widths, start=1):
-        ws.column_dimensions[get_column_letter(i)].width = w
     for row in ws.iter_rows(min_row=2):
         for cell in row:
             if isinstance(cell.value, datetime):
@@ -162,7 +150,7 @@ def to_xlsx(report: Report, logo: bytes | None = None) -> bytes:
         log,
         ["Mã NV", "Họ tên", "Thời gian", "Thiết bị", "Hệ thống BioStar"],
         [
-            [s.employee_id, _text(s.name), s.at.replace(tzinfo=None), _text(s.device), s.source]
+            [s.employee_id, safe(s.name), s.at.replace(tzinfo=None), safe(s.device), s.source]
             for s in sorted(report.scans, key=lambda s: (s.employee_id, s.at))
         ],
         [10, 28, 20, 30, 20],

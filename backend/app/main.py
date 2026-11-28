@@ -23,9 +23,11 @@ from app.core.documents.service import ensure_default_templates
 from app.core.errors import install_error_handlers
 from app.core.logging import CorrelationIdMiddleware, configure_logging, get_logger
 from app.core.modules.registry import ModuleRegistry, build_registry, set_registry
+from app.core.notifications.api import router as notifications_router
 from app.core.rbac.api import router as rbac_router
 from app.core.rbac.service import sync_permissions
 from app.core.scheduler.service import startup_lock, sync_tasks
+from app.core.search.api import router as search_router
 from app.core.secrets.crypto import get_keyring
 from app.core.workflow.api import router as workflow_router
 
@@ -78,6 +80,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         documents_router,
         workflow_router,
         branding_router,
+        notifications_router,
+        search_router,
     ):
         core.include_router(r)
     app.include_router(core)

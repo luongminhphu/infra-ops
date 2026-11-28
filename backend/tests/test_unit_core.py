@@ -75,9 +75,10 @@ def test_module_pages_are_filed_under_shared_menu_headings() -> None:
     assert reports == {
         "/lifecycle/attendance",
         "/lifecycle/offboard-review",
-        "/lifecycle/stocktake",
         "/workload/stats",
     }
+    work = {i["path"] for i in items if i["section"] == "tools"}
+    assert {"/lifecycle/stocktake", "/workload/purchases/receive"} <= work
 
 
 @pytest.mark.parametrize("bad", ["../etc", "not-a-module"])

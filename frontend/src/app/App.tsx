@@ -16,6 +16,7 @@ import { ConnectionsPage } from "@/core/pages/connections/ConnectionsPage";
 import { ConnectionDetailPage } from "@/core/pages/connections/ConnectionDetailPage";
 import { AuditPage } from "@/core/pages/AuditPage";
 import { AccessPage } from "@/core/pages/access/AccessPage";
+import { NotificationsPage } from "@/core/pages/NotificationsPage";
 import { BrandingPage } from "@/core/pages/BrandingPage";
 import { NotFoundPage } from "@/core/pages/NotFoundPage";
 import { ModulesContext } from "@/core/modules";
@@ -51,6 +52,7 @@ const coreRoutes: RouteObject[] = [
   { path: "overview", element: <RequirePermission permission="core.dashboard.view"><DashboardPage /></RequirePermission> },
   { path: "tools", element: <RequirePermission permission="core.dashboard.view"><ToolsPage /></RequirePermission> },
   { path: "me/work", element: <RequirePermission permission="core.dashboard.view"><MyWorkPage /></RequirePermission> },
+  { path: "me/notifications", element: <RequirePermission permission="core.dashboard.view"><NotificationsPage /></RequirePermission> },
   { path: "me/credentials", element: <MyCredentialsPage /> },
   { path: "settings/connections", element: <RequirePermission permission="core.connections.view"><ConnectionsPage /></RequirePermission> },
   { path: "settings/connections/:id", element: <RequirePermission permission="core.connections.view"><ConnectionDetailPage /></RequirePermission> },
@@ -82,6 +84,7 @@ export function App() {
         <LiveRegion />
         <Toaster
           position="bottom-right"
+          mobileOffset={{ bottom: "calc(var(--tabbar-h) + 12px)" }}
           closeButton
           toastOptions={{
             classNames: {

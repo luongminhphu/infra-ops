@@ -6,6 +6,7 @@ import { FilePlus2, FileText } from "lucide-react";
 import { api } from "@/core/api/client";
 import { Button } from "@/core/ui/button";
 import { DataTable } from "@/core/ui/data-table";
+import { TruncationNotice } from "../TruncationNotice";
 import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input, Select } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
@@ -82,8 +83,9 @@ export function DocumentsPage() {
           </Select>
         </Field>
       </form>
-      {list.isError && <ErrorState error={list.error} onRetry={() => list.refetch()} />}
-      {list.isLoading ? (
+      {list.isError ? (
+        <ErrorState error={list.error} onRetry={() => list.refetch()} />
+      ) : list.isLoading ? (
         <div className="rounded-md border border-line bg-surface"><LoadingRows rows={6} /></div>
       ) : (
         <DataTable
@@ -99,6 +101,7 @@ export function DocumentsPage() {
           }
         />
       )}
+      <TruncationNotice shown={list.data?.items.length ?? 0} total={list.data?.total} />
     </>
   );
 }

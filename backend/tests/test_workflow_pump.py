@@ -117,3 +117,29 @@ async def test_running_and_due_scheduled_jobs_advance(admin, monkeypatch) -> Non
         await _cleanup(ids)
     assert ("pump-run", "running") in seen and ("pump-sched", "running") in seen
     assert out["advanced"] >= 2
+
+
+async def test_crashing_step_message_hides_exception_text(admin, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import dataclasses
+
+    from app.core.audit.service import Actor
+
+    async def boom(ctx):  # type: ignore[no-untyped-def]
+        raise RuntimeError("secret-host.example.local")
+
+    real = wf.step_def
+    monkeypatch.setattr(wf, "step_def", lambda w, k: dataclasses.replace(real(w, k), run=boom))
+    async with get_sessionmaker()() as s:
+        job = make("crash", "running", "pending", kind="auto")
+        s.add(job)
+        await s.commit()
+        jid = job.id
+    try:
+        async with get_sessionmaker()() as s:
+            job = (await s.scalars(select(Job).where(Job.id == jid))).one()
+            await wf.advance(s, job, Actor(user_id=None, upn="system", ip=None))
+            msg = job.steps[0].message
+            await s.rollback()
+    finally:
+        await _cleanup([jid])
+    assert "secret-host" not in msg and "RuntimeError" not in msg and "mã tham chiếu" in msg

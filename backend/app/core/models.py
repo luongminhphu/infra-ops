@@ -4,6 +4,7 @@ from app.core.audit.models import AuditLog
 from app.core.auth.models import User, UserSession
 from app.core.connections.models import ConnectionProfile, Credential
 from app.core.documents.models import Document, DocumentSequence, TemplateVersion
+from app.core.notifications.models import NotificationItem, NotificationPref, NotificationSent
 from app.core.rbac.models import KnownPermission, Role, RolePermission, UserRole
 from app.core.scheduler.models import ScheduledTaskRow
 from app.core.settings.models import ModuleSetting
@@ -23,6 +24,9 @@ __all__ = [
     "JobStep",
     "KnownPermission",
     "ModuleSetting",
+    "NotificationItem",
+    "NotificationPref",
+    "NotificationSent",
     "Role",
     "RolePermission",
     "ScheduledTaskRow",

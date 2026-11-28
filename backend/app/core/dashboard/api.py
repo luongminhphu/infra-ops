@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth.deps import CurrentUser, require
+from app.core.dashboard.service import collect_next_actions
 from app.core.db import get_session
 from app.core.logging import get_logger
 from app.core.modules.registry import get_registry
@@ -44,19 +45,7 @@ async def next_actions(
     user: CurrentUser = Depends(require(DASHBOARD_VIEW)), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
     """The signed-in person's queue across modules: most urgent first, then by due date."""
-    items: list[dict[str, Any]] = []
-    failed: list[str] = []
-    for m in get_registry().modules:
-        for src in m.next_actions:
-            if not user.has(src.permission):
-                continue
-            try:
-                items.extend(await src.load(session, user))
-            except Exception:
-                log.exception("next_action_source_failed", source=src.key)
-                failed.append(m.name)
-    items = list({i["key"]: i for i in items}.values())  # one row per key (e.g. "enter your API key")
-    items.sort(key=lambda i: (i["priority"], i.get("due") is None, str(i.get("due") or "")))
+    items, failed = await collect_next_actions(session, user)
     return {"items": items, "failed": failed}
 
 

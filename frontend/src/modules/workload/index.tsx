@@ -1,6 +1,7 @@
 import { RequirePermission } from "@/core/auth/guards";
 import type { FrontendModule } from "@/core/modules";
 import { SettingsPage } from "./pages/SettingsPage";
+import { SlaPage } from "./pages/SlaPage";
 import { StatsPage } from "./pages/StatsPage";
 import { TicketsPage } from "./pages/TicketsPage";
 import { WorkloadNextWidget } from "./Widget";
@@ -17,6 +18,7 @@ export const workloadModule: FrontendModule = {
     { path: "workload/purchases/receive", element: <RequirePermission permission="workload.purchase.receive"><ReceivePage /></RequirePermission> },
     { path: "workload/purchases/new", element: <RequirePermission permission="workload.purchase.create"><NewPurchasePage /></RequirePermission> },
     { path: "workload/purchases", element: <RequirePermission permission="workload.tickets.view"><PurchasesPage /></RequirePermission> },
+    { path: "workload/sla", element: <RequirePermission permission="workload.tickets.view"><SlaPage /></RequirePermission> },
     { path: "workload/stats", element: <RequirePermission permission="workload.stats.view"><StatsPage /></RequirePermission> },
     { path: "workload/settings", element: <RequirePermission permission="workload.settings.manage"><SettingsPage /></RequirePermission> },
   ],
