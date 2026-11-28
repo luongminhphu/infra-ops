@@ -25,8 +25,20 @@ import { EmpLink } from "./EmployeePanel";
 import { StepVerification } from "./StepVerification";
 import { AssignJobButton, PendingAssignment } from "./AssignJob";
 import { Swimlane } from "@/core/ui/swimlane";
+import { useModules } from "@/core/modules";
 
 // Workflows whose subject_key is an employee ID (asset jobs use a count, e.g. "3 tài sản").
+/** Panels other modules register for the Job page (e.g. the Playbook), filtered by the user's permissions. */
+export function JobPanels({ job, collapsible = false }: { job: Job; collapsible?: boolean }) {
+  const { can } = useAuth();
+  const panels = useModules().flatMap((m) => m.jobPanels ?? []).filter((p) => can(p.permission)).sort((a, b) => a.order - b.order);
+  return (
+    <>
+      {panels.map((p) => <p.component key={`${p.key}-${job.id}`} jobId={job.id} workflowKey={job.workflow_key} status={job.status} version={job.version} collapsible={collapsible} />)}
+    </>
+  );
+}
+
 /** Running offboard with Microsoft steps whose `ad_move_ban` has not been confirmed yet: the mailbox option can still change. */
 export function mailboxOptionOpen(job: Job): boolean {
   const ban = job.steps.find((s) => s.key === "ad_move_ban");
@@ -448,6 +460,7 @@ export function JobPage() {
         </Panel>
         <div className="contents lg:order-none lg:block lg:min-w-0 lg:space-y-4">
           <div className="order-1 min-w-0"><StepDetail job={job} step={step} act={act} /></div>
+          <div className="order-2 min-w-0 empty:hidden"><JobPanels job={job} /></div>
           <Panel title="Nhật ký Job" bodyClassName="p-0" className="order-3 min-w-0">
             {/* Scrollable region must be keyboard-focusable (WCAG 2.1.1). */}
             <ol className="max-h-80 divide-y divide-line overflow-y-auto" tabIndex={0} aria-label="Nhật ký Job">

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { BookOpen, ChevronRight, Plus } from "lucide-react";
+import { BookOpen, ChevronRight, Link2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
 import { Button } from "@/core/ui/button";
@@ -43,11 +43,18 @@ export function GuidesPage() {
         title="Infra Playbook"
         description="Quy định và hướng dẫn xử lý cho IT Support: mỗi hướng dẫn là một sơ đồ rẽ nhánh, bấm vào từng bước để đọc ghi chú."
         actions={
-          list.data?.can_edit && (
-            <Button variant="primary" onClick={() => { setTitle(""); setCategory(""); setTemplate(""); setTried(false); setOpen(true); }}>
-              <Plus className="size-4" aria-hidden="true" />Tạo hướng dẫn
-            </Button>
-          )
+          <>
+            {list.data?.can_publish && (
+              <Link to="/playbook/job-guides" className="inline-flex h-8 items-center gap-1.5 rounded-sm px-3 font-medium text-primary hover:bg-surface-2">
+                <Link2 className="size-4" aria-hidden="true" />Gán Playbook cho quy trình
+              </Link>
+            )}
+            {list.data?.can_edit && (
+              <Button variant="primary" onClick={() => { setTitle(""); setCategory(""); setTemplate(""); setTried(false); setOpen(true); }}>
+                <Plus className="size-4" aria-hidden="true" />Tạo hướng dẫn
+              </Button>
+            )}
+          </>
         }
       />
       <form role="search" className="mb-4 max-w-md" onSubmit={(e) => e.preventDefault()}>

@@ -1772,3 +1772,86 @@ Bốn tính năng người dùng chọn. Mỗi tính năng: **chỉ thử với 
   `core/permissions.py` chỉ còn hằng số (module lá), `CORE_MANIFEST` sang `core/core_manifest.py`,
   `build_registry(core, enabled)` nhận manifest từ `main` / `worker` / `cli`. `tests/test_import_cycles.py` phân tích
   AST mọi import trong `app/core` (kể cả trong hàm) và chặn mọi vòng, trừ cụm connector tự đăng ký có chủ ý.
+
+## 74. Playbook trong Job (28/11/2026)
+
+Operator nhận Job Onboard / Offboard / Thuyên chuyển thì trang Job tự hiện Playbook tương ứng, chạy cho Mã NV của Job: bước Job hiện trạng thái thật,
+bước tay Operator tick, bước rẽ nhánh chọn tại chỗ. Tiến độ lưu theo Job và có audit. Mã: `modules/playbook/{run,jobs_api,next_actions,models,settings}.py`,
+migration `0004_playbook`, slot `FrontendModule.jobPanels` (core) + `JobPlaybookPanel` (module playbook). **Chỉ thử với dữ liệu giả** (chưa thử với Job / SDP thật).
+
+### Quyết định của người dùng (28/11/2026)
+
+| # | Quyết định |
+|---|---|
+| U1 | Playbook nằm **trong trang Job** (khung trên trang Job); tiến độ lưu **theo Job** và có audit. |
+| U2 | Bước tay **được lưu nhưng không chặn đóng Job**; khi Job đã hoàn tất mà còn bước tay chưa xong thì panel cảnh báo và "Việc tiếp theo" nhắc. |
+| U3 | Chọn Playbook: người có `playbook.guides.publish` **gán** Playbook đã xuất bản cho từng quy trình (setting `workflow_guides`); chưa gán thì tự lấy Playbook đã xuất bản có bước `job` của quy trình đó; nhiều ứng viên thì yêu cầu gán. |
+
+### Ranh giới module
+
+- `lifecycle` **không import** `playbook` (BE + FE). Core FE thêm slot `FrontendModule.jobPanels` (giống `portal`); `JobPage` của lifecycle render panel lấy từ `useModules()`
+  (lọc theo `can(permission)`), `playbook` đăng ký `JobPlaybookPanel`. BE: `playbook` đọc `app.core.workflow.models.Job` và dùng phạm vi Job của core (`check_job_scope`).
+- Core `WorkflowDefinition.subject_is_employee: bool = False`; lifecycle đặt `True` cho onboard / offboard / transfer / mailbox_release. Là cơ chế chung cho mọi workflow,
+  nhưng chỉ kiểm thử với các quy trình lifecycle.
+
+### Chọn Playbook cho Job (`resolve`)
+
+Thứ tự: **đã ghim** (Job đã có run) → **đã gán** (`workflow_guides[workflow_key]`, phải còn tồn tại và đã xuất bản; id mồ côi / chưa xuất bản bị bỏ qua) →
+**đúng một** Playbook đã xuất bản có bước `job` của quy trình → **nhiều ứng viên** (chỉ người có `playbook.guides.publish` nhận danh sách `ambiguous` để vào gán;
+người khác chỉ thấy "không có") → **không có** = `GET` trả 200 `{guide: null}` và panel **không hiện** (trang Job của workflow khác không bị ảnh hưởng).
+Gán qua `GET/PUT /api/playbook/settings/job-guides` (audit qua `core.settings`), UI nằm trong trang Playbook; chỉ gán được Playbook đã xuất bản và quy trình có thật.
+`step_guide` (liên kết từ bước Job sang Playbook) ưu tiên Playbook đã gán cho quy trình.
+
+### Cách chạy trên Job (`run_for_job`, hàm thuần)
+
+| Loại node | Quy tắc |
+|---|---|
+| **Bước tay** | `step` có **≤ 1 con** (kể cả node gốc). Tick được; không chặn đi tiếp. |
+| **Lựa chọn** | mọi node **không phải** `check` / `switch` / `outcome` có **≥ 2 con** (kể cả node `job` như `collect`, `transfer_plan` của Offboard / Thuyên chuyển). Nhãn nhánh rỗng hiện "Nhánh N". |
+| **Bước `job`** | hiện **trạng thái thật** của `JobStep` (tiêu đề lấy từ Job); quy trình của Job này không có bước đó thì "Không áp dụng cho Job này". Không tick được; nếu có ≥ 2 con thì vẫn là lựa chọn. |
+| **`check` / `switch`** | tự quyết bằng fact (xem "Đóng băng" dưới đây). |
+
+- **Vòng lặp:** gặp lại node đã thăm thì dừng `needs_choice` tại **node lựa chọn gần nhất trong vòng** và **hỏi lại**; lựa chọn cũ bị bỏ qua ở lần thăm sau, UI không hiện lại nhánh đã chọn ở
+  lần trước; chọn lại đúng nhánh cũ là no-op. Vòng không có node lựa chọn thì trạng thái `loop`. Đổi nhánh làm mark của nhánh bỏ thành "đã làm ở nhánh khác".
+- **Đánh dấu:** *xong* (`done`), *Không áp dụng* (`na`, **bắt buộc lý do** 3–500 ký tự; không áp dụng cho node lựa chọn), hoặc **bỏ tick** (xoá mark). Lưu `done_by` / `done_at`, giữ nguyên khi Job chuyển người.
+  Tick node ngoài nhánh đang đi vẫn được nhưng không tính vào số bước còn lại (N chỉ đếm bước tay trên nhánh đang đi chưa `done` / `na`); chưa tới `outcome` / hết nhánh thì panel báo "chưa đi hết nhánh".
+- **Đóng băng quyết định:** mỗi lần ghi, các `check` / `switch` mới đi tới trên nhánh hiện tại được lưu vào `decisions` (`{branch, left, right, op, result, frozen_at}`, giá trị fact đã chuyển thành JSON an toàn);
+  các lần chạy sau dùng quyết định đã lưu nên **fact đổi không làm lật nhánh**. Không đóng băng khi `missing_data` / `no_branch`. Nút **"Kiểm tra lại"** (`DELETE …/decisions/{node}`, quyền execute + audit)
+  bỏ quyết định để tính lại từ fact sống. Job chưa có run thì fact sống, không tính N / next action.
+- **Facts** chỉ nạp khi `workflow.subject_is_employee` là `True` (Mã NV = `job.subject_key`, chuỗi, zero-fill 6 như `run_guide`, vd `003551`); workflow khác: check không có dữ liệu = "chưa biết".
+
+### Ghim phiên bản và ghi (API)
+
+- `GET /api/playbook/jobs/{job_id}` – không ghi gì. Trả `guide {id,title,version}`, `pinned`, `run` (cây đã chạy), `can_edit`, `employee_id`.
+- `PUT|DELETE /api/playbook/jobs/{job_id}/marks/{node_id}`, `PUT|DELETE …/choices/{node_id}`, `DELETE …/decisions/{node_id}`. Client luôn gửi `guide_id` + `version` **đang hiển thị** (body với PUT, query với DELETE).
+- **Ghim ở lần ghi đầu:** tạo `playbook_job_run` (khoá Job `FOR UPDATE`) với đúng `guide_id` + `version` client gửi; nếu khác kết quả `resolve` hiện hành → **409 `playbook_changed`** ("Playbook vừa đổi, tải lại trang").
+  Job đã ghim thì mọi lần ghi phải khớp bản đã ghim, nếu không 409; xuất bản v2 sau khi ghim vẫn chạy v1. Xoá guide chen giữa lúc ghim (IntegrityError) cũng thành 409. Lần ghim ghi audit `playbook.job_pinned`.
+  Thao tác **gỡ** (`DELETE`) trên Job chưa ghim **không ghim**, trả payload hiện tại.
+- Mọi thay đổi có `audit.record` cùng transaction (`job_mark_set` / `job_mark_cleared`, `job_choice_set` / `job_choice_cleared`, `job_decision_dropped`). Không ghi `JobEvent`.
+- **`job_busy`:** ghi chờ khoá dòng Job tối đa **3 giây** (`SET LOCAL lock_timeout`); quá hạn (worker đang chạy một bước) → 409 `job_busy` "Job đang chạy một bước – thử lại sau ít giây."
+
+### Quyền (least privilege)
+
+- Đọc: `playbook.guides.view` **và** quyền xem của workflow **và** phạm vi Job của core (`check_job_scope`: Operator chỉ thấy Job của mình, ngoài phạm vi 403/404 như core). Ghi: thêm quyền **execute** của workflow
+  (viewer không tick được; nút tick ẩn bằng `can_edit` / `can()`). Panel ẩn khi module playbook tắt hoặc thiếu `playbook.guides.view`.
+- Danh sách ứng viên khi mơ hồ, link gán và API `settings/job-guides` chỉ cho `playbook.guides.publish` (Administrator / Manager / Supervisor).
+- Job **đã hoàn tất vẫn tick được** (để dọn bước tay sau khi đóng Job); Job **đã huỷ thì không** (409 `job_cancelled`, panel chỉ xem). Wizard và màn đầy đủ đều có khung (wizard: thu gọn dưới bước hiện tại, mọi trạng thái Job).
+
+### "Việc tiếp theo" và xoá Playbook
+
+- `NextActionSource` playbook (priority 3, key `playbook:job:{id}`): cho **assignee hiện tại** của Job `completed` trong **≤ 30 ngày**, **chỉ Job đã có run**, workflow người đó có quyền xem, khi còn bước tay
+  trên nhánh hoặc chưa đi hết nhánh (`needs_choice`); **không** nhắc vì thiếu dữ liệu / không có nhánh (người dùng không sửa được). Chỉ dùng quyết định đã lưu, không gọi `FactSource`. Link `/{module}/jobs/{id}`.
+- **Xoá Playbook bị chặn** (`Conflict`, tiếng Việt) khi còn Job **chưa huỷ** đang dùng nó; `playbook_job_run` / `playbook_job_mark` cascade theo guide và Job. Hệ quả **chấp nhận**: Playbook đã ghim bởi Job `completed`
+  **không bao giờ xoá được** (chỉ huỷ xuất bản / thay bản mới).
+
+### Dữ liệu (`0004_playbook`)
+
+`playbook_job_run(job_id PK → core_job ON DELETE CASCADE, guide_id → playbook_guide ON DELETE CASCADE, version, choices JSONB, decisions JSONB, pinned_at, pinned_by)`;
+`playbook_job_mark(job_id → playbook_job_run CASCADE, node_id, status done|na, reason, done_by, done_at, PK(job_id,node_id))`. Setting `workflow_guides: {workflow_key: guide_id}` ở `core.settings`.
+
+### Chấp nhận / Deferred
+
+- Panel **hiện bản cũ** của Playbook tới khi Job đổi (`version` của Job đổi thì refetch) hoặc tới khi ghi lần đầu bị 409 (Job chưa ghim mà Playbook vừa đổi); sau 409 tải lại là đủ.
+- Chưa có trigger riêng khi "nhận Job"; không chặn đóng Job; không sửa sơ đồ Playbook trong Job; cơ chế chung cho mọi workflow nhưng chỉ kiểm thử 3 quy trình lifecycle (reassign / receive / ticket_* ngoài phạm vi).
+- Job chưa giao ai thì ai có quyền execute + phạm vi cũng tick được (nhất quán với core).
+- **Chưa thử với Job / SDP thật; chỉ thử với dữ liệu giả.**

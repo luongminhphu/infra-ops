@@ -210,3 +210,29 @@ export function removeStep(tree: Tree, id: string): Tree {
   }
   return pruneUnreachable({ root: tree.root, nodes });
 }
+
+/** The Playbook run inside a Job (GET /api/playbook/jobs/{id}); every write returns the same payload. */
+export type JobMark = { status: "done" | "na"; reason: string | null; by: string | null; at: string | null };
+export interface JobTraceEntry extends TraceEntry {
+  manual: boolean;
+  mark: JobMark | null;
+  job_state?: string;
+  job_title?: string;
+  frozen_at?: string | null;
+}
+export interface JobPlaybook {
+  guide: { id: string; title: string; version: number } | null;
+  ambiguous?: { id: string; title: string; version: number }[];
+  pinned?: boolean;
+  run?: {
+    status: RunResult["status"];
+    trace: JobTraceEntry[];
+    outcome?: RunResult["outcome"];
+    manual_left: number;
+    path_complete: boolean;
+    off_path_marks: string[];
+  };
+  can_edit?: boolean;
+  employee_id?: string | null;
+}
+export const jobPlaybookKey = (jobId: string) => ["playbook", "job", jobId] as const;
