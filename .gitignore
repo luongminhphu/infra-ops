@@ -28,3 +28,6 @@ certs/
 
 # graphify output (rebuild with /graphify .)
 graphify-out/
+
+# cowork working memory (plans, challenges, log) – local only
+.vibe/
