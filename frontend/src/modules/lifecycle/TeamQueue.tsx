@@ -1,8 +1,8 @@
 import { Link, useNavigate } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Hand, Inbox } from "lucide-react";
 import { toast } from "sonner";
-import { api, errorMessage } from "@/core/api/client";
+import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { Button } from "@/core/ui/button";
 import { EmptyState, ErrorState, LoadingRows, Mono } from "@/core/ui/feedback";
@@ -10,6 +10,7 @@ import { HelpTip } from "@/core/ui/help-tip";
 import { StatusBadge } from "@/core/ui/status";
 import { formatDate, isoDateVn } from "@/core/lib/format";
 import { JOB_STATUS, JOB_WORKFLOWS, WORKFLOW_LABEL, jobStatusLabel, type JobListItem } from "./jobs";
+import { useClaimJob } from "./useClaimJob";
 
 /** Open jobs split into the unclaimed queue (oldest effective date first) and the work each person holds. */
 export function splitQueue(jobs: JobListItem[]): { waiting: JobListItem[]; byPerson: { name: string; userId: string | null; jobs: JobListItem[] }[] } {
@@ -50,7 +51,7 @@ function JobLine({ j, action }: { j: JobListItem; action?: React.ReactNode }) {
           {daysLate(j) > 0 && j.status !== "running" && <StatusBadge status={j.params.kind === "offboard" ? "failed" : "warning"} label={`Trễ ${daysLate(j)} ngày`} />}
         </span>
         <span className="mt-0.5 block text-sm text-muted">
-          Hiệu lực {formatDate(j.params.effective_date)} · request <Mono>#{j.params.request_display_id ?? j.external_ref}</Mono> · {stepText(j)}
+          Hiệu lực {formatDate(j.params.effective_date)} · request <Mono className="whitespace-nowrap">#{j.params.request_display_id ?? j.external_ref}</Mono> · {stepText(j)}
         </span>
       </Link>
       {action ?? <ChevronRight className="mt-1 size-4 shrink-0 text-muted" aria-hidden="true" />}
@@ -66,24 +67,16 @@ function JobLine({ j, action }: { j: JobListItem; action?: React.ReactNode }) {
 export function TeamQueueWidget() {
   const { me } = useAuth();
   const navigate = useNavigate();
-  const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["jobs", "team", "open"],
     queryFn: () => api<{ items: JobListItem[] }>(`/api/core/jobs?lean=1&status=open&limit=500&workflows=${JOB_WORKFLOWS}`),
     refetchInterval: 30_000,
   });
-  const claim = useMutation({
-    mutationFn: (j: JobListItem) => api(`/api/lifecycle/jobs/${j.id}/claim`, { method: "POST" }),
-    onSuccess: (_r, j) => {
-      toast.success(`Đã nhận ${WORKFLOW_LABEL[j.workflow_key] ?? "Job"} ${j.subject_label}. SDP ghi bạn là Technician trong ít giây; Job chuyển sang Việc của tôi.`, {
-        action: { label: "Mở Việc của tôi", onClick: () => navigate("/me/work") },
-      });
-      void qc.invalidateQueries({ queryKey: ["jobs"] });
-    },
-    onError: (e) => {
-      toast.error(errorMessage(e));
-      void qc.invalidateQueries({ queryKey: ["jobs", "team"] });
-    },
+  const claim = useClaimJob(undefined, (id) => {
+    const j = q.data?.items.find((x) => x.id === id);
+    toast.success(`Đã nhận ${j ? `${WORKFLOW_LABEL[j.workflow_key] ?? "Job"} ${j.subject_label}` : "Job"}. SDP ghi bạn là Technician trong ít giây; Job chuyển sang Việc của tôi.`, {
+      action: { label: "Mở Việc của tôi", onClick: () => navigate("/me/work") },
+    });
   });
   const { waiting, byPerson } = splitQueue(q.data?.items ?? []);
   if (q.isError) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
@@ -109,7 +102,7 @@ export function TeamQueueWidget() {
                   key={j.id}
                   j={j}
                   action={
-                    <Button size="sm" loading={claim.isPending && claim.variables?.id === j.id} onClick={() => claim.mutate(j)} aria-label={`Nhận ${j.subject_label}`}>
+                    <Button size="sm" loading={claim.isPending && claim.variables === j.id} onClick={() => claim.mutate(j.id)} aria-label={`Nhận ${j.subject_label}`}>
                       <Hand className="size-4" aria-hidden="true" />Nhận
                     </Button>
                   }

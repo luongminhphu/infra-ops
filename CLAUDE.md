@@ -8,7 +8,7 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 - `backend/app/core/*` – platform core. `backend/app/modules/<id>/` – modules (manifest.py required).
 - `frontend/src/core/*` – shell, design system (`ui/`), core pages. `frontend/src/modules/<id>/` – module UI.
 - `backend/migrations/<branch>/versions` – one Alembic branch per module (`core`, `lifecycle`, `workload`, `playbook`).
-- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §74).
+- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §75).
 
 ## Conventions
 
@@ -40,6 +40,8 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
   unchanged). Personal pages are `portal` sections in the frontend module (rendered on `/me/work`).
 - Operator flows are step-by-step (core `Wizard`): pre-fill everything the system knows (with its source) and ask for
   confirmation; supervisors keep the full screen. New operator flows follow this pattern.
+  Wizards call core `useFocusLayout()` (hides the tool sub-nav). Status figures read from a synced system show the
+  last *successful* sync and say "no data yet" instead of drawing zeros when there was none.
 - Things a person must act on go into the "Việc tiếp theo" queue: declare a `NextActionSource` in the manifest.
   Records a person may find from the Ctrl+K palette: declare a `SearchSource` (match only fields the list shows, same
   permission + row scope as the list endpoint, accent-free via `core.text.fold`/`fold_sql`). The opt-in e-mail/Teams

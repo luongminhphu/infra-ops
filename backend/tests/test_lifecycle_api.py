@@ -582,3 +582,65 @@ async def test_sync_auto_cancels_and_reopens_job_with_request(admin, configured,
     set_status("Open", 9_000_000_000_002)
     summary = await _sync()
     assert summary["jobs_reopened"] == 1 and await job_status() == "draft"
+
+
+@respx.mock(assert_all_mocked=True, assert_all_called=False)
+async def test_unclaimed_jobs_notice(admin, configured, respx_mock) -> None:  # type: ignore[no-untyped-def]
+    from types import SimpleNamespace
+
+    from sqlalchemy import select
+
+    from app.core.workflow.models import Job
+    from app.modules.lifecycle.next_actions import load
+
+    mock_systems(respx_mock)
+    await _sync()
+    me = (await admin.get("/api/core/me")).json()
+
+    def unclaimed(items):  # type: ignore[no-untyped-def]
+        return next((i for i in items if i["key"] == "jobs:unclaimed"), None)
+
+    def count(item):  # type: ignore[no-untyped-def]
+        return int(item["detail"].split()[0]) if item else 0
+
+    async with get_sessionmaker()() as s:
+        jobs = list(
+            (
+                await s.scalars(
+                    select(Job).where(
+                        Job.workflow_key.in_(
+                            ["lifecycle.onboard", "lifecycle.offboard", "lifecycle.transfer"]
+                        ),
+                        Job.status.not_in(["completed", "cancelled"]),  # only these count as "waiting"
+                    )
+                )
+            ).all()
+        )
+        assert len(jobs) >= 2
+        for j in jobs:
+            j.assignee_user_id = j.assignee_name = None
+        await s.commit()
+        user = SimpleNamespace(id=me["id"], has=lambda p: True)
+        item = unclaimed(await load(s, user))
+        assert item and item["kind"] == "notice" and item["priority"] == 4
+        n = count(item)
+        assert n >= 2
+        # Claimed: gone from the count. A pending hand-over (lifecycle.assign) hides it too.
+        jobs[0].assignee_user_id, jobs[0].assignee_name = me["id"], "Me"
+        s.add(
+            Job(
+                workflow_key="lifecycle.assign",
+                external_ref=str(jobs[1].id),
+                status="running",
+                subject_key="x",
+                subject_label="x",
+                params={},
+                created_by="t",
+                module_id="lifecycle",
+                idempotency_key="u04-pending",
+            )
+        )
+        await s.commit()
+        assert count(unclaimed(await load(s, user))) == n - 2
+        # Without lifecycle.job.execute (viewer): no notice.
+        assert unclaimed(await load(s, SimpleNamespace(id=me["id"], has=lambda p: False))) is None

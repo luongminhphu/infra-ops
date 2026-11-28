@@ -1026,6 +1026,11 @@ async def test_job_assignee_follows_sdp_and_reassign_writes_back(admin, client, 
     sdp_id = {p["name"]: p["id"] for p in (await admin.get("/api/core/connections")).json()}["SDP WF"]
     r = await client.get("/api/core/me/credentials")
     assert [c["credential"] for c in r.json() if c["profile_id"] == sdp_id] == [None]  # not entered yet
+    early = {p["upn"]: p["id"] for p in (await client.get("/api/lifecycle/assignees")).json()}
+    r = await client.post(  # no personal key yet: refused up front, nothing left waiting
+        f"/api/lifecycle/jobs/{j['id']}/assign", json={"user_id": early["op-assign2@test.local"]}
+    )
+    assert r.status_code == 409 and r.json()["error"]["code"] == "personal_credential_missing", r.text
     r = await client.put(
         f"/api/core/me/credentials/{sdp_id}",
         json={"auth_type": "api_key", "secrets": {"api_key": "sup-0000000001"}},
@@ -1038,6 +1043,21 @@ async def test_job_assignee_follows_sdp_and_reassign_writes_back(admin, client, 
         json={"user_id": people["op-assign2@test.local"], "reason": "Nghỉ phép"},
     )
     assert r.status_code == 201, r.text
+    from app.core.scheduler.service import get_task
+    from app.core.workflow.engine import PUMP_TASK_KEY
+
+    async with get_sessionmaker()() as s:  # the pump was requested in the same commit as the assignment
+        assert (await get_task(s, PUMP_TASK_KEY)).requested_by == "sup-assign@test.local"
+        aj = await s.get(Job, r.json()["id"])
+        aj.status = "waiting"  # what the engine stores on PersonalCredentialMissing
+        await s.commit()
+    st = (await client.get(f"/api/lifecycle/jobs/{j['id']}/assignment")).json()
+    assert st["pending"] is True and st["status"] == "waiting" and st["waiting_reason"] == "personal_key"
+    assert st["mine"] is False and st["requested_by_name"] == "Sup"
+    async with get_sessionmaker()() as s:
+        aj = await s.get(Job, r.json()["id"])
+        aj.status = "running"
+        await s.commit()
     await run_worker()
     assign_job = (await admin.get(f"/api/core/jobs/{r.json()['id']}")).json()
     assert assign_job["status"] == "completed", assign_job
@@ -1060,14 +1080,48 @@ async def test_job_assignee_follows_sdp_and_reassign_writes_back(admin, client, 
         jb = await s.get(Job, j["id"])
         jb.assignee_user_id, jb.assignee_name = None, None
         await s.commit()
+    # Without their own SDP key the claim is refused up front: no assignment job is left waiting.
+    n_before = len((await admin.get("/api/core/jobs?workflows=lifecycle.assign&limit=500")).json()["items"])
+    r = await client.post(f"/api/lifecycle/jobs/{j['id']}/claim")
+    assert r.status_code == 409 and r.json()["error"]["code"] == "personal_credential_missing", r.text
+    assert (
+        len((await admin.get("/api/core/jobs?workflows=lifecycle.assign&limit=500")).json()["items"])
+        == n_before
+    )
+    assert (await client.get(f"/api/lifecycle/jobs/{j['id']}/assignment")).json() == {"pending": False}
+    assert (
+        await client.put(
+            f"/api/core/me/credentials/{sdp_id}",
+            json={"auth_type": "api_key", "secrets": {"api_key": "op2-0000000001"}},
+        )
+    ).status_code == 200
     r = await client.post(f"/api/lifecycle/jobs/{j['id']}/claim")
     assert r.status_code == 201, r.text
+    # The pump was requested (runs within seconds) and the pending assignment is readable by the operator.
+    async with get_sessionmaker()() as s:
+        assert (await get_task(s, PUMP_TASK_KEY)).requested_by == "op-assign2@test.local"
+    st = (await client.get(f"/api/lifecycle/jobs/{j['id']}/assignment")).json()
+    assert st["pending"] is True and st["to_name"] == "op-assign2@test.local"
+    assert st["mine"] is True and st["waiting_reason"] is None
+    await client.login("op-assign1@test.local")
+    other = (await client.get(f"/api/lifecycle/jobs/{j['id']}/assignment")).json()  # unassigned: anyone sees
+    assert other["mine"] is False and {**other, "mine": True} == st
+    await client.login("op-assign2@test.local")
     claim = (await admin.get(f"/api/core/jobs/{r.json()['id']}")).json()
     assert claim["workflow_key"] == "lifecycle.assign" and claim["params"]["reason"] == "Nhận Job"
     # A second person pressing "Nhận" before the SDP write-back finished is refused.
     await client.login("op-assign1@test.local")
     r = await client.post(f"/api/lifecycle/jobs/{j['id']}/claim")
     assert r.status_code == 409 and r.json()["error"]["code"] == "job_being_assigned", r.text
+    # Once the job belongs to someone else, another operator may not read its assignment.
+    from app.core.auth.models import User
+
+    async with get_sessionmaker()() as s:
+        jb = await s.get(Job, j["id"])
+        other = await s.scalar(select(User).where(User.upn == "op-assign2@test.local"))
+        jb.assignee_user_id, jb.assignee_name = other.id, "op2"
+        await s.commit()
+    assert (await client.get(f"/api/lifecycle/jobs/{j['id']}/assignment")).status_code == 403
 
 
 async def test_pump_is_not_starved_by_jobs_waiting_on_people(admin) -> None:  # type: ignore[no-untyped-def]

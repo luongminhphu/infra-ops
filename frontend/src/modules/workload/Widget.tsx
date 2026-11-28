@@ -4,8 +4,9 @@ import { ChevronRight, CircleCheck } from "lucide-react";
 import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { LoadingRows, Mono } from "@/core/ui/feedback";
+import { StatusBadge } from "@/core/ui/status";
 import { formatDateTime } from "@/core/lib/format";
-import { useTechnicians, type Ticket } from "./api";
+import { useSyncStatus, useTechnicians, type Ticket } from "./api";
 
 /**
  * Dashboard "next action" for the Infra Support workload. Operators see their own overdue tasks;
@@ -14,6 +15,7 @@ import { useTechnicians, type Ticket } from "./api";
 export function WorkloadNextWidget() {
   const { can } = useAuth();
   const techs = useTechnicians();
+  const sync = useSyncStatus();
   const t = techs.data;
   const scope = t?.view_all ? "" : "me";
   const overdue = useQuery({
@@ -21,8 +23,15 @@ export function WorkloadNextWidget() {
     queryFn: () => api<{ total: number; items: Ticket[] }>(`/api/workload/tickets?${new URLSearchParams({ state: "overdue", technician_id: scope, limit: "5" })}`),
     enabled: !!t,
   });
-  if (techs.isLoading || overdue.isLoading) return <LoadingRows rows={3} />;
+  if (techs.isLoading || overdue.isLoading || sync.isLoading) return <LoadingRows rows={3} />;
   if (!t) return null;
+  if (sync.data && !sync.data.last_success_at)
+    return (
+      <p className="py-3 text-sm text-muted">
+        Chưa có dữ liệu từ ServiceDesk Plus.
+        {sync.data.last_run_failed && <span className="ml-1 text-waiting">Lần đồng bộ gần nhất lỗi.</span>}
+      </p>
+    );
   if (!t.view_all && !t.me)
     return (
       <p className="py-3 text-sm">
@@ -43,6 +52,9 @@ export function WorkloadNextWidget() {
   const join = base.includes("?") ? "&" : "?";
   return (
     <div className="py-2">
+      {sync.data?.last_run_failed && (
+        <p className="mb-2"><StatusBadge status="warning" label="Lần đồng bộ gần nhất lỗi – số liệu có thể cũ" /></p>
+      )}
       <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
         <Link to={base} className="hover:underline"><span className="text-lg font-semibold tabular">{open}</span> task đang chờ{t.view_all ? "" : " của bạn"}</Link>
         <Link to={`${base}${join}state=overdue`} className={total ? "text-failed hover:underline" : "text-muted hover:underline"}>

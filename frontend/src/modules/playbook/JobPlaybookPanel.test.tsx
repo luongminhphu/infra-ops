@@ -23,10 +23,10 @@ const payload = (over: Record<string, unknown> = {}) => ({
   },
   ...over,
 });
-const ui = () =>
+const ui = (status = "running", collapsible = false) =>
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <MemoryRouter><JobPlaybookPanel jobId="job1" workflowKey="lifecycle.onboard" status="running" version={1} /></MemoryRouter>
+      <MemoryRouter><JobPlaybookPanel jobId="job1" workflowKey="lifecycle.onboard" status={status} version={1} collapsible={collapsible} /></MemoryRouter>
     </QueryClientProvider>,
   );
 const serve = (data: unknown) => h.api.mockImplementation(async (url: string) => (url.endsWith("/jobs/job1") ? data : payload()));
@@ -52,6 +52,33 @@ describe("JobPlaybookPanel", () => {
     expect(screen.getByText("Hoàn tất")).toBeTruthy();
     expect(screen.getByText(/Chưa đi hết nhánh – chọn tiếp ở bước “Loại máy”/)).toBeTruthy();
     expect(screen.getByText("1 bước đã đánh dấu ở nhánh khác.")).toBeTruthy();
+  });
+
+  it("collapsible panel is closed by default with a heading and a one-line summary", async () => {
+    serve(payload());
+    const { container } = ui("running", true);
+    expect(await screen.findByRole("heading", { name: /Playbook: Onboard/ })).toBeTruthy();
+    expect(container.querySelector("details")!.hasAttribute("open")).toBe(false);
+    expect(screen.getByText(/còn 1 bước tay · đang ở “Loại máy”/)).toBeTruthy();
+    // The heading is a sibling of <details>, never inside <summary> (VoiceOver flattens summary content).
+    const h = screen.getByRole("heading", { name: /Playbook: Onboard/ });
+    expect(h.closest("summary")).toBeNull();
+    expect(h.nextElementSibling?.tagName).toBe("DETAILS");
+  });
+
+  it("collapsible summary says the branch is finished when the path is complete", async () => {
+    serve(payload({ run: { ...payload().run, status: "end", manual_left: 0, path_complete: true } }));
+    ui("running", true);
+    expect(await screen.findByText(/đã xong bước tay · đã đi hết nhánh/)).toBeTruthy();
+  });
+
+  it("draft Job shows manual steps in a neutral tone, running Job in a warning tone", async () => {
+    serve(payload());
+    const a = ui("draft");
+    expect((await a.findByText("Còn 1 bước tay chưa xong")).closest("span")!.className).toContain("text-skipped");
+    a.unmount();
+    const b = ui("running");
+    expect((await b.findByText("Còn 1 bước tay chưa xong")).closest("span")!.className).toContain("text-waiting");
   });
 
   it("ticks a manual step with the shown guide id and version", async () => {

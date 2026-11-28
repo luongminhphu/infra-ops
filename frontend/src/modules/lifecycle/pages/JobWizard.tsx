@@ -6,6 +6,7 @@ import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { formatDate, isoDateVn } from "@/core/lib/format";
 import { useDebounced } from "@/core/lib/useDebounced";
+import { useFocusLayout } from "@/core/layout/focus";
 import { Button } from "@/core/ui/button";
 import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input } from "@/core/ui/field";
@@ -15,6 +16,7 @@ import { JOB_STATUS, WORKFLOW_LABEL, jobStatusLabel, operatorTask, type Job, typ
 import { JobPanels, StepDetail, mailboxOptionOpen, useJobActions } from "./JobPage";
 import { buyLink, proposedFor } from "../buy";
 import { AssetPicker, MailboxOption } from "./JobStepPanels";
+import { ClaimCard } from "./AssignJob";
 
 interface Asset {
   id: string;
@@ -63,17 +65,20 @@ const sameAssets = (a: JobAsset[], b: JobAsset[]) => a.map((x) => x.id).sort().j
  * pre-filled. Once started, it shows only the current step and what to do in it.
  */
 export function JobWizard({ job, onFull }: { job: Job; onFull: () => void }) {
-  const { can } = useAuth();
+  const { can, me } = useAuth();
+  useFocusLayout({ highlight: me && job.assignee?.user_id === me.id ? "/me/work" : undefined });
   const act = useJobActions(job);
   const canRun = can("lifecycle.job.execute");
   const ref = job.params.request_display_id ?? job.external_ref;
   const header = (
+    <>
     <PageHeader
       title={`${WORKFLOW_LABEL[job.workflow_key] ?? job.workflow_title} – ${job.subject_label}`}
       description={
         <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
           <StatusBadge status={job.stalled_minutes ? "warning" : JOB_STATUS[job.status].status} label={jobStatusLabel(job)} />
-          <span>Request <Mono>#{ref}</Mono></span>
+          {job.assignee && <span>Phụ trách: <strong className="font-medium text-ink">{job.assignee.name}</strong></span>}
+          <span>Request <Mono className="whitespace-nowrap">#{ref}</Mono></span>
           <span>Hiệu lực {formatDate(job.params.effective_date)}</span>
         </span>
       }
@@ -86,6 +91,8 @@ export function JobWizard({ job, onFull }: { job: Job; onFull: () => void }) {
         </>
       }
     />
+    <ClaimCard job={job} />
+    </>
   );
 
   // Every wizard state shows the panels (collapsible); writes follow the backend's can_edit.

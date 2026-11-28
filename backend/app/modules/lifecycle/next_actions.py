@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import String, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import raiseload
 
@@ -85,6 +85,34 @@ async def load(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
         s = await load_module_settings(session)
         if key := await personal_key_item(session, user.id, "sdp", s.sdp_profile_id):
             items.append(key)
+        # Unassigned open Jobs (visible to everyone, see check_job_scope): without this the queue claims "nothing to do".
+        pending = select(Job.external_ref).where(
+            Job.workflow_key == "lifecycle.assign", Job.status.notin_(["completed", "cancelled", "failed"])
+        )
+        n = await session.scalar(
+            select(func.count())
+            .select_from(Job)
+            .where(
+                Job.workflow_key.in_(JOB_WORKFLOWS),
+                Job.status.not_in(["completed", "cancelled"]),
+                Job.assignee_user_id.is_(None),
+                or_(Job.assignee_name.is_(None), Job.assignee_name == ""),
+                Job.id.cast(String).not_in(pending),
+            )
+        )
+        if n:
+            items.append(
+                {
+                    "key": "jobs:unclaimed",
+                    "kind": "notice",
+                    "priority": 4,
+                    "title": "Có Job đang chờ nhận",
+                    "detail": f"{n} Job onboard/offboard/thuyên chuyển chưa có người phụ trách",
+                    "due": None,
+                    "href": "/",
+                    "action": "Xem hàng đợi",
+                }
+            )
     # Whoever coordinates jobs gets the stalled ones (anyone's) as work: the worker needs checking.
     if user.has("lifecycle.job.assign"):
         running = (

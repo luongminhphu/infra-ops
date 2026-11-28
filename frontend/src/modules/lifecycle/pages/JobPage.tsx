@@ -24,6 +24,7 @@ import { AccountPlanForm, CollectAssetsForm, DocumentLink, DraftConfig, EnrollFo
 import { EmpLink } from "./EmployeePanel";
 import { StepVerification } from "./StepVerification";
 import { AssignJobButton, PendingAssignment } from "./AssignJob";
+import { useAssignment, useClaimJob } from "../useClaimJob";
 import { Swimlane } from "@/core/ui/swimlane";
 import { useModules } from "@/core/modules";
 
@@ -290,16 +291,8 @@ export function JobPage() {
   const q = useJob(id);
   const job = q.data;
   const act = useJobActions(job);
-  const qc = useQueryClient();
-  const claim = useMutation({
-    mutationFn: () => api(`/api/lifecycle/jobs/${id}/claim`, { method: "POST" }),
-    onSuccess: () => {
-      toast.success("Đã nhận Job: infra-ops đổi Technician của request trên SDP sang bạn trong ít giây.");
-      void qc.invalidateQueries({ queryKey: ["jobs", "assign", id] });
-      void qc.invalidateQueries({ queryKey: ["job", id] });
-    },
-    onError: (e) => toast.error(errorMessage(e)),
-  });
+  const claim = useClaimJob(id);
+  const assignment = useAssignment(id);
   const [search, setSearch] = useSearchParams();
   // Operators work step by step by default; coordinators (who can reassign) get the full view.
   const view = search.get("view") ?? (can("lifecycle.job.assign") ? "full" : "wizard");
@@ -364,7 +357,7 @@ export function JobPage() {
           <span className="inline-flex flex-wrap gap-2">
             {/* One primary action: take an unassigned job first, otherwise work it step by step. */}
             {canRun && !finished && !job.assignee && (
-              <Button variant="primary" loading={claim.isPending} onClick={() => claim.mutate()}>
+              <Button variant="primary" loading={claim.isPending || !!assignment.data?.pending} onClick={() => claim.mutate()}>
                 <Hand className="size-4" aria-hidden="true" />Nhận Job
               </Button>
             )}
