@@ -25,6 +25,8 @@ const JOB_STEP: Record<string, { label: string; status: Status }> = {
 };
 const show = (v: TraceValue | null | undefined) => (v ? `${v.value}` : "—");
 const isChoice = (e: JobTraceEntry) => !!e.options && e.kind !== "check" && e.kind !== "switch";
+// Before the Job runs, open manual steps are expected: neutral tone, not a warning.
+const NOT_STARTED = new Set(["draft", "scheduled"]);
 const UNKNOWN_JOB_STEP = { label: "Không rõ", status: "pending" as Status };
 
 function kindOf(e: JobTraceEntry): { icon: typeof ClipboardList; label: string } {
@@ -37,7 +39,7 @@ function kindOf(e: JobTraceEntry): { icon: typeof ClipboardList; label: string }
 }
 
 /** The Playbook mapped to this Job: the path walked for its employee, Job steps live, manual steps ticked per Job. */
-export function JobPlaybookPanel({ jobId, version, collapsible = false }: { jobId: string; workflowKey: string; status: string; version: number; collapsible?: boolean }) {
+export function JobPlaybookPanel({ jobId, status, version, collapsible = false }: { jobId: string; workflowKey: string; status: string; version: number; collapsible?: boolean }) {
   const { can } = useAuth();
   const qc = useQueryClient();
   const key = jobPlaybookKey(jobId);
@@ -97,11 +99,11 @@ export function JobPlaybookPanel({ jobId, version, collapsible = false }: { jobI
   const clear = (node: string, path: string) => send.mutate({ node, method: "DELETE", path });
 
   return (
-    <Shell collapsible={collapsible} title={`Playbook: ${guide.title}`} meta={`phiên bản ${guide.version}`}>
-      <div className="space-y-2" aria-live="polite">
-        {run.manual_left > 0 && (
-          <p><StatusBadge status="warning" label={`Còn ${run.manual_left} bước tay chưa xong`} /></p>
-        )}
+    <Shell collapsible={collapsible} title={`Playbook: ${guide.title}`} meta={`phiên bản ${guide.version}`} summary={`${run.manual_left > 0 ? `còn ${run.manual_left} bước tay` : "đã xong bước tay"} · ${run.path_complete ? "đã đi hết nhánh" : `đang ở “${last?.title ?? "—"}”`}`}>
+      <div className="space-y-2">
+        <p aria-live="polite">
+          {run.manual_left > 0 && <StatusBadge status={NOT_STARTED.has(status) ? "pending" : "warning"} label={`Còn ${run.manual_left} bước tay chưa xong`} />}
+        </p>
         {!run.path_complete && (
           <p className="text-sm text-muted">
             {run.status === "needs_choice" ? `Chưa đi hết nhánh – chọn tiếp ở bước “${last?.title}”.` : run.status === "missing_data" ? `Chưa đủ dữ liệu để đi tiếp ở bước “${last?.title}”.` : `Chưa đi hết nhánh – dừng ở bước “${last?.title}”.`}
@@ -139,11 +141,11 @@ export function JobPlaybookPanel({ jobId, version, collapsible = false }: { jobI
                     {e.mark && <span className="text-muted">{e.mark.status === "na" && e.mark.reason ? `${e.mark.reason} · ` : ""}{e.mark.by ?? ""} · {formatDateTime(e.mark.at)}</span>}
                     {edit && !e.mark && (
                       <>
-                        <Button size="sm" aria-label={act("Đánh dấu xong")} disabled={send.isPending} onClick={() => send.mutate({ node: e.id, method: "PUT", path: `marks/${e.id}`, json: { status: "done" } })}><Check className="size-4" aria-hidden="true" />Đánh dấu xong</Button>
-                        <Button size="sm" aria-label={act("Không áp dụng")} disabled={send.isPending} onClick={() => { setReason(""); setTried(false); setNaFor(e.id); }}>Không áp dụng…</Button>
+                        <Button size="sm" className="max-sm:h-11" aria-label={act("Đánh dấu xong")} disabled={send.isPending} onClick={() => send.mutate({ node: e.id, method: "PUT", path: `marks/${e.id}`, json: { status: "done" } })}><Check className="size-4" aria-hidden="true" />Đánh dấu xong</Button>
+                        <Button size="sm" className="max-sm:h-11" aria-label={act("Không áp dụng")} disabled={send.isPending} onClick={() => { setReason(""); setTried(false); setNaFor(e.id); }}>Không áp dụng…</Button>
                       </>
                     )}
-                    {edit && e.mark && <Button size="sm" aria-label={act("Bỏ đánh dấu")} disabled={send.isPending} onClick={() => clear(e.id, `marks/${e.id}`)}><Undo2 className="size-4" aria-hidden="true" />Bỏ đánh dấu</Button>}
+                    {edit && e.mark && <Button size="sm" className="max-sm:h-11" aria-label={act("Bỏ đánh dấu")} disabled={send.isPending} onClick={() => clear(e.id, `marks/${e.id}`)}><Undo2 className="size-4" aria-hidden="true" />Bỏ đánh dấu</Button>}
                   </div>
                 )}
                 {(e.kind === "check" || e.kind === "switch") && (
@@ -156,17 +158,17 @@ export function JobPlaybookPanel({ jobId, version, collapsible = false }: { jobI
                   </p>
                 )}
                 {(e.kind === "check" || e.kind === "switch") && e.frozen_at && edit && (
-                  <Button size="sm" className="mt-1" aria-label={act("Kiểm tra lại")} disabled={send.isPending} onClick={() => clear(e.id, `decisions/${e.id}`)}><RefreshCw className="size-4" aria-hidden="true" />Kiểm tra lại</Button>
+                  <Button size="sm" className="mt-1 max-sm:h-11" aria-label={act("Kiểm tra lại")} disabled={send.isPending} onClick={() => clear(e.id, `decisions/${e.id}`)}><RefreshCw className="size-4" aria-hidden="true" />Kiểm tra lại</Button>
                 )}
                 {isChoice(e) && chosen && (
                   <p className="flex flex-wrap items-center gap-2"><CornerDownRight className="size-4 text-muted" aria-hidden="true" />Đã chọn: <b>{chosen.label}</b>
-                    {edit && <Button size="sm" aria-label={act("Đổi nhánh")} disabled={send.isPending} onClick={() => clear(e.id, `choices/${e.id}`)}>Đổi</Button>}
+                    {edit && <Button size="sm" className="max-sm:h-11" aria-label={act("Đổi nhánh")} disabled={send.isPending} onClick={() => clear(e.id, `choices/${e.id}`)}>Đổi</Button>}
                   </p>
                 )}
                 {isChoice(e) && e.chosen === undefined && (
                   edit ? (
                     <div className="flex flex-wrap gap-2">
-                      {e.options!.filter((o) => !taken.has(o.index)).map((o) => <Button key={o.index} size="sm" aria-label={act(o.label)} disabled={send.isPending} onClick={() => pick(e.id, o.index)}><CornerDownRight className="size-4" aria-hidden="true" />{o.label}</Button>)}
+                      {e.options!.filter((o) => !taken.has(o.index)).map((o) => <Button key={o.index} size="sm" className="max-sm:h-11" aria-label={act(o.label)} disabled={send.isPending} onClick={() => pick(e.id, o.index)}><CornerDownRight className="size-4" aria-hidden="true" />{o.label}</Button>)}
                     </div>
                   ) : <StatusBadge status="waiting" label="Chờ người phụ trách chọn nhánh" />
                 )}
@@ -191,7 +193,7 @@ export function JobPlaybookPanel({ jobId, version, collapsible = false }: { jobI
   );
 }
 
-function Shell({ collapsible, title, meta, children }: { collapsible: boolean; title: string; meta?: string; children: ReactNode }) {
+function Shell({ collapsible, title, meta, summary, children }: { collapsible: boolean; title: string; meta?: string; summary?: string; children: ReactNode }) {
   const head = (
     <>
       <BookOpen className="size-4 shrink-0 text-primary" aria-hidden="true" />
@@ -200,10 +202,14 @@ function Shell({ collapsible, title, meta, children }: { collapsible: boolean; t
     </>
   );
   return collapsible ? (
-    <details open className="rounded-md border border-line bg-surface px-4 py-2.5">
-      <summary className="flex cursor-pointer flex-wrap items-center gap-2">{head}</summary>
-      <div className="mt-3">{children}</div>
-    </details>
+    // The heading sits outside <summary>: VoiceOver flattens anything inside it into the button text.
+    <div className="rounded-md border border-line bg-surface px-4 py-2.5">
+      <h2 className="flex flex-wrap items-center gap-2 text-base">{head}</h2>
+      <details>
+        <summary className="cursor-pointer text-sm text-muted">{summary}</summary>
+        <div className="mt-3">{children}</div>
+      </details>
+    </div>
   ) : (
     <section aria-label="Playbook" className="rounded-md border border-line bg-surface shadow-card">
       <h2 className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5 text-lg">{head}</h2>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
@@ -9,6 +9,7 @@ import { useNextActions } from "@/core/lib/nextActions";
 import { cn } from "@/core/lib/cn";
 import { activeFor, railSections, type RailSection } from "./nav";
 import { Topbar } from "./Topbar";
+import { FocusContext, type FocusState } from "./focus";
 
 function RailLink({ s, active, tab = false, badge = 0 }: { s: RailSection; active: boolean; tab?: boolean; badge?: number }) {
   const Icon = iconFor(s.icon);
@@ -51,8 +52,10 @@ export function AppShell() {
   const pending = (next.data?.items ?? []).filter((i) => !i.passive && i.kind !== "notice").length;
   const badgeFor = (s: RailSection) => (s.id === "mine" ? pending : 0);
   const sections = useMemo(() => railSections(me?.nav ?? []), [me?.nav]);
-  const { section } = activeFor(sections, location.pathname);
-  const sub = section && section.items.length > 1 ? section : null;
+  const [focus, setFocus] = useState<FocusState | null>(null);
+  const routed = activeFor(sections, location.pathname).section;
+  const section = (focus?.highlight && sections.find((s) => s.items.some((i) => i.path === focus.highlight))) || routed;
+  const sub = !focus && section && section.items.length > 1 ? section : null;
 
   // Move focus to the main heading after navigation so screen readers announce the new page.
   useEffect(() => {
@@ -96,6 +99,7 @@ export function AppShell() {
   });
   const logo = branding.data?.has_logo ? `/api/core/branding/logo?v=${branding.data.logo_version}` : null;
   return (
+    <FocusContext.Provider value={setFocus}>
     <div className="flex min-h-dvh">
       <a
         href="#main"
@@ -128,7 +132,7 @@ export function AppShell() {
         <Topbar />
         {sub && (
           <nav aria-label={`${sub.title} (thu gọn)`} className="border-b border-line bg-surface lg:hidden">
-            <ul data-subnav-strip className="flex gap-1 overflow-x-auto px-3 py-1.5">{subLinks(true)}</ul>
+            <ul data-subnav-strip className="flex gap-1 overflow-x-auto px-3 py-1.5 [mask-image:linear-gradient(to_right,transparent,black_0.75rem,black_calc(100%-1.5rem),transparent)]">{subLinks(true)}</ul>
           </nav>
         )}
         <main id="main" className="w-full min-w-0 flex-1 px-4 pt-5 pb-24 sm:px-5 sm:pb-5 [&_h1]:outline-none" tabIndex={-1}>
@@ -148,5 +152,6 @@ export function AppShell() {
         </nav>
       </div>
     </div>
+    </FocusContext.Provider>
   );
 }

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import Select, and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit.models import AuditLog
 from app.core.audit.service import record
 from app.core.auth.deps import CurrentUser, require
 from app.core.auth.models import User
@@ -255,6 +256,25 @@ async def tickets(
 AGING = [("0-1d", 1), ("1-3d", 3), ("3-7d", 7), ("7-14d", 14)]
 
 
+async def sync_health(session: AsyncSession) -> dict[str, Any]:
+    """Last successful sync (audit "workload.sync") and whether the latest run failed."""
+    ok = await session.scalar(
+        select(func.max(AuditLog.at)).where(
+            AuditLog.module_id == MODULE_ID, AuditLog.action == "workload.sync"
+        )
+    )
+    task = await get_task(session, SYNC_TASK_KEY)
+    # A running run says nothing yet: judge by the previous finish (a failed finish stores no result).
+    failed = bool(
+        task
+        and (
+            task.last_status == "failure"
+            or (task.last_status == "running" and task.last_finished_at and task.last_result is None)
+        )
+    )
+    return {"last_success_at": ok, "last_run_failed": failed}
+
+
 @router.get("/sla")
 async def sla(
     user: CurrentUser = Depends(view),
@@ -327,6 +347,7 @@ async def sla(
     ).all()
     return {
         "now": now,
+        **await sync_health(session),
         "due_soon_hours": soon_hours,
         "groups": {k: counts.get(k, 0) for k in ("overdue", "due_soon", "on_track", "on_hold", "no_due")},
         "aging": [{"bucket": b, "count": aged.get(b, 0)} for b in [x[0] for x in AGING] + [">14d"]],
@@ -629,6 +650,7 @@ async def sync_status(
     return {
         "task": task_out(task, show_error=user.has("workload.sync.run")) if task else None,
         "last_synced_at": last,
+        **await sync_health(session),
     }
 
 

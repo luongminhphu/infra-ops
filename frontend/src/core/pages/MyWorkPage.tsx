@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, ChevronRight, Hourglass, PartyPopper, TriangleAlert } from "lucide-react";
+import { ArrowRight, ChevronRight, Hourglass, Inbox, PartyPopper, TriangleAlert } from "lucide-react";
 import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { formatDate } from "@/core/lib/format";
@@ -121,6 +121,8 @@ export function MyWorkPage() {
     .sort((a, b) => a.order - b.order);
   const all = q.data?.items ?? [];
   const notices = all.filter((i) => i.kind === "notice");
+  // Information notices (priority 4, e.g. work waiting to be taken) – warnings do not make "nothing to do" false.
+  const info = notices.filter((n) => n.priority === 4);
   const waiting = all.filter((i) => i.passive && i.kind !== "notice");
   const items = all.filter((i) => !i.passive && i.kind !== "notice");
   const [first, ...rest] = items;
@@ -141,24 +143,32 @@ export function MyWorkPage() {
   return (
     <>
       <PageHeader title="Việc của tôi" description="Việc tiếp theo nằm trên cùng (phím Alt+N để mở); làm xong, quay lại đây để sang việc kế tiếp." />
-      {notices.map((n) => (
-        <div key={n.key} role="alert" className="mb-4 flex flex-wrap items-start gap-3 rounded-md border border-waiting bg-waiting-soft px-4 py-3">
-          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-waiting" aria-hidden="true" />
-          <div className="min-w-0 flex-1">
-            <p className="font-medium">{n.title}</p>
-            <p className="text-sm text-pretty">{n.detail}</p>
+      {notices.map((n) => {
+        const info = n.priority === 4;
+        const Icon = info ? Inbox : TriangleAlert;
+        return (
+          <div
+            key={n.key}
+            role={info ? undefined : "alert"}
+            className={info ? "mb-4 flex flex-wrap items-start gap-3 rounded-md border border-line bg-surface-2 px-4 py-3" : "mb-4 flex flex-wrap items-start gap-3 rounded-md border border-waiting bg-waiting-soft px-4 py-3"}
+          >
+            <Icon className={info ? "mt-0.5 size-4 shrink-0 text-muted" : "mt-0.5 size-4 shrink-0 text-waiting"} aria-hidden="true" />
+            <div className="min-w-0 flex-1">
+              <p className="font-medium">{n.title}</p>
+              <p className="text-sm text-pretty">{n.detail}</p>
+            </div>
+            {!n.passive && <Link to={n.href} state={FROM_QUEUE} className="text-sm font-medium text-primary hover:underline">{n.action}</Link>}
           </div>
-          {!n.passive && <Link to={n.href} state={FROM_QUEUE} className="text-sm font-medium text-primary hover:underline">{n.action}</Link>}
-        </div>
-      ))}
+        );
+      })}
       <Summary />
       {q.isError && <ErrorState error={q.error} onRetry={() => q.refetch()} />}
       {q.isLoading ? (
         <LoadingRows rows={5} />
       ) : !first ? (
         <Panel className="mb-6">
-          <EmptyState icon={PartyPopper} title="Không còn việc nào cần bạn làm">
-            {waiting.length ? `${waiting.length} việc đang chờ hệ thống – xem bên dưới.` : "Job, task quá hạn và đề xuất cần bổ sung sẽ hiện ở đây khi có."}
+          <EmptyState icon={info.length ? Inbox : PartyPopper} title={info.length ? "Bạn chưa nhận việc nào" : "Không còn việc nào cần bạn làm"}>
+            {info.length ? "Xem thông báo phía trên." : waiting.length ? `${waiting.length} việc đang chờ hệ thống – xem bên dưới.` : "Job, task quá hạn và đề xuất cần bổ sung sẽ hiện ở đây khi có."}
           </EmptyState>
         </Panel>
       ) : (

@@ -1,12 +1,13 @@
 import { Link, useSearchParams } from "react-router-dom";
-import { Gauge } from "lucide-react";
+import { Database, Gauge, RefreshCw, TriangleAlert } from "lucide-react";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
+import { Button } from "@/core/ui/button";
 import { HelpTip } from "@/core/ui/help-tip";
 import { StatusBadge, type Status } from "@/core/ui/status";
 import { formatDateTime } from "@/core/lib/format";
 import { TicketActions } from "../TicketActions";
-import { useSla, type Sla, type SlaBreakdownRow, type SlaGroup } from "../api";
+import { useSla, useSyncNow, type Sla, type SlaBreakdownRow, type SlaGroup } from "../api";
 
 const CARDS: { key: SlaGroup; label: string; status: Status; href?: string }[] = [
   { key: "overdue", label: "Trễ hạn", status: "failed", href: "state=overdue" },
@@ -75,14 +76,16 @@ export function SlaPage() {
   const [params] = useSearchParams();
   const filters = { tech: params.get("tech") ?? "", group: params.get("group") ?? "", category: params.get("category") ?? "" };
   const sla = useSla(filters);
+  const syncNow = useSyncNow();
   const d = sla.data;
+  const openCount = d ? Object.values(d.groups).reduce((n, x) => n + x, 0) : 0;
   return (
     <>
       <PageHeader
         title="SLA & tuổi ticket"
         description={
           <>
-            {d ? `Số liệu tại ${formatDateTime(d.now)} (giờ Việt Nam), theo dữ liệu đồng bộ từ ServiceDesk Plus.` : "Task đang mở theo hạn xử lý và tuổi."}{" "}
+            {d?.last_success_at ? `Đồng bộ lần cuối: ${formatDateTime(d.last_success_at)} (giờ Việt Nam), từ ServiceDesk Plus.` : "Task đang mở theo hạn xử lý và tuổi."}{" "}
             <HelpTip title="Cách tính">
               <span className="block">Chỉ tính task đang mở. Task đang tạm dừng luôn nằm ở nhóm Tạm dừng, dù hạn đã qua.</span>
               <span className="block">Trễ hạn: hạn xử lý đã qua. Sắp đến hạn: hạn còn dưới {d?.due_soon_hours ?? 24} giờ. Đúng hạn: còn lại. Không có hạn: SDP chưa đặt hạn xử lý.</span>
@@ -93,8 +96,31 @@ export function SlaPage() {
       />
       {sla.isError && <ErrorState error={sla.error} onRetry={() => sla.refetch()} />}
       {sla.isLoading && <div className="rounded-md border border-line bg-surface"><LoadingRows rows={6} /></div>}
-      {d && (
+      {d && !d.last_success_at && (
+        <EmptyState
+          icon={Database}
+          title="Chưa có dữ liệu từ ServiceDesk Plus"
+        >
+          {can("workload.settings.manage") ? (
+            <Link className="text-primary underline" to="/workload/settings">Đồng bộ dữ liệu</Link>
+          ) : can("workload.sync.run") ? (
+            <Button onClick={() => syncNow.mutate()} loading={syncNow.isPending}>
+              <RefreshCw className="size-4" aria-hidden="true" />
+              Đồng bộ ngay
+            </Button>
+          ) : (
+            "Nhờ Quản trị kết nối ServiceDesk Plus"
+          )}
+        </EmptyState>
+      )}
+      {d?.last_success_at && (
         <>
+          {d.last_run_failed && (
+            <p role="status" className="mb-4 flex items-center gap-1.5 rounded-md border border-line bg-surface px-3 py-2 text-sm text-waiting">
+              <TriangleAlert className="size-4 shrink-0" aria-hidden="true" />
+              Lần đồng bộ gần nhất lỗi – số liệu theo lần thành công lúc {formatDateTime(d.last_success_at)}.
+            </p>
+          )}
           <ul aria-label="Tóm tắt SLA" className="mb-4 grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(170px,1fr))]">
             {CARDS.map((c) => {
               const body = (
@@ -120,12 +146,16 @@ export function SlaPage() {
             })}
           </ul>
           <Aging aging={d.aging} />
-          <div className="mb-4 grid gap-3 lg:grid-cols-2">
-            {can("workload.tickets.view_all") && d.by.technician && <Breakdown title="Theo người xử lý" rows={d.by.technician} param="tech" />}
-            <Breakdown title="Theo nhóm" rows={d.by.group} />
-            <Breakdown title="Theo danh mục" rows={d.by.category} />
-            <Breakdown title="Theo mức ưu tiên" rows={d.by.priority} />
-          </div>
+          {openCount ? (
+            <div className="mb-4 grid gap-3 lg:grid-cols-2">
+              {can("workload.tickets.view_all") && d.by.technician && <Breakdown title="Theo người xử lý" rows={d.by.technician} param="tech" />}
+              <Breakdown title="Theo nhóm" rows={d.by.group} />
+              <Breakdown title="Theo danh mục" rows={d.by.category} />
+              <Breakdown title="Theo mức ưu tiên" rows={d.by.priority} />
+            </div>
+          ) : (
+            <p className="mb-4 text-sm text-muted">Không có task đang mở</p>
+          )}
           <section aria-label="Task cần xử lý gấp" className="rounded-md border border-line bg-surface">
             <h2 className="border-b border-line px-3 py-2 text-sm font-semibold">Task cần xử lý gấp (tối đa 50, hạn gần nhất trước)</h2>
             {d.items.length ? (

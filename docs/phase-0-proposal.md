@@ -1855,3 +1855,31 @@ Gán qua `GET/PUT /api/playbook/settings/job-guides` (audit qua `core.settings`)
 - Chưa có trigger riêng khi "nhận Job"; không chặn đóng Job; không sửa sơ đồ Playbook trong Job; cơ chế chung cho mọi workflow nhưng chỉ kiểm thử 3 quy trình lifecycle (reassign / receive / ticket_* ngoài phạm vi).
 - Job chưa giao ai thì ai có quyền execute + phạm vi cũng tick được (nhất quán với core).
 - **Chưa thử với Job / SDP thật; chỉ thử với dữ liệu giả.**
+
+## 75. UI/UX theo critique: nhận Job trong wizard, trạng thái trung thực (28/11/2026)
+
+- **Đầu vào:** `/impeccable critique` toàn app, 28/40 Nielsen. Đánh giá A là review thiết kế, B là detector chạy trên 180 file và 15 trang đã đăng nhập; kết quả quét rỗng, mà detector không chấm bố cục, nên rỗng không có nghĩa là sạch.
+- **Nhận Job ngay trong wizard (P1):**
+  - Job chưa có người phụ trách (`assignee_name` rỗng) thì thẻ "Nhận Job" là hành động chính ở đầu wizard. Các bước chuẩn bị bên dưới không bị chặn.
+  - Lệnh nhận và lệnh gán kiểm khoá API cá nhân ngay khi bấm (409 `personal_credential_missing` kèm link "Khoá API của tôi"), rồi yêu cầu pump chạy ngay.
+  - `GET /api/lifecycle/jobs/{id}/assignment` trả trạng thái gán đang chờ cho người xem được Job đích: của mình hay người khác, đang chờ khoá API, hay lỗi (chỉ câu chung).
+  - Job chỉ có tên phụ trách trên SDP (không khớp tài khoản app) hiện "Job do <tên> phụ trách trên SDP".
+  - **Quyết định có chủ ý:** API chưa bắt buộc phải nhận Job trước khi bắt đầu. Chặn ở API sẽ khoá cứng người không xem được lệnh gán, Job nháp và Job chỉ có tên (Gate 1 C-01), nên app chỉ nhắc ở UI.
+- **Trạng thái trung thực (P1):**
+  - Bảng SLA và widget "Công việc Infra Support" lấy mốc "Đồng bộ lần cuối" từ audit `workload.sync`, tức lần đồng bộ thành công, không dùng thời điểm ticket thay đổi gần nhất.
+  - Chưa có lần đồng bộ thành công nào thì hiện "Chưa có dữ liệu từ ServiceDesk Plus", không vẽ bảng. Người có quyền cấu hình thấy link, người chỉ có quyền đồng bộ thấy nút "Đồng bộ ngay".
+  - Lần chạy kết thúc gần nhất bị lỗi thì hiện cảnh báo kèm mốc thành công trước đó.
+- **Khung Playbook trong wizard (P2):** gập mặc định, chỉ một dòng tóm tắt. Job nháp hoặc đã lên lịch dùng tông trung tính. `aria-live` chỉ đọc câu đếm; nút cao 44px trên điện thoại.
+- **"Việc của tôi" không báo hết việc giả (P2):**
+  - Có thông báo `jobs:unclaimed` ("Có Job đang chờ nhận", priority 4, loại notice, không vào huy hiệu), hiển thị kiểu thông tin.
+  - Khi chỉ còn thông báo loại thông tin, trang ghi "Bạn chưa nhận việc nào" thay cho "Không còn việc nào cần bạn làm".
+  - Digest gửi một thư khi hàng đợi từ 0 lên lớn hơn 0 (key biến mất rồi xuất hiện lại là tin mới) – chấp nhận.
+- **Wizard tập trung (P3):** core `useFocusLayout` (`core/layout/focus.tsx`) ẩn thanh Công cụ. Rail chỉ tô "Việc của tôi" khi Job là của người đang xem. Thanh Công cụ cuộn ngang trên điện thoại có mép mờ; mã request không xuống dòng.
+- **Đề xuất (ngoài phạm vi):**
+  - nhận và chuyển việc hàng loạt;
+  - System Rail trên header Job;
+  - mẫu Playbook "Tiếp nhận request" thành bước Job;
+  - tab bar theo vai trò, tên trang trên thanh mobile, nhớ vị trí bước wizard;
+  - kiểm technician SDP ngay lúc nhận (hiện chưa có technician thì lệnh gán lỗi với câu chung);
+  - kiểm accessibility tự động bằng axe.
+- Chỉ thử với dữ liệu giả.

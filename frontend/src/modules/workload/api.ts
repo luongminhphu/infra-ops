@@ -74,7 +74,7 @@ export function useSyncNow() {
     mutationFn: () => api("/api/workload/sync", { method: "POST" }),
     onSuccess: () => {
       toast.success("Đã yêu cầu đồng bộ, dữ liệu sẽ cập nhật sau ít phút.");
-      void qc.invalidateQueries({ queryKey: ["workload", "sync"] });
+      void qc.invalidateQueries({ queryKey: ["workload"] }); // SLA / lists follow the new data
     },
   });
 }
@@ -82,7 +82,7 @@ export function useSyncNow() {
 export const useSyncStatus = () =>
   useQuery({
     queryKey: ["workload", "sync"],
-    queryFn: () => api<{ last_synced_at: string | null; task: { running: boolean; last_error: string | null } | null }>("/api/workload/sync"),
+    queryFn: () => api<{ last_synced_at: string | null; last_success_at: string | null; last_run_failed: boolean; task: { running: boolean; last_error: string | null } | null }>("/api/workload/sync"),
     refetchInterval: 30_000,
   });
 
@@ -205,6 +205,9 @@ export interface SlaBreakdownRow {
 }
 export interface Sla {
   now: string;
+  /** Newest successful sync (audit); null = SDP was never read. */
+  last_success_at: string | null;
+  last_run_failed: boolean;
   due_soon_hours: number;
   groups: Record<SlaGroup, number>;
   aging: { bucket: string; count: number }[];
@@ -217,4 +220,6 @@ export const useSla = (filters: { tech: string; group: string; category: string 
   useQuery({
     queryKey: ["workload", "sla", filters],
     queryFn: () => api<Sla>(`/api/workload/sla?${new URLSearchParams(filters)}`),
+    // Nothing synced yet: pick up the first sync without a manual reload.
+    refetchInterval: (q) => (q.state.data && !q.state.data.last_success_at ? 15_000 : false),
   });

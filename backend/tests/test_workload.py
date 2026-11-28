@@ -1404,3 +1404,29 @@ async def test_sync_rereads_category_of_open_tickets_once(sdp) -> None:  # type:
         assert (t501.category, t501.subcategory) == ("Hardware", "Laptop")  # type: ignore[union-attr]
         assert t504.category is None  # type: ignore[union-attr]  # not in the answer: retried next sync
         assert t502.category is None  # type: ignore[union-attr]  # finished tickets are not re-read
+
+
+async def test_sla_and_sync_report_last_success_and_failed_run(admin, sdp) -> None:  # type: ignore[no-untyped-def]
+    from app.core.scheduler.service import get_task
+    from app.modules.workload.sync import SYNC_TASK_KEY
+
+    async with get_sessionmaker()() as s:  # the sdp fixture already synced once
+        task = await get_task(s, SYNC_TASK_KEY)
+        assert task is not None
+        task.last_status = "failure"
+        await s.commit()
+    for url in ("/api/workload/sla", "/api/workload/sync"):
+        body = (await admin.get(url)).json()
+        assert body["last_success_at"] is not None and body["last_run_failed"] is True
+    async with get_sessionmaker()() as s:  # a new run in progress keeps the previous (failed) verdict
+        task = await get_task(s, SYNC_TASK_KEY)
+        assert task is not None
+        task.last_status, task.last_finished_at, task.last_result = "running", datetime.now(UTC), None
+        await s.commit()
+    assert (await admin.get("/api/workload/sla")).json()["last_run_failed"] is True
+    async with get_sessionmaker()() as s:  # ...and a previous success stays clean
+        task = await get_task(s, SYNC_TASK_KEY)
+        assert task is not None
+        task.last_result = {"ok": 1}
+        await s.commit()
+    assert (await admin.get("/api/workload/sla")).json()["last_run_failed"] is False

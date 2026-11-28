@@ -16,7 +16,8 @@ from app.core.connections.service import open_connection
 from app.core.connectors.base import Purpose
 from app.core.connectors.biostar import BioStarClient
 from app.core.db import get_session
-from app.core.errors import AppError, Conflict, NotFound
+from app.core.errors import AppError, Conflict, NotFound, PersonalCredentialMissing
+from app.core.scheduler.service import request_run
 from app.core.workflow import engine
 from app.core.workflow.api import check_job_scope, job_out
 from app.core.workflow.models import Job
@@ -499,6 +500,44 @@ async def claim_job(
     return await _request_assignment(session, user, job, await session.get(User, user.id), "Nhận Job")
 
 
+@router.get("/jobs/{job_id}/assignment")
+async def job_assignment(
+    job_id: uuid.UUID,
+    user: CurrentUser = Depends(view),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Latest hand-over of this job to someone (so an operator can see "being assigned" / a failure)."""
+    job = await engine.get_job(session, job_id)
+    if job.workflow_key not in JOB_WORKFLOWS:
+        raise NotFound("Không tìm thấy Job onboard/offboard.")
+    check_job_scope(user, job)
+    a = await session.scalar(
+        select(Job)
+        .where(Job.workflow_key == "lifecycle.assign", Job.external_ref == str(job.id))
+        .order_by(Job.created_at.desc())
+        .limit(1)
+    )
+    if a is None or a.status in ("completed", "cancelled"):
+        return {"pending": False}
+    from app.core.auth.models import User
+
+    failed = a.status == "failed"
+    by = await session.scalar(select(User.display_name).where(User.upn == a.params.get("requested_by")))
+    return {
+        "pending": not failed,
+        "id": str(a.id),
+        "status": a.status,
+        "to_name": a.params.get("to_name"),
+        "mine": a.params.get("to_user_id") == str(user.id),
+        # The requester has not entered their own SDP key: the worker retries until they do.
+        "waiting_reason": "personal_key" if a.status == "waiting" else None,
+        "requested_by_name": by or a.params.get("requested_by"),
+        "message": "Không ghi được người phụ trách lên SDP. Hãy thử nhận lại hoặc nhờ giám sát."
+        if failed
+        else None,
+    }
+
+
 async def _request_assignment(
     session: AsyncSession, user: CurrentUser, job: Any, target: Any, reason: str
 ) -> dict[str, Any]:
@@ -511,6 +550,20 @@ async def _request_assignment(
         raise NotFound("Không tìm thấy request hoặc người nhận.")
     if job.assignee_user_id == target.id:
         raise AppError(f"Job đang do {target.display_name} phụ trách.", code="same_assignee")
+    # The worker writes SDP with the requester's own key: refuse now rather than leave an assignment waiting.
+    try:
+        await open_connection(
+            session,
+            "sdp",
+            Purpose.WRITE,
+            profile_id=(await load_module_settings(session)).sdp_profile_id,
+            as_user=user.id,
+        )
+    except PersonalCredentialMissing:
+        raise Conflict(
+            "Bạn chưa nhập khoá API ServiceDesk Plus. Vào “Khoá API của tôi” để nhập rồi thực hiện lại.",
+            code="personal_credential_missing",
+        ) from None
     assign_job_, _ = await engine.create_job(
         session,
         user.actor,
@@ -534,5 +587,6 @@ async def _request_assignment(
         after={"assignee": target.display_name},
         message=reason.strip() or None,
     )
+    await request_run(session, engine.PUMP_TASK_KEY, user.upn)  # run within seconds, not at the next tick
     await session.commit()
     return job_out(assign_job_)
