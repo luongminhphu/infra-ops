@@ -31,3 +31,8 @@ graphify-out/
 
 # cowork working memory (plans, challenges, log) – local only
 .vibe/
+
+# per-developer local settings (Claude Code hooks, Impeccable consent)
+.claude/settings.local.json
+.impeccable/config.local.json
+.impeccable/hook.cache.json
