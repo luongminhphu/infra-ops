@@ -94,3 +94,5 @@ class WorkflowDefinition:
     # Least privilege: when set, people without it see (and open) only the jobs assigned to them and the
     # unassigned ones they may take; the rest of the team's jobs stay out of their view.
     view_all_permission: str | None = None
+    # subject_key is an employee ID, so module data about that person (e.g. Playbook facts) may be read.
+    subject_is_employee: bool = False

@@ -13,6 +13,8 @@ export interface FrontendModule {
   widgets?: Record<string, ComponentType<{ data: unknown }>>;
   /** Sections of the "Việc của tôi" portal (each fetches the signed-in user's own work). */
   portal?: { key: string; order: number; permission: string; component: ComponentType }[];
+  /** Panels shown on the Job page (wizard: collapsible below the current step; full view: a section). A panel renders nothing when it has nothing to say. `version` changes every time the Job changes (use it as a refetch key); `collapsible` is true in the wizard. */
+  jobPanels?: { key: string; order: number; permission: string; title: string; component: ComponentType<{ jobId: string; workflowKey: string; status: string; version: number; collapsible?: boolean }> }[];
   /** The app's home page ("/"), when this module is the entry point (Playbook). */
   home?: ComponentType;
 }

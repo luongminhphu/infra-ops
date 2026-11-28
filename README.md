@@ -272,6 +272,7 @@ Test không bao giờ gọi hệ thống thật: SDP/BioStar được mock bằn
 | 71 | Kiểm kê gọn luồng + đối chiếu sổ TSCĐ/CCDC Kế toán (TT200/TT133), sheet Mẫu 05-TSCĐ | Xong, chưa thử với file sổ thật |
 | 72 | Rà soát tổng thể: phạm vi biên bản theo Job/người lập, xuất Excel chống formula injection (`core.xlsx`), lỗi kỹ thuật không lộ ra UI, `list_requests` phân trang SQL, sửa UI/a11y | Xong, chưa thử với SDP thật |
 | 73 | IT Support: bảng SLA & tuổi ticket, tìm kiếm toàn cục (Ctrl+K), thư tóm tắt "Việc tiếp theo" (SMTP relay + Teams), ghi chú / đóng request ngay từ danh sách | Xong, chưa thử với SDP / relay SMTP / Teams thật |
+| 74 | Playbook trong Job: trang Job Onboard / Offboard / Thuyên chuyển tự hiện Playbook, bước Job hiện trạng thái thật, tick bước tay, chọn nhánh, ghim phiên bản theo Job, nhắc trong "Việc tiếp theo" | Xong, chưa thử với Job/SDP thật |
 
 ## Đăng nhập
 

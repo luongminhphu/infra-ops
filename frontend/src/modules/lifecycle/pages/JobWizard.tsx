@@ -12,7 +12,7 @@ import { Field, Input } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
 import { From, Wizard, WizardProgress } from "@/core/ui/wizard";
 import { JOB_STATUS, WORKFLOW_LABEL, jobStatusLabel, operatorTask, type Job, type JobAsset } from "../jobs";
-import { StepDetail, mailboxOptionOpen, useJobActions } from "./JobPage";
+import { JobPanels, StepDetail, mailboxOptionOpen, useJobActions } from "./JobPage";
 import { buyLink, proposedFor } from "../buy";
 import { AssetPicker, MailboxOption } from "./JobStepPanels";
 
@@ -88,7 +88,9 @@ export function JobWizard({ job, onFull }: { job: Job; onFull: () => void }) {
     />
   );
 
-  if (job.status === "draft") return <>{header}<PrepareWizard job={job} act={act} canRun={canRun} /></>;
+  // Every wizard state shows the panels (collapsible); writes follow the backend's can_edit.
+  const panels = <div className="mx-auto mt-4 max-w-3xl empty:hidden"><JobPanels job={job} collapsible /></div>;
+  if (job.status === "draft") return <>{header}<PrepareWizard job={job} act={act} canRun={canRun} />{panels}</>;
 
   if (["completed", "cancelled"].includes(job.status)) {
     return (
@@ -99,6 +101,7 @@ export function JobWizard({ job, onFull }: { job: Job; onFull: () => void }) {
             {job.close_reason ?? "Không còn việc cần làm. Xem chi tiết đầy đủ để đọc nhật ký và biên bản."}
           </EmptyState>
         </div>
+        {panels}
       </>
     );
   }
@@ -112,6 +115,7 @@ export function JobWizard({ job, onFull }: { job: Job; onFull: () => void }) {
             Hệ thống tự bắt đầu vào ngày này. Bạn sẽ thấy bước cần làm tại đây và ở Việc của tôi.
           </EmptyState>
         </div>
+        {panels}
       </>
     );
   }
@@ -132,6 +136,7 @@ export function JobWizard({ job, onFull }: { job: Job; onFull: () => void }) {
         {mailboxOptionOpen(job) && canRun && <div className="mb-3 rounded-sm border border-line bg-surface p-3"><MailboxOption job={job} saving={act.params.isPending} onSave={(p) => act.params.mutate(p)} /></div>}
         <StepDetail job={job} step={step} act={act} focus />
       </section>
+      {panels}
     </>
   );
 }

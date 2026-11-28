@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from app.core.modules.manifest import ModuleManifest, NavItem, Permission
+from app.core.modules.manifest import ModuleManifest, NavItem, NextActionSource, Permission
+from app.modules.playbook import next_actions
 from app.modules.playbook.api import EDIT, PUBLISH, VIEW, router
+from app.modules.playbook.jobs_api import router as jobs_router
 from app.modules.playbook.search import SEARCH
 
 manifest = ModuleManifest(
@@ -21,7 +23,8 @@ manifest = ModuleManifest(
         ),
         Permission(PUBLISH, "Xuất bản và xoá Playbook", ("manager", "supervisor")),
     ],
-    routers=[router],
+    routers=[router, jobs_router],
+    next_actions=[NextActionSource("playbook.job_manual", VIEW, next_actions.load)],
     search_sources=[SEARCH],
     nav=[NavItem("Thư viện Playbook", "/playbook", "book-open", VIEW)],
     migrations_branch="playbook",

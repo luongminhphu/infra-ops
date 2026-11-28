@@ -18,8 +18,10 @@ from app.core.db import get_session
 from app.core.errors import AppError, Conflict, NotFound
 from app.core.modules.registry import get_registry
 from app.core.storage.service import check_size, read_file, save_file, sniff
-from app.modules.playbook.models import Guide, GuideImage, GuideVersion
+from app.core.workflow.models import Job
+from app.modules.playbook.models import Guide, GuideImage, GuideVersion, JobRun
 from app.modules.playbook.run import run_tree
+from app.modules.playbook.settings import load as load_job_guides
 from app.modules.playbook.templates import TEMPLATES
 from app.modules.playbook.tree import Tree, job_refs, starter, unnamed_switch_branches, unreachable
 
@@ -240,6 +242,8 @@ async def step_guide(
             .order_by(Guide.title)
         )
     ).all()
+    assigned = (await load_job_guides(session)).workflow_guides.get(workflow)
+    rows.sort(key=lambda r: r[0].id != assigned)  # the guide assigned to this workflow first (stable sort)
     for g, v in rows:
         for node_id, ref in job_refs(Tree.model_validate(v.tree)):
             if (ref.workflow, ref.step) == (workflow, step):
@@ -315,6 +319,14 @@ async def delete_guide(
     session: AsyncSession = Depends(get_session),
 ) -> None:
     g = await _guide(session, guide_id, lock=True)
+    used = await session.scalar(
+        select(func.count())
+        .select_from(JobRun)
+        .join(Job, Job.id == JobRun.job_id)
+        .where(JobRun.guide_id == g.id, Job.status != "cancelled")
+    )
+    if used:
+        raise Conflict(f"Playbook đang dùng trong {used} Job – không xoá được.", code="guide_in_use")
     await record(session, actor=user.actor, module_id=MODULE_ID, action="playbook.guide_deleted",
                  target_type="guide", target_id=str(g.id), target_label=g.title)  # fmt: skip
     await session.delete(g)

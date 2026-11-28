@@ -829,6 +829,7 @@ CLOSE = StepDefinition(
 
 ONBOARD = WorkflowDefinition(
     key="lifecycle.onboard",
+    subject_is_employee=True,
     title="Onboard nhân sự",
     view_permission=VIEW,
     view_all_permission=VIEW_ALL,
@@ -952,6 +953,7 @@ ONBOARD = WorkflowDefinition(
 
 OFFBOARD = WorkflowDefinition(
     key="lifecycle.offboard",
+    subject_is_employee=True,
     title="Offboard nhân sự",
     view_permission=VIEW,
     view_all_permission=VIEW_ALL,
@@ -1081,6 +1083,7 @@ OFFBOARD = WorkflowDefinition(
 # Created by the offboard job when a mailbox is kept: runs on the retention end date.
 MAILBOX_RELEASE = WorkflowDefinition(
     key="lifecycle.mailbox_release",
+    subject_is_employee=True,
     title="Hết hạn giữ mailbox – chuyển Ban_Users",
     view_permission=VIEW,
     view_all_permission=VIEW_ALL,
@@ -1113,6 +1116,7 @@ MAILBOX_RELEASE = WorkflowDefinition(
 # groups); transfer is not automated yet (Phase 69 covers onboard/offboard only), so these are verified manual steps.
 TRANSFER = WorkflowDefinition(
     key="lifecycle.transfer",
+    subject_is_employee=True,
     title="Thuyên chuyển / đổi cấp trên",
     view_permission=VIEW,
     view_all_permission=VIEW_ALL,

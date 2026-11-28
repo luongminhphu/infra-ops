@@ -149,6 +149,16 @@ so the sidebar updates automatically. Use core components (`@/core/ui/*`) and to
 `docs/design-system.md`. Wrap pages in `<RequirePermission permission="assets.renewal.view">`.
 If the backend icon name is new, map it in `frontend/src/core/ui/icons.ts`.
 
+**Job page panels.** A module can add a panel to the Job page of any workflow without the Job's owner importing it:
+`jobPanels: [{ key, order, permission, title, component }]` on the `FrontendModule`. The Job page (lifecycle) reads them
+through `useModules()`, keeps those the user `can(permission)` and renders them in `order` (wizard: collapsible, below the
+current step; full view: a section). The component receives `{ jobId, workflowKey, status, version, collapsible? }` and
+renders nothing when it has nothing to say. **`version` changes whenever the Job changes – use it in the query key** so
+the panel refetches. Example: Playbook's `JobPlaybookPanel` (`playbook.guides.view`).
+
+On the backend, a workflow whose `subject_key` is an employee ID sets `WorkflowDefinition.subject_is_employee=True`; modules
+that load employee facts for a Job (e.g. the Playbook run) do so only for such workflows.
+
 ## 4. New external system? Add a connector
 
 ```python

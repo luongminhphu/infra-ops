@@ -6,13 +6,17 @@ import { GuidePage } from "./pages/GuidePage";
 import { GuidesPage } from "./pages/GuidesPage";
 import { StepGuidePage } from "./pages/StepGuidePage";
 import { PlaybookHome } from "./Home";
+import { JobPlaybookPanel } from "./JobPlaybookPanel";
+import { JobGuidesSettings } from "./pages/JobGuidesSettings";
 
 /** Infra Playbook: rules and how-to guides for IT Support as branching mind maps. */
 export const playbookModule: FrontendModule = {
   id: "playbook",
   home: PlaybookHome,
+  jobPanels: [{ key: "playbook", order: 10, permission: "playbook.guides.view", title: "Playbook", component: JobPlaybookPanel }],
   routes: [
     { path: "playbook", element: <RequirePermission permission="playbook.guides.view"><GuidesPage /></RequirePermission> },
+    { path: "playbook/job-guides", element: <RequirePermission permission="playbook.guides.publish"><JobGuidesSettings /></RequirePermission> },
     { path: "playbook/for-step", element: <RequirePermission permission="playbook.guides.view"><StepGuidePage /></RequirePermission> },
     { path: "playbook/:id", element: <RequirePermission permission="playbook.guides.view"><GuidePage /></RequirePermission> },
     // Links saved before the rename (bookmarks, notes) keep working.
