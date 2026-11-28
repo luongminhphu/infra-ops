@@ -16,6 +16,7 @@ from app.core.branding.api import router as branding_router
 from app.core.config import Settings, get_settings
 from app.core.connections.api import router as connections_router
 from app.core.connectors.registry import load_builtin_connectors
+from app.core.core_manifest import CORE_MANIFEST
 from app.core.dashboard.api import router as dashboard_router
 from app.core.db import dispose_engine, get_sessionmaker
 from app.core.documents.api import router as documents_router
@@ -49,7 +50,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level, settings.log_json)
     load_builtin_connectors()
-    registry = build_registry(settings.enabled_modules)
+    registry = build_registry(CORE_MANIFEST, settings.enabled_modules)
     set_registry(registry)
     get_keyring()  # fail fast on a missing or malformed master key
 

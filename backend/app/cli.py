@@ -24,6 +24,7 @@ async def _create_admin(username: str, name: str) -> int:
     from app.core.auth.models import User
     from app.core.auth.passwords import hash_password, password_problems
     from app.core.config import get_settings
+    from app.core.core_manifest import CORE_MANIFEST
     from app.core.db import dispose_engine, get_sessionmaker
     from app.core.modules.registry import build_registry
     from app.core.rbac.service import grant_role, sync_permissions
@@ -38,7 +39,7 @@ async def _create_admin(username: str, name: str) -> int:
         print("Mật khẩu không khớp.", file=sys.stderr)
         return 1
     async with get_sessionmaker()() as session:
-        await sync_permissions(session, build_registry(settings.enabled_modules))
+        await sync_permissions(session, build_registry(CORE_MANIFEST, settings.enabled_modules))
         user = await session.scalar(select(User).where(User.upn == username.lower()))
         if user is None:
             user = User(upn=username.lower(), display_name=name)

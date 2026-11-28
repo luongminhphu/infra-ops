@@ -20,7 +20,6 @@ from app.core.modules.manifest import (
     Permission,
     ScheduledTask,
 )
-from app.core.permissions import CORE_MANIFEST
 
 
 class ModuleRegistry:
@@ -112,8 +111,9 @@ def load_manifest(module_id: str) -> ModuleManifest:
     return manifest
 
 
-def build_registry(enabled: Iterable[str]) -> ModuleRegistry:
-    return ModuleRegistry([CORE_MANIFEST, *(load_manifest(m) for m in enabled)])
+def build_registry(core: ModuleManifest, enabled: Iterable[str]) -> ModuleRegistry:
+    # The caller passes the core manifest: importing it here would make the registry depend on every core hook.
+    return ModuleRegistry([core, *(load_manifest(m) for m in enabled)])
 
 
 _registry: ModuleRegistry | None = None

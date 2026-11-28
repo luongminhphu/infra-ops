@@ -11,10 +11,10 @@ from app.core.auth.deps import CurrentUser, current_user, require
 from app.core.branding import service
 from app.core.db import get_session
 from app.core.errors import NotFound
+from app.core.permissions import BRANDING_MANAGE
 from app.core.storage.service import read_file
 
 router = APIRouter(tags=["core"])
-BRANDING_MANAGE = "core.branding.manage"  # declared in core.permissions
 
 
 @router.get("/branding")
