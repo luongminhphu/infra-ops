@@ -7,9 +7,9 @@ import io
 from typing import Any
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
+from openpyxl.styles import Alignment
 
+from app.core.xlsx import header, safe
 from app.modules.lifecycle.reconcile import RULES
 
 KIND_LABEL = {
@@ -72,7 +72,7 @@ def to_csv(rows: list[dict[str, Any]]) -> bytes:
     writer.writerow(HEADERS)
     for rec in to_records(rows):
         # Neutralise spreadsheet formula injection from external data.
-        writer.writerow([f"'{v}" if isinstance(v, str) and v[:1] in ("=", "+", "-", "@") else v for v in rec])
+        writer.writerow([safe(v) for v in rec])
     return ("﻿" + buf.getvalue()).encode("utf-8")  # BOM so Excel opens UTF-8 Vietnamese correctly
 
 
@@ -81,16 +81,9 @@ def to_xlsx(rows: list[dict[str, Any]], title: str) -> bytes:
     ws = wb.active
     assert ws is not None
     ws.title = "Đối soát"
-    ws.append(HEADERS)
+    header(ws, HEADERS, [10, 26, 22, 18, 13, 22, 10, 40, 14, 9, 11, 70])
     for rec in to_records(rows):
-        ws.append([f"'{v}" if isinstance(v, str) and v[:1] in ("=", "+", "-", "@") else v for v in rec])
-    header_fill = PatternFill("solid", fgColor="E3F0F1")
-    for cell in ws[1]:
-        cell.font = Font(bold=True)
-        cell.fill = header_fill
-    widths = [10, 26, 22, 18, 13, 22, 10, 40, 14, 9, 11, 70]
-    for i, w in enumerate(widths, start=1):
-        ws.column_dimensions[get_column_letter(i)].width = w
+        ws.append([safe(v) for v in rec])
     for row in ws.iter_rows(min_row=2):
         for cell in row:
             cell.alignment = Alignment(vertical="top", wrap_text=True)

@@ -170,6 +170,8 @@ class ConnectorType(ABC):
     # People may enter their own credential (e.g. a technician API key) used for the work they do.
     personal_credentials: ClassVar[bool] = False
     base_url_hint: ClassVar[str] = ""
+    # Config fields that decide where stored credentials are sent; changing one drops the credentials.
+    credential_bound_config: ClassVar[tuple[str, ...]] = ()
     config_model: ClassVar[type[BaseModel]]
     auth_types: ClassVar[tuple[str, ...]]
 

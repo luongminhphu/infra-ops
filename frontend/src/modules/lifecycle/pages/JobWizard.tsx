@@ -4,16 +4,17 @@ import { useQuery } from "@tanstack/react-query";
 import { CalendarClock, CheckCircle2, Coffee, Hand, LayoutList, Play, Plus, Recycle, ShoppingCart, Trash2, UserCheck } from "lucide-react";
 import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
-import { formatDate } from "@/core/lib/format";
+import { formatDate, isoDateVn } from "@/core/lib/format";
+import { useDebounced } from "@/core/lib/useDebounced";
 import { Button } from "@/core/ui/button";
-import { EmptyState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
+import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
 import { Field, Input } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
 import { From, Wizard, WizardProgress } from "@/core/ui/wizard";
 import { JOB_STATUS, WORKFLOW_LABEL, jobStatusLabel, operatorTask, type Job, type JobAsset } from "../jobs";
-import { StepDetail, useJobActions } from "./JobPage";
+import { StepDetail, mailboxOptionOpen, useJobActions } from "./JobPage";
 import { buyLink, proposedFor } from "../buy";
-import { AssetPicker } from "./JobStepPanels";
+import { AssetPicker, MailboxOption } from "./JobStepPanels";
 
 interface Asset {
   id: string;
@@ -128,6 +129,7 @@ export function JobWizard({ job, onFull }: { job: Job; onFull: () => void }) {
           {task.act ? <Hand className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" /> : <Coffee className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}
           {task.text}
         </p>
+        {mailboxOptionOpen(job) && canRun && <div className="mb-3 rounded-sm border border-line bg-surface p-3"><MailboxOption job={job} saving={act.params.isPending} onSave={(p) => act.params.mutate(p)} /></div>}
         <StepDetail job={job} step={step} act={act} focus />
       </section>
     </>
@@ -140,17 +142,19 @@ function PrepareWizard({ job, act, canRun }: { job: Job; act: ReturnType<typeof 
     { key: "info", title: "Thông tin nhân viên" },
     { key: "sdp", title: "User SDP" },
     ...(onboard ? [{ key: "devices", title: "Thiết bị cấp phát" }] : []),
+    ...(!onboard && job.params.microsoft ? [{ key: "mailbox", title: "Giữ mailbox" }] : []),
     { key: "start", title: "Bắt đầu" },
   ];
   const [i, setI] = useState(0);
   const [userQ, setUserQ] = useState("");
+  const debouncedUserQ = useDebounced(userQ, 250);
   const [assets, setAssets] = useState<JobAsset[] | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const prep = useQuery({ queryKey: ["job-prepare", job.id], queryFn: () => api<Prepare>(`/api/lifecycle/jobs/${job.id}/prepare`) });
   const users = useQuery({
-    queryKey: ["sdp-users", userQ],
-    queryFn: () => api<{ id: string; name: string; email: string | null; employee_id: string | null }[]>(`/api/lifecycle/sdp-users?q=${encodeURIComponent(userQ)}`),
-    enabled: userQ.trim().length >= 2,
+    queryKey: ["sdp-users", debouncedUserQ],
+    queryFn: () => api<{ id: string; name: string; email: string | null; employee_id: string | null }[]>(`/api/lifecycle/sdp-users?q=${encodeURIComponent(debouncedUserQ)}`),
+    enabled: debouncedUserQ.trim().length >= 2,
   });
   const { can } = useAuth();
   const purchases = useQuery({
@@ -163,6 +167,7 @@ function PrepareWizard({ job, act, canRun }: { job: Job; act: ReturnType<typeof 
     queryFn: () => api<PreviewStep[]>(`/api/core/jobs/${job.id}/preview`),
     enabled: steps[i]?.key === "start",
   });
+  if (prep.isError) return <ErrorState error={prep.error} onRetry={() => prep.refetch()} />;
   if (prep.isLoading || !prep.data) return <LoadingRows rows={6} />;
   const p = prep.data;
   const lines = p.allocation?.lines ?? [];
@@ -174,7 +179,7 @@ function PrepareWizard({ job, act, canRun }: { job: Job; act: ReturnType<typeof 
   const back = i > 0 ? () => go(i - 1) : undefined;
   const key = steps[i]!.key;
   const eff = job.params.effective_date;
-  const future = !!eff && eff > new Date().toISOString().slice(0, 10);
+  const future = !!eff && eff > isoDateVn();
   const readOnly = !canRun;
 
   if (key === "info") {
@@ -215,6 +220,7 @@ function PrepareWizard({ job, act, canRun }: { job: Job; act: ReturnType<typeof 
           label: useMatch ? "Đúng – dùng user này" : "Tiếp tục",
           loading: act.params.isPending,
           disabled: readOnly && useMatch,
+          reason: readOnly && useMatch ? "Bạn không có quyền chạy Job này, nên không xác nhận user SDP được." : null,
           onClick: () => (useMatch ? act.params.mutate({ sdp_user_id: match!.id, sdp_user_name: match!.name }, { onSuccess: next }) : next()),
         }}
       >
@@ -252,6 +258,14 @@ function PrepareWizard({ job, act, canRun }: { job: Job; act: ReturnType<typeof 
             )}
           </details>
         )}
+      </Wizard>
+    );
+  }
+
+  if (key === "mailbox") {
+    return (
+      <Wizard label="Chuẩn bị Job" steps={steps} current={i} title="Quản lý có yêu cầu giữ mailbox không?" description="Mặc định là không. Bật khi request hoặc quản lý yêu cầu giữ mailbox; vẫn đổi được sau khi bắt đầu, tới khi bước chuyển vào Ban_Users được xác nhận." onBack={back} next={{ label: "Tiếp tục", onClick: next }}>
+        {canRun ? <MailboxOption job={job} saving={act.params.isPending} onSave={(patch) => act.params.mutate(patch)} /> : <p className="text-sm">{job.params.options?.mailbox_handover ? "Có giữ mailbox." : "Không giữ mailbox."}</p>}
       </Wizard>
     );
   }

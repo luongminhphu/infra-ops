@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit.service import record
 from app.core.auth.deps import CurrentUser, require
+from app.core.config import get_settings
 from app.core.db import get_session
 from app.core.errors import AppError, Conflict, NotFound
 from app.core.modules.registry import get_registry
@@ -329,7 +330,7 @@ async def upload_image(
 ) -> dict[str, Any]:
     """A screenshot for a step's note (PNG/JPEG, checked by its bytes). Returns the URL to put in the note."""
     g = await _guide(session, guide_id)
-    data = await file.read()
+    data = await file.read(get_settings().max_upload_mb * 1024 * 1024 + 1)
     check_size(data)
     mime = sniff(data, IMAGE_MIME)
     stored = await save_file(session, data, file.filename or "anh.png", mime, user.upn)

@@ -1,4 +1,4 @@
-"""Onboard / Offboard workflows (Microsoft steps deferred by the product owner).
+"""Onboard / Offboard workflows (Microsoft steps run only when `microsoft_enabled` is on).
 
 Every write step reads the current state first (idempotent on retry), keeps the previous state in
 ``before_state`` and never rolls back automatically.
@@ -6,6 +6,7 @@ Every write step reads the current state first (idempotent on retry), keeps the 
 
 from __future__ import annotations
 
+import html
 from typing import Any
 
 from sqlalchemy import select
@@ -14,20 +15,56 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth.models import User
 from app.core.connections.service import open_connection
 from app.core.connectors.base import Purpose
-from app.core.connectors.biostar import BioStarClient
 from app.core.connectors.http import ConnectorHttpError
 from app.core.connectors.sdp import SdpClient
 from app.core.documents import service as documents
 from app.core.errors import AppError, PersonalCredentialMissing
+from app.core.logging import get_logger
 from app.core.storage.service import read_file
 from app.core.timeutil import today_vn
 from app.core.workflow.definitions import StepContext, StepDefinition, StepOutcome, WorkflowDefinition
 from app.modules.lifecycle import normalize
+from app.modules.lifecycle import transfer as tr
+from app.modules.lifecycle.allocation import matches
 from app.modules.lifecycle.documents import HANDOVER, RETURN
+from app.modules.lifecycle.microsoft import (
+    M365_WAIT_SECONDS,
+    account_disable,
+    ad_account,
+    ad_move_ban,
+    ad_move_ban_final,
+    ad_transfer,
+    effective_wait,
+    m365_license,
+    m365_relicense,
+    pinned_transfer,
+    prepare_account_plan,
+    prepare_it_handover,
+    prepare_mailbox_handover,
+    prepare_rtr_checklist,
+    prepare_transfer_plan,
+    preview_account_disable,
+    preview_ad_account,
+    preview_ad_move_ban,
+    preview_ad_move_ban_final,
+    preview_ad_transfer,
+    preview_m365_license,
+    preview_m365_relicense,
+    run_account_plan,
+    run_it_handover,
+    run_mailbox_handover,
+    run_rtr_checklist,
+    run_transfer_plan,
+)
+from app.modules.lifecycle.microsoft import (
+    biostar_client as _biostar,
+)
 from app.modules.lifecycle.models import ReconRow, Snapshot
 from app.modules.lifecycle.queries import latest_run
-from app.modules.lifecycle.settings import MODULE_ID, main_biostar
+from app.modules.lifecycle.settings import MODULE_ID
 from app.modules.lifecycle.settings import load as load_module_settings
+
+log = get_logger(__name__)
 
 VIEW, EXECUTE, OVERRIDE = "lifecycle.job.view", "lifecycle.job.execute", "lifecycle.job.override_close"
 # Without it an Operator sees only the jobs assigned to them and the unassigned ones they may take.
@@ -49,12 +86,6 @@ async def _sdp(ctx: StepContext, purpose: Purpose) -> SdpClient:
     s = await load_module_settings(ctx.session)
     _, conn = await open_connection(ctx.session, "sdp", purpose, profile_id=s.sdp_profile_id, as_user=who)
     return SdpClient(conn)
-
-
-async def _biostar(ctx: StepContext, purpose: Purpose) -> BioStarClient:
-    s = await load_module_settings(ctx.session)
-    _, conn = await open_connection(ctx.session, "biostar", purpose, **main_biostar(s))
-    return BioStarClient(conn)
 
 
 def _err(exc: Exception) -> str:
@@ -88,7 +119,7 @@ async def check_request(ctx: StepContext) -> StepOutcome:
         return StepOutcome(
             "failed",
             f"Request #{ctx.params.get('request_display_id') or rid} đang ở trạng thái “{status}” trên SDP. "
-            "Mở lại request hoặc huỷ Job.",
+            "Mở lại request (Job tự huỷ ở lần đồng bộ tới và tự mở lại khi request mở lại) hoặc huỷ Job.",
             out,
         )
     return StepOutcome("done", f"Request còn mở (trạng thái “{status or 'không rõ'}”).", out)
@@ -244,7 +275,7 @@ async def _document_step(ctx: StepContext, kind_short: str) -> StepOutcome:
         "request_id": ctx.params.get("request_id"),
         "assets": assets,
     }
-    doc = await documents.create_draft(ctx.session, ctx.actor, kind, MODULE_ID, data)
+    doc = await documents.create_draft(ctx.session, ctx.actor, kind, MODULE_ID, data, job_id=ctx.job.id)
     return StepOutcome(
         "waiting",
         f"Đã lập bản nháp {kind.title.lower()}. Kiểm tra, chốt, in cho các bên ký và tải bản ký lên.",
@@ -311,13 +342,13 @@ KIND_TITLE = {"onboard": "Onboard", "offboard": "Offboard", "transfer": "Thuyên
 def _summary_html(ctx: StepContext) -> str:
     lines = [
         f"<p><b>infra-ops</b> – {KIND_TITLE.get(ctx.params.get('kind') or '', 'Offboard')} "
-        f"{_emp(ctx).get('full_name')} ({_emp(ctx).get('id')})</p><ul>"
+        f"{html.escape(str(_emp(ctx).get('full_name')))} ({html.escape(str(_emp(ctx).get('id')))})</p><ul>"
     ]
     for s in sorted(ctx.job.steps, key=lambda s: s.seq):
         if s.key == ctx.step.key:
             continue
         mark = "✔" if s.status == "done" else ("–" if s.status == "skipped" else "•")
-        lines.append(f"<li>{mark} {s.title}: {s.message}</li>")
+        lines.append(f"<li>{mark} {html.escape(s.title)}: {html.escape(s.message or '')}</li>")
     lines.append("</ul>")
     return "".join(lines)
 
@@ -400,7 +431,10 @@ async def biostar_create(ctx: StepContext) -> StepOutcome:
         "user_group_id": {"id": s.biostar_user_group_id},
         "start_datetime": f"{start}T00:00:00.00Z",
         "expiry_datetime": f"{s.biostar_expiry_date}T23:59:00.00Z",
-        "access_groups": [{"id": g} for g in s.biostar_access_group_ids],
+        # Global list plus the groups of every matching department rule (same formula as transfer).
+        "access_groups": [
+            {"id": g} for g in dict.fromkeys([*s.biostar_access_group_ids, *tr.biostar_groups([], emp, s)[0]])
+        ],
     }
     try:
         async with await _biostar(ctx, Purpose.WRITE) as c:
@@ -436,7 +470,8 @@ async def biostar_create(ctx: StepContext) -> StepOutcome:
 async def preview_biostar_create(ctx: StepContext) -> list[str]:
     s = await load_module_settings(ctx.session)
     emp = _emp(ctx)
-    groups = ", ".join(s.biostar_access_group_ids) or "chưa cấu hình (không gán)"
+    ids = dict.fromkeys([*s.biostar_access_group_ids, *tr.biostar_groups([], emp, s)[0]])
+    groups = ", ".join(ids) or "chưa cấu hình (không gán)"
     return [
         f"Tạo user BioStar mã {emp.get('id')} – {emp.get('full_name')} (nếu chưa có).",
         f"Nhóm người dùng ID {s.biostar_user_group_id}; nhóm quyền ra vào ID: {groups}; "
@@ -519,7 +554,10 @@ async def prepare_collect(ctx: StepContext) -> StepOutcome:
         try:
             async with await _sdp(ctx, Purpose.READ) as c:
                 assets = [normalize.sdp_asset(a) for a in await c.assets_of_user(uid)]
-        except Exception:
+        except PersonalCredentialMissing:
+            raise  # the step waits for the person's own key (engine), no silent fallback
+        except Exception as exc:
+            log.warning("prepare_collect_live_failed", error=type(exc).__name__)
             uid = None
     if not uid:
         source = "lần đồng bộ gần nhất"
@@ -670,6 +708,94 @@ async def prepare_groups(ctx: StepContext) -> StepOutcome:
     return StepOutcome("waiting", f"Từ: {old} → Đến: {new}.", {"from": old, "to": new})
 
 
+async def biostar_transfer(ctx: StepContext) -> StepOutcome:
+    """On the effective date replay the pinned access-group lines: remove only pinned ids the person still has and
+    the settings still manage, add the pinned ones; the whole list is PUT (BioStar replaces)."""
+    s = await load_module_settings(ctx.session)
+    plan = pinned_transfer(ctx)
+    lines = plan.get("biostar") or {}
+    if not (lines.get("add") or lines.get("remove")):
+        return StepOutcome("skipped", "Kế hoạch không có thay đổi nhóm quyền ra vào BioStar – giữ nguyên.")
+    if wait := effective_wait(plan):
+        return wait
+    eid = str(plan.get("employee_id") or _emp(ctx).get("id") or "")
+    try:
+        async with await _biostar(ctx, Purpose.WRITE) as c:
+            user = await c.get_user(eid)
+            if user is None or str(user.get("disabled")).lower() == "true":
+                return StepOutcome("skipped", f"Không có user BioStar đang hoạt động mã {eid} – bỏ qua.")
+            if not isinstance(user.get("access_groups"), list):  # never PUT a list built on a missing read
+                return StepOutcome("failed", f"BioStar không trả danh sách nhóm quyền của {eid} – không ghi.")
+            before = [str(g["id"]) for g in user["access_groups"] if isinstance(g, dict) and "id" in g]
+            drop = [i for i in before if i in lines.get("remove", []) and i in tr.managed_biostar(s)]
+            add = [i for i in lines.get("add", []) if i not in before]
+            new = [*(i for i in before if i not in drop), *add]
+            changed = bool(drop or add)
+            if changed:  # unchanged = no write (idempotent on retry)
+                await c.update_user(eid, {"access_groups": [{"id": i} for i in new]})
+    except Exception as exc:
+        return StepOutcome("failed", f"BioStar: {_err(exc)}")
+    out = {"changed": changed, "added": add, "removed": drop}
+    msg = "Đã cập nhật nhóm quyền ra vào." if changed else "Nhóm quyền ra vào đã đúng – không thay đổi."
+    return StepOutcome("done", msg, out, {"access_group_ids": before})
+
+
+async def preview_biostar_transfer(ctx: StepContext) -> list[str]:
+    b = (ctx.outputs.get("transfer_plan") or {}).get("biostar") or {}
+    return [
+        f"Đọc user BioStar mã {_emp(ctx).get('id')}; thêm nhóm quyền {b.get('add') or '—'}, gỡ {b.get('remove') or '—'} "
+        "(chỉ nhóm do quy tắc quản lý) – chỉ ghi khi có thay đổi, từ ngày hiệu lực."
+    ]
+
+
+async def prepare_transfer_assets(ctx: StepContext) -> StepOutcome:
+    """Compare the devices in use with the standard of the new level: what to add (buy) and what exceeds it."""
+    s = await load_module_settings(ctx.session)
+    emp = _emp(ctx)
+    have = list((await prepare_collect(ctx)).output["assets"])
+    org = (ctx.outputs.get("transfer_plan") or {}).get("org") or {}  # the pinned post-transfer org
+    items, level, _ = s.items_for_employee(
+        emp.get("job_title"), None, org.get("department") or emp.get("department_only")
+    )
+    needs: list[dict[str, Any]] = []
+    for item in items or []:
+        taken = [a for a in have if matches(a, item)][: item.quantity]
+        have = [a for a in have if a not in taken]
+        if item.quantity > len(taken):
+            needs.append(
+                {
+                    "label": item.label,
+                    "quantity": item.quantity - len(taken),
+                    "catalog_name": item.catalog_name,
+                    "product_types": item.product_types,
+                }
+            )
+    covered = {t.casefold() for i in items or [] for t in i.product_types}
+    excess = [a for a in have if str(a.get("product_type") or "").casefold() in covered]
+    out = {"level": level, "needs": needs, "excess": excess}
+    msg = (
+        f"Cần bổ sung {len(needs)} loại, {len(excess)} thiết bị vượt chuẩn."
+        if items
+        else "Chưa xác định cấp bậc."
+    )
+    return StepOutcome("waiting", msg, out)
+
+
+async def run_transfer_assets(ctx: StepContext) -> StepOutcome:
+    out = dict(ctx.step.output or {})
+    if (out.get("needs") or out.get("excess")) and not ctx.input.get("acknowledged"):
+        raise AppError("Xác nhận đã bổ sung / xem xét thu hồi thiết bị.", code="assets_unconfirmed")
+    return StepOutcome("done", "Đã xử lý thiết bị theo cấp mới.", out)
+
+
+def _microsoft(params: dict[str, Any]) -> bool:
+    return bool(params.get("microsoft"))
+
+
+def _not_microsoft(params: dict[str, Any]) -> bool:
+    return not _microsoft(params)
+
+
 CHECK = StepDefinition(
     "check_request",
     "Kiểm tra request SDP",
@@ -712,6 +838,43 @@ ONBOARD = WorkflowDefinition(
     verify_steps=True,
     steps=[
         CHECK,
+        StepDefinition(
+            "account_plan",
+            "Kế hoạch tài khoản (username / OU)",
+            "manual",
+            "Chốt username, UPN và OU của tài khoản AD / email theo chức danh.",
+            run=run_account_plan,
+            when=_microsoft,
+            prepare=prepare_account_plan,
+            skippable=False,
+            checklist=("Chức danh và hàng ma trận đúng", "Username/UPN/OU đúng quy tắc"),
+        ),
+        StepDefinition(
+            "ad_account",
+            "Tạo tài khoản AD và remote mailbox",
+            "auto",
+            "Tạo user AD (employeeID = Mã NV) theo kế hoạch đã chốt và bật remote mailbox.",
+            run=ad_account,
+            when=_microsoft,
+            preview=preview_ad_account,
+            writes=("ad", "exchange"),
+            confirm=True,
+            confirm_text="Sẽ tạo tài khoản AD và mailbox. Nhập lại Mã NV để xác nhận.",
+            skippable=False,
+            checklist=("Tài khoản AD đã tạo đúng OU", "Remote mailbox đã bật"),
+        ),
+        StepDefinition(
+            "m365_license",
+            "Gán license Microsoft 365 và chờ mailbox",
+            "auto",
+            "Gán license theo chức danh sau khi user được đồng bộ lên Entra; chờ mailbox Exchange Online.",
+            run=m365_license,
+            when=_microsoft,
+            preview=preview_m365_license,
+            writes=("m365",),
+            wait_timeout_seconds=M365_WAIT_SECONDS,
+            checklist=("License đúng theo chức danh", "Mailbox Exchange Online đã sẵn sàng"),
+        ),
         FIND_USER,
         StepDefinition(
             "assign_assets",
@@ -748,6 +911,21 @@ ONBOARD = WorkflowDefinition(
             evidence_required=True,
         ),
         StepDefinition(
+            "it_handover",
+            "Bàn giao máy và hướng dẫn",
+            "manual",
+            "Cài phần mềm theo chức danh, đặt mật khẩu tạm trên ADUC (không nhập vào hệ thống này), hướng dẫn đăng nhập.",
+            run=run_it_handover,
+            when=_microsoft,
+            prepare=prepare_it_handover,
+            skippable=False,
+            checklist=(
+                "Đã cài bộ Office tools theo danh sách",
+                "Đã đặt mật khẩu tạm trên ADUC và yêu cầu đổi khi đăng nhập",
+                "Đã hướng dẫn đăng nhập email / Teams",
+            ),
+        ),
+        StepDefinition(
             "handover_doc",
             "Biên bản Bàn giao (đã ký)",
             "auto",
@@ -756,6 +934,17 @@ ONBOARD = WorkflowDefinition(
             preview=preview_doc,
             skippable=False,
             checklist=("Biên bản đủ chữ ký các bên", "Thông tin thiết bị trên biên bản khớp thực tế"),
+        ),
+        StepDefinition(
+            "rtr_checklist",
+            "Cập nhật RTR",
+            "manual",
+            "Sao chép tóm tắt vào hệ thống RTR để HR tick hoàn tất các task.",
+            run=run_rtr_checklist,
+            when=_microsoft,
+            prepare=prepare_rtr_checklist,
+            skippable=False,
+            checklist=("Đã tick hoàn tất các task trên hệ thống RTR",),
         ),
         CLOSE,
     ],
@@ -772,7 +961,6 @@ OFFBOARD = WorkflowDefinition(
     verify_steps=True,
     steps=[
         CHECK,
-        # Access is revoked first: it must not wait for the devices to come back.
         StepDefinition(
             "biostar_offboard",
             "Vô hiệu hoá / xoá user BioStar",
@@ -795,6 +983,54 @@ OFFBOARD = WorkflowDefinition(
             preview=preview_find_sdp_user,
             wait_timeout_seconds=3600,
             checklist=("User SDP đúng Mã NV, họ tên và phòng ban",),
+        ),
+        # Access is revoked first (door, then AD / Entra): it must not wait for the devices to come back.
+        StepDefinition(
+            "account_disable",
+            "Vô hiệu tài khoản AD và Entra",
+            "auto",
+            "Thu hồi phiên Entra, vô hiệu tài khoản AD, chờ Entra ID báo đã vô hiệu rồi thu hồi phiên lần nữa.",
+            run=account_disable,
+            when=_microsoft,
+            preview=preview_account_disable,
+            writes=("m365", "ad"),
+            confirm=True,
+            confirm_text="Tài khoản AD / email sẽ bị vô hiệu ngay. Nhập lại Mã NV để xác nhận.",
+            skippable=False,
+            wait_timeout_seconds=3 * 3600,
+            checklist=("Tài khoản đã bị vô hiệu trên AD và Entra",),
+        ),
+        StepDefinition(
+            "mailbox_handover",
+            "Chuyển mailbox (nếu có yêu cầu)",
+            "manual",
+            "Chỉ khi quản lý yêu cầu: chuyển mailbox sang shared hoặc forward. On-prem: Set-RemoteMailbox -Type Shared; "
+            "Exchange Online: Set-Mailbox -Type Shared. Không yêu cầu thì bỏ qua bước.",
+            run=run_mailbox_handover,
+            when=_microsoft,
+            prepare=prepare_mailbox_handover,
+            checklist=("Đã chuyển mailbox sang shared / forward theo yêu cầu của quản lý",),
+            evidence_required=True,
+        ),
+        StepDefinition(
+            "ad_move_ban",
+            "Chuyển tài khoản vào Ban_Users",
+            "auto",
+            "Chuyển tài khoản AD vào OU Ban_Users và chờ user bị xoá khỏi Entra ID (license được thu hồi). "
+            "Nếu có yêu cầu giữ mailbox: chuyển vào OU giữ mailbox và lên lịch Job chuyển Ban_Users khi hết hạn.",
+            run=ad_move_ban,
+            when=_microsoft,
+            preview=preview_ad_move_ban,
+            writes=("ad",),
+            confirm=True,
+            confirm_text=(
+                "Chuyển vào Ban_Users: Entra sẽ xoá user, mailbox và license (khôi phục được trong 30 ngày). "
+                "Nếu có yêu cầu giữ mailbox, tài khoản vào OU giữ mailbox và chỉ chuyển Ban_Users khi hết hạn. "
+                "Nhập lại Mã NV để xác nhận."
+            ),
+            skippable=False,
+            wait_timeout_seconds=3 * 3600,
+            checklist=("Tài khoản đã chuyển vào Ban_Users",),
         ),
         StepDefinition(
             "collect_assets",
@@ -827,12 +1063,54 @@ OFFBOARD = WorkflowDefinition(
             skippable=False,
             checklist=("Biên bản đủ chữ ký các bên", "Tình trạng thiết bị trên biên bản khớp thực tế"),
         ),
+        StepDefinition(
+            "rtr_checklist",
+            "Cập nhật RTR",
+            "manual",
+            "Sao chép tóm tắt vào hệ thống RTR để HR tick hoàn tất các task.",
+            run=run_rtr_checklist,
+            when=_microsoft,
+            prepare=prepare_rtr_checklist,
+            skippable=False,
+            checklist=("Đã tick hoàn tất các task trên hệ thống RTR",),
+        ),
         CLOSE,
     ],
 )
 
+# Created by the offboard job when a mailbox is kept: runs on the retention end date.
+MAILBOX_RELEASE = WorkflowDefinition(
+    key="lifecycle.mailbox_release",
+    title="Hết hạn giữ mailbox – chuyển Ban_Users",
+    view_permission=VIEW,
+    view_all_permission=VIEW_ALL,
+    execute_permission=EXECUTE,
+    override_permission=OVERRIDE,
+    verify_steps=True,
+    steps=[
+        StepDefinition(
+            "ad_move_ban",
+            "Chuyển tài khoản vào Ban_Users",
+            "auto",
+            "Hết hạn giữ mailbox: chuyển tài khoản AD vào OU Ban_Users và chờ user bị xoá khỏi Entra ID.",
+            run=ad_move_ban_final,
+            when=_microsoft,
+            preview=preview_ad_move_ban_final,
+            writes=("ad",),
+            confirm=True,
+            confirm_text=(
+                "Chuyển vào Ban_Users: Entra sẽ xoá user, mailbox và license (khôi phục được trong 30 ngày). "
+                "Nhập lại Mã NV để xác nhận."
+            ),
+            skippable=False,
+            wait_timeout_seconds=3 * 3600,
+            checklist=("Tài khoản đã chuyển vào Ban_Users", "Mailbox không còn cần giữ"),
+        ),
+    ],
+)
+
 # Change of department or direct manager: IT moves the person between AD groups by hand (shared folders, mail
-# groups); the Microsoft integration is deferred, so these are verified manual steps.
+# groups); transfer is not automated yet (Phase 69 covers onboard/offboard only), so these are verified manual steps.
 TRANSFER = WorkflowDefinition(
     key="lifecycle.transfer",
     title="Thuyên chuyển / đổi cấp trên",
@@ -846,11 +1124,75 @@ TRANSFER = WorkflowDefinition(
         CHECK,
         FIND_USER,
         StepDefinition(
+            "transfer_plan",
+            "Kế hoạch thuyên chuyển (OU / nhóm / thuộc tính)",
+            "manual",
+            "Kiểm tra thay đổi OU, nhóm AD và thuộc tính theo request; bỏ chọn nhóm không gỡ.",
+            run=run_transfer_plan,
+            when=_microsoft,
+            prepare=prepare_transfer_plan,
+            skippable=False,
+            checklist=("OU, nhóm cần thêm/gỡ và thuộc tính đúng theo request",),
+        ),
+        StepDefinition(
+            "ad_transfer",
+            "Cập nhật AD (thuộc tính, OU, nhóm)",
+            "auto",
+            "Đến ngày hiệu lực: thêm nhóm mới, cập nhật thuộc tính, chuyển OU rồi gỡ nhóm cũ.",
+            run=ad_transfer,
+            when=_microsoft,
+            preview=preview_ad_transfer,
+            writes=("ad",),
+            confirm=True,
+            confirm_text="Sẽ thêm/gỡ nhóm, đổi thuộc tính và OU của tài khoản AD. Nhập lại Mã NV để xác nhận.",
+            skippable=False,
+            checklist=("Thuộc tính, OU và nhóm AD đúng theo kế hoạch",),
+        ),
+        StepDefinition(
+            "m365_relicense",
+            "Đổi license Microsoft 365 theo chức danh mới",
+            "auto",
+            "Đến ngày hiệu lực: thêm license của chức danh mới và gỡ license cũ trong một lần gọi.",
+            run=m365_relicense,
+            when=_microsoft,
+            preview=preview_m365_relicense,
+            writes=("m365",),
+            confirm=True,
+            confirm_text="Sẽ thêm/gỡ license Microsoft 365 của user. Nhập lại Mã NV để xác nhận.",
+            wait_timeout_seconds=M365_WAIT_SECONDS,
+            checklist=("License M365 đúng theo chức danh mới",),
+        ),
+        # Only in Microsoft jobs: a job with Microsoft off keeps exactly the old manual flow (no BioStar step).
+        StepDefinition(
+            "biostar_transfer",
+            "Đổi nhóm quyền ra vào BioStar",
+            "auto",
+            "Đến ngày hiệu lực: đặt nhóm quyền ra vào theo phòng ban mới.",
+            run=biostar_transfer,
+            when=_microsoft,
+            preview=preview_biostar_transfer,
+            writes=("biostar",),
+            confirm=True,
+            confirm_text="Sẽ thêm/gỡ nhóm quyền ra vào BioStar của user. Nhập lại Mã NV để xác nhận.",
+            checklist=("Nhóm quyền ra vào đúng phòng ban mới",),
+        ),
+        StepDefinition(
+            "transfer_assets",
+            "Thiết bị theo cấp bậc mới",
+            "manual",
+            "So thiết bị đang dùng với tiêu chuẩn cấp mới: bổ sung hoặc cân nhắc thu hồi phần vượt chuẩn.",
+            run=run_transfer_assets,
+            when=_microsoft,
+            prepare=prepare_transfer_assets,
+            checklist=("Đã bổ sung / thu hồi thiết bị theo cấp mới",),
+        ),
+        StepDefinition(
             "groups_remove",
             "Gỡ khỏi nhóm cũ",
             "manual",
             "Gỡ user khỏi nhóm AD của phòng/bộ phận cũ: quyền thư mục share và nhóm email.",
             prepare=prepare_groups,
+            when=_not_microsoft,
             checklist=(
                 "Đã gỡ quyền thư mục share của phòng/bộ phận cũ",
                 "Đã gỡ khỏi nhóm email của phòng/bộ phận cũ",
@@ -863,6 +1205,7 @@ TRANSFER = WorkflowDefinition(
             "manual",
             "Thêm user vào nhóm AD theo phòng/bộ phận mới trong request RTR: quyền thư mục share và nhóm email.",
             prepare=prepare_groups,
+            when=_not_microsoft,
             skippable=False,
             checklist=(
                 "Đã cấp quyền thư mục share của phòng/bộ phận mới",
@@ -870,6 +1213,17 @@ TRANSFER = WorkflowDefinition(
                 "Nhân viên truy cập được thư mục share mới",
             ),
             evidence_required=True,
+        ),
+        StepDefinition(
+            "rtr_checklist",
+            "Cập nhật RTR",
+            "manual",
+            "Sao chép tóm tắt vào hệ thống RTR để HR tick hoàn tất các task.",
+            run=run_rtr_checklist,
+            when=_microsoft,
+            prepare=prepare_rtr_checklist,
+            skippable=False,
+            checklist=("Đã tick hoàn tất các task trên hệ thống RTR",),
         ),
         CLOSE,
     ],

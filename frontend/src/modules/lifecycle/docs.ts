@@ -48,6 +48,8 @@ export interface Doc {
   void_reason: string | null;
   has_pdf: boolean;
   has_signed: boolean;
+  can_edit: boolean;
+  can_upload_signed: boolean;
   events: { type: string; ok: boolean; request_id?: string; error?: string; by?: string; at: string }[];
   version: number;
 }

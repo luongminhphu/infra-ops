@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { AlertTriangle, Copy, LoaderCircle, Paperclip, ShoppingCart, Trash2 } from "lucide-react";
@@ -10,6 +10,7 @@ import { cn } from "@/core/lib/cn";
 import { formatDate, formatVnd } from "@/core/lib/format";
 import { Button } from "@/core/ui/button";
 import { DataTable } from "@/core/ui/data-table";
+import { ConfirmDialog } from "@/core/ui/confirm-dialog";
 import { Dialog } from "@/core/ui/dialog";
 import { EmptyState, ErrorState, LoadingRows, Mono } from "@/core/ui/feedback";
 import { Field, Select, Textarea } from "@/core/ui/field";
@@ -39,6 +40,14 @@ function DupChip({ n }: { n: number }) {
   );
 }
 
+/** Source label; a ticket id links to the tickets list when the user may open it. */
+function SourceText({ p }: { p: Purchase }) {
+  const { can } = useAuth();
+  return p.ticket_display_id && can("workload.tickets.view") ? (
+    <Link to={`/workload/tickets?state=all&q=${encodeURIComponent(p.ticket_display_id)}`} className="text-primary underline-offset-2 hover:underline">{sourceLabel(p)}</Link>
+  ) : <>{sourceLabel(p)}</>;
+}
+
 export function sourceLabel(p: Purchase): string {
   if (p.ticket_display_id) return `#${p.ticket_display_id}`;
   if (p.source === "onboard") return `Onboard${p.source_ref ? ` #${p.source_ref}` : ""}`;
@@ -46,16 +55,17 @@ export function sourceLabel(p: Purchase): string {
 }
 
 /** Evidence files of one proposal: open, add (file / pasted screenshot) and remove while not yet approved. */
-function EvidenceBlock({ p, onChange }: { p: Purchase; onChange: (p: Purchase) => void }) {
+export function EvidenceBlock({ p, onChange }: { p: Purchase; onChange: (p: Purchase) => void }) {
   const { me, can } = useAuth();
   const editable = p.status === "proposed" && (p.created_by === me?.upn || can("workload.purchase.manage"));
   const add = useMutation({
     mutationFn: (f: File) => uploadEvidence(p.id, f),
     onSuccess: (np) => { onChange(np); toast.success("Đã đính kèm bằng chứng."); },
   });
+  const [confirmDel, setConfirmDel] = useState<{ id: string; filename: string } | null>(null);
   const remove = useMutation({
     mutationFn: (id: string) => api<Purchase>(`/api/workload/purchases/${p.id}/evidence/${id}`, { method: "DELETE" }),
-    onSuccess: onChange,
+    onSuccess: (np) => { setConfirmDel(null); onChange(np); },
   });
   return (
     <section aria-label="Bằng chứng Function Head" onPaste={(e) => { const f = editable && pastedImage(e); if (f) add.mutate(f); }}>
@@ -68,7 +78,7 @@ function EvidenceBlock({ p, onChange }: { p: Purchase; onChange: (p: Purchase) =
             <a className="truncate text-primary underline-offset-2 hover:underline" href={`/api/workload/purchases/${p.id}/evidence/${e.id}`} target="_blank" rel="noreferrer">{e.filename}</a>
             <span className="shrink-0 text-xs text-muted">{e.created_by}</span>
             {editable && (
-              <Button size="icon" variant="ghost" aria-label={`Xoá ${e.filename}`} loading={remove.isPending && remove.variables === e.id} onClick={() => remove.mutate(e.id)}>
+              <Button size="icon" variant="ghost" aria-label={`Xoá ${e.filename}`} loading={remove.isPending && remove.variables === e.id} onClick={() => setConfirmDel({ id: e.id, filename: e.filename })}>
                 <Trash2 className="size-4" aria-hidden="true" />
               </Button>
             )}
@@ -81,6 +91,9 @@ function EvidenceBlock({ p, onChange }: { p: Purchase; onChange: (p: Purchase) =
           <input type="file" accept={EVIDENCE_ACCEPT} className="sr-only" disabled={add.isPending} onChange={(e) => { const f = e.target.files?.[0]; if (f) add.mutate(f); e.target.value = ""; }} />
         </label>
       )}
+      <ConfirmDialog open={!!confirmDel} onClose={() => setConfirmDel(null)} onConfirm={() => confirmDel && remove.mutate(confirmDel.id)} title="Xoá bằng chứng?" confirmLabel="Xoá">
+        Xoá file “{confirmDel?.filename}” khỏi đề xuất này? Không hoàn tác được.
+      </ConfirmDialog>
     </section>
   );
 }
@@ -181,7 +194,7 @@ function ApproveDialog({ p: initial, dup, onClose, onDone }: { p: Purchase; dup:
         <dl className="grid grid-cols-[8rem_1fr] gap-x-3 gap-y-1 rounded-sm bg-surface-2 px-3 py-2 text-sm">
           <dt className="text-muted">Người đề xuất</dt><dd>{p.created_by_name} · {formatDate(p.created_at)}</dd>
           <dt className="text-muted">Người dùng</dt><dd>{p.employee || "—"}</dd>
-          <dt className="text-muted">Nguồn</dt><dd>{sourceLabel(p)} · {KIND_LABEL[p.kind]} × {p.quantity}</dd>
+          <dt className="text-muted">Nguồn</dt><dd><SourceText p={p} /> · {KIND_LABEL[p.kind]} × {p.quantity}</dd>
           {p.reason && (<><dt className="text-muted">Lý do</dt><dd className="whitespace-pre-line">{p.reason}</dd></>)}
         </dl>
         {dup > 0 && (
@@ -355,7 +368,7 @@ export function ProposalsTab() {
       ...(priced
         ? [{ accessorKey: "amount", header: "Thành tiền", cell: (c: { row: { original: Purchase } }) => <span className="tabular whitespace-nowrap">{formatVnd(c.row.original.amount, "Chưa có giá")}</span> } as ColumnDef<Purchase, unknown>]
         : []),
-      { id: "source", header: "Nguồn", accessorFn: (p) => sourceLabel(p), cell: (c) => <Mono className="whitespace-nowrap">{sourceLabel(c.row.original)}</Mono> },
+      { id: "source", header: "Nguồn", accessorFn: (p) => sourceLabel(p), cell: (c) => <Mono className="whitespace-nowrap"><SourceText p={c.row.original} /></Mono> },
       {
         id: "evidence",
         header: "Bằng chứng",

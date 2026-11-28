@@ -10,6 +10,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import raiseload
 
 from app.core.audit.service import record
 from app.core.auth.deps import CurrentUser, current_user, require
@@ -43,9 +44,16 @@ def stalled_minutes(job: Job) -> int | None:
     return int(idle.total_seconds() // 60) if idle > STALLED_AFTER else None
 
 
+LEAN_STEP_OMIT = ("before_state", "output", "checklist", "evidence", "message", "verify_note")
+
+
 def job_out(
-    job: Job, wf: WorkflowDefinition | None = None, events: list[JobEvent] | None = None
+    job: Job,
+    wf: WorkflowDefinition | None = None,
+    events: list[JobEvent] | None = None,
+    lean: bool = False,
 ) -> dict[str, Any]:
+    """``lean`` (list views): omits assignments and heavy step fields, so evidence/assignments may be raiseloaded."""
     wf = wf or _wf(job)
     defs = {s.key: s for s in wf.steps}
     done = sum(1 for s in job.steps if s.status in ("done", "skipped"))
@@ -79,7 +87,9 @@ def job_out(
         }
         if job.assignee_name
         else None,
-        "assignments": [
+        "assignments": []
+        if lean
+        else [
             {
                 "from_name": a.from_name,
                 "to_name": a.to_name,
@@ -119,11 +129,16 @@ def job_out(
                 "verified_by": s.verified_by,
                 "verified_at": s.verified_at,
                 "verify_note": s.verify_note,
-                "evidence": [cl.evidence_out(e) for e in job.evidence if e.step_key == s.key],
+                "evidence": [] if lean else [cl.evidence_out(e) for e in job.evidence if e.step_key == s.key],
             }
             for s in sorted(job.steps, key=lambda s: s.seq)
         ],
     }
+    if lean:
+        del out["assignments"]
+        for st in out["steps"]:
+            for k in LEAN_STEP_OMIT:
+                del st[k]
     if events is not None:
         out["events"] = [
             {"at": e.at, "step_key": e.step_key, "level": e.level, "message": e.message, "actor": e.actor}
@@ -136,6 +151,12 @@ def _sees_all(user: CurrentUser, wf: WorkflowDefinition) -> bool:
     return wf.view_all_permission is None or user.has(wf.view_all_permission)
 
 
+def check_job_scope(user: CurrentUser, job: Job) -> None:
+    """Row-level scope: without the workflow's view_all permission only the assignee (or anyone, if unassigned)."""
+    if not _sees_all(user, _wf(job)) and job.assignee_user_id not in (None, user.id):
+        raise PermissionDenied("Job này do người khác phụ trách.")
+
+
 async def _load(
     session: AsyncSession,
     user: CurrentUser,
@@ -145,8 +166,7 @@ async def _load(
 ) -> tuple[Job, WorkflowDefinition]:
     job = await engine.get_job(session, job_id, for_update=for_update)
     wf = _wf(job)
-    if not _sees_all(user, wf) and job.assignee_user_id not in (None, user.id):
-        raise PermissionDenied("Job này do người khác phụ trách.")
+    check_job_scope(user, job)
     engine.need(
         user.permissions,
         {"view": wf.view_permission, "execute": wf.execute_permission, "override": wf.override_permission}[
@@ -183,6 +203,7 @@ async def list_jobs(
     q: str = Query("", max_length=100),
     offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
+    lean: bool = False,
 ) -> dict[str, Any]:
     allowed = [w.key for _, w in get_registry().workflows() if user.has(w.view_permission)]
     if workflow and workflow not in allowed:
@@ -229,8 +250,10 @@ async def list_jobs(
             )
         ).all()
     )
+    if lean:
+        stmt = stmt.options(raiseload(Job.evidence), raiseload(Job.assignments))
     rows = (await session.scalars(stmt.order_by(Job.updated_at.desc()).offset(offset).limit(limit))).all()
-    return {"total": total, "counts": counts, "items": [job_out(j) for j in rows]}
+    return {"total": total, "counts": counts, "items": [job_out(j, lean=lean) for j in rows]}
 
 
 @router.get("/jobs/{job_id}")
@@ -318,6 +341,18 @@ async def retry(
 ) -> dict[str, Any]:
     job, wf = await _load(session, user, job_id, "execute", for_update=True)
     await engine.retry_step(session, user.actor, job, key)
+    return await _done(session, user, job, wf)
+
+
+@router.post("/jobs/{job_id}/steps/{key}/prepare")
+async def reprepare(
+    job_id: uuid.UUID,
+    key: str,
+    user: CurrentUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    job, wf = await _load(session, user, job_id, "execute", for_update=True)
+    await engine.reprepare_step(session, user.actor, job, key)
     return await _done(session, user, job, wf)
 
 

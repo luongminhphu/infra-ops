@@ -16,6 +16,7 @@ import { formatDateTime, formatRelative } from "@/core/lib/format";
 import { cn } from "@/core/lib/cn";
 import { useDebounced } from "@/core/lib/useDebounced";
 import { useSyncNow, useSyncStatus, useTechnicians, type Ticket, type TicketState } from "../api";
+import { TicketActions } from "../TicketActions";
 import { USUAL_SDP_STATUS, ticketBadge } from "../labels";
 
 const STATES: { key: TicketState; label: string }[] = [
@@ -216,6 +217,7 @@ export function TicketsPage() {
         header: state === "done" ? "Hoàn tất" : "Ngày tạo",
         cell: (c) => <span className="tabular whitespace-nowrap">{formatDateTime(state === "done" ? c.row.original.completed_at : c.row.original.created_at)}</span>,
       },
+      { id: "actions", header: () => <span className="sr-only">Thao tác</span>, enableSorting: false, cell: (c) => <TicketActions ticket={c.row.original} /> },
     ];
     if (!canAssign) return cols;
     return [

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from app.modules.workload.quotes import fold
 from app.modules.workload.settings import WorkloadSettings
 
 
@@ -19,15 +20,22 @@ def _name(value: Any) -> str | None:
 
 # SDP's own status names (English and the Vietnamese UI): always finished / dropped, even when a saved
 # configuration predates them – a closed case must never show as overdue.
-BUILTIN_DONE = {"resolved", "closed", "completed", "đã xử lý", "đã đóng", "hoàn thành", "đã hoàn thành"}
-BUILTIN_CANCELLED = {"canceled", "cancelled", "rejected", "đã hủy", "đã huỷ", "từ chối"}
+BUILTIN_DONE = {
+    "resolved", "closed", "completed", "đã xử lý", "đã đóng", "đã xong", "hoàn tất", "đã hoàn tất",
+    "hoàn thành", "đã hoàn thành",
+}  # fmt: skip
+BUILTIN_CANCELLED = {"canceled", "cancelled", "rejected", "đã hủy", "đã huỷ", "huỷ", "hủy", "từ chối", "đã từ chối"}  # fmt: skip
+
+
+def _key(text: str) -> str:
+    return " ".join(fold(text).split())
 
 
 def ticket_state(status: str, settings: WorkloadSettings) -> str:
-    s = status.strip().casefold()
-    if s in BUILTIN_DONE or s in {x.casefold() for x in settings.done_statuses}:
+    s = _key(status)
+    if s in {_key(x) for x in BUILTIN_DONE} or s in {_key(x) for x in settings.done_statuses}:
         return "done"
-    if s in BUILTIN_CANCELLED or s in {x.casefold() for x in settings.cancelled_statuses}:
+    if s in {_key(x) for x in BUILTIN_CANCELLED} or s in {_key(x) for x in settings.cancelled_statuses}:
         return "cancelled"
     return "open"
 
@@ -36,10 +44,10 @@ def ticket_phase(status: str, state: str, settings: WorkloadSettings) -> str | N
     """For open tasks only: in_progress | on_hold | pending."""
     if state != "open":
         return None
-    s = status.strip().casefold()
-    if s in {x.casefold() for x in settings.in_progress_statuses}:
+    s = _key(status)
+    if s in {_key(x) for x in settings.in_progress_statuses}:
         return "in_progress"
-    if s in {x.casefold() for x in settings.on_hold_statuses}:
+    if s in {_key(x) for x in settings.on_hold_statuses}:
         return "on_hold"
     return "pending"
 
@@ -77,6 +85,8 @@ def normalize_ticket(raw: dict[str, Any], settings: WorkloadSettings) -> dict[st
         "phase": ticket_phase(status, state, settings),
         "device_need": device_need(text, settings),
         "priority": _name(raw.get("priority")),
+        "category": (_name(raw.get("category")) or "")[:256],
+        "subcategory": (_name(raw.get("subcategory")) or "")[:256],
         "created_at": ms_to_dt(raw.get("created_time")),
         "due_by": ms_to_dt(raw.get("due_by_time")),
         # Only finished tickets have a completion time (re-opened tickets drop it).

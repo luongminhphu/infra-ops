@@ -50,6 +50,9 @@ class Document(UUIDPk, Timestamps, Base):
     pdf_file_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("core_file.id"))
     signed_file_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("core_file.id"))
     created_by: Mapped[str] = mapped_column(String(320), nullable=False)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("core_job.id", ondelete="SET NULL"), index=True
+    )
     finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finalized_by: Mapped[str | None] = mapped_column(String(320))
     signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -224,6 +224,11 @@ async def test_changing_host_deletes_credentials(admin) -> None:  # type: ignore
     assert moved.status_code == 200, moved.text
     assert moved.json()["credentials_cleared"] is True
     assert moved.json()["credentials"] == {"read": None, "write": None}
+    ldaps = await admin.patch(
+        url, json={"version": moved.json()["version"], "base_url": "ldaps://dc.example.local:636"}
+    )
+    assert ldaps.status_code == 200, ldaps.text
+    assert ldaps.json()["base_url"] == "ldaps://dc.example.local:636"
     async with get_sessionmaker()() as s:
         entry = await s.scalar(
             select(AuditLog).where(

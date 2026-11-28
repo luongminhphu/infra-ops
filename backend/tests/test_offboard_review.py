@@ -48,6 +48,9 @@ async def test_review_lists_month_offboards_and_drafts_the_email(admin) -> None:
             s.add(LifecycleRequest(id=rid, display_id=rid, subject="x", status="Open", employee_id=emp,
                                    full_name=f"NV {emp}", kind=kind, effective_date=m.replace(day=day),
                                    fields={"department": "IT"}))  # fmt: skip
+        s.add(LifecycleRequest(id="r-can", display_id="r-can", subject="x", status="Đã huỷ", employee_id="777003",
+                               full_name="NV 777003", kind="offboard", effective_date=m.replace(day=12),
+                               fields={}))  # fmt: skip
         await s.commit()
 
     got = (await admin.get("/api/lifecycle/offboard-review")).json()  # default: last month

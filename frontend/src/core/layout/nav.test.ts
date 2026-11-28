@@ -3,7 +3,7 @@ import { activeFor, railSections } from "./nav";
 
 const NAV = [
   { module: "core", label: "Hệ thống", items: [
-    { label: "Tổng quan", path: "/", icon: "layout-dashboard", permission: "x" },
+    { label: "Trang chủ", path: "/", icon: "layout-dashboard", permission: "x" },
     { label: "Việc của tôi", path: "/me/work", icon: "user-check", permission: "x" },
     { label: "Tổng quan số liệu", path: "/overview", icon: "layout-dashboard", permission: "x", group: "Thống kê", group_order: 4, section: "reports" as const },
     { label: "Kết nối hệ thống", path: "/settings/connections", icon: "plug", permission: "x" },

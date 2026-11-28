@@ -27,6 +27,9 @@ import {
   Image,
   FileChartColumn,
   ClipboardCheck,
+  Bell,
+  Mail,
+  MessageSquare,
 } from "lucide-react";
 
 /** Icon names used by backend manifests (nav items, connectors) → components. */
@@ -57,6 +60,9 @@ const ICONS: Record<string, LucideIcon> = {
   archive: Archive,
   "file-chart-column": FileChartColumn,
   "clipboard-check": ClipboardCheck,
+  bell: Bell,
+  mail: Mail,
+  "message-square": MessageSquare,
 };
 
 export function iconFor(name: string): LucideIcon {

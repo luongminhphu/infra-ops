@@ -124,7 +124,9 @@ def apply_credential(
     cred.public = clean_public
     cred.ciphertext = enc.blob
     cred.key_version = enc.key_version
-    cred.hint = secret_hint(clean_secrets.get(primary, "")) if auth_type != "certificate" else ""
+    cred.hint = (
+        secret_hint(clean_secrets.get(primary, "")) if auth_type not in ("certificate", "webhook_url") else ""
+    )
     cred.expires_at = expires_at
     cred.updated_by = actor_id
     if changed:

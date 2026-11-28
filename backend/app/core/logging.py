@@ -47,6 +47,11 @@ def _redact_processor(_: Any, __: str, event_dict: dict[str, Any]) -> dict[str, 
 
 def configure_logging(level: str = "INFO", json: bool = True) -> None:
     renderer: Any = structlog.processors.JSONRenderer() if json else structlog.dev.ConsoleRenderer()
+    for noisy in (
+        "httpx",
+        "httpcore",
+    ):  # INFO lines carry full request URLs (a Teams webhook URL is a secret)
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,

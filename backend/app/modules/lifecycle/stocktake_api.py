@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import json
 import uuid
 from datetime import UTC, date, datetime
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit.service import record
@@ -18,20 +21,41 @@ from app.core.db import get_session
 from app.core.documents import service as documents
 from app.core.documents.models import Document
 from app.core.errors import AppError, Conflict, NotFound, PermissionDenied
-from app.core.timeutil import fmt_date
+from app.core.storage.service import check_size, sniff
+from app.core.timeutil import fmt_date, today_vn
 from app.modules.lifecycle.attendance_input import HEADER_ID, _norm_id
-from app.modules.lifecycle.models import Snapshot, Stocktake, StocktakeArea, StocktakeItem, StocktakeZone
+from app.modules.lifecycle.fa_register import (
+    KINDS,
+    MAX_FILE_BYTES,
+    XLSX_MIME,
+    Parsed,
+    jsonable,
+    parse_register,
+    reconcile_registers,
+    register_totals,
+)
+from app.modules.lifecycle.models import (
+    FaRegisterRow,
+    Snapshot,
+    Stocktake,
+    StocktakeArea,
+    StocktakeItem,
+    StocktakeZone,
+)
 from app.modules.lifecycle.queries import latest_run
 from app.modules.lifecycle.settings import MODULE_ID
 from app.modules.lifecycle.settings import load as load_settings
 from app.modules.lifecycle.stocktake import (
+    ALLOWED_RESOLUTIONS,
     CONDITION_LABEL,
     COUNT_LABEL,
+    DEFAULT_RESOLUTIONS,
     RESOLUTION_LABEL,
     Condition,
     Resolution,
     area_for,
     book_item,
+    diff_kind,
     difference,
     in_book,
     matches,
@@ -47,11 +71,14 @@ manage_perm = require("lifecycle.stocktake.manage")
 assign_perm = require("lifecycle.stocktake.assign")
 # The whole picture (every zone, differences, areas, Excel files). Operators only walk their floors.
 view_all_perm = require("lifecycle.stocktake.view_all")
+# Accounting figures (nguyên giá, giá trị còn lại): never part of _item_out / GET stocktake.
+# Money figures: the finance permission AND sight of the whole stocktake (least privilege: never only one of them).
+finance_perm = require("lifecycle.stocktake.finance", "lifecycle.stocktake.view_all")
 
 STATUS_LABEL = {"counting": "Đang kiểm", "reviewing": "Đang xử lý chênh lệch", "closed": "Đã đóng"}
 
 
-def _item_out(i: StocktakeItem) -> dict[str, Any]:
+def _item_out(i: StocktakeItem, rules_version: int = 2) -> dict[str, Any]:
     out = {
         "id": i.id,
         "asset_id": i.asset_id,
@@ -75,8 +102,9 @@ def _item_out(i: StocktakeItem) -> dict[str, Any]:
         "resolution": i.resolution,
         "resolution_note": i.resolution_note,
         "resolved_by": i.resolved_by,
+        "resolution_suggested": i.resolution_suggested,
     }
-    out["difference"] = difference(out)
+    out["difference"] = difference(out, rules_version)
     return out
 
 
@@ -87,6 +115,7 @@ def _stocktake_out(s: Stocktake) -> dict[str, Any]:
         "cutoff": s.cutoff.isoformat(),
         "status": s.status,
         "status_label": STATUS_LABEL[s.status],
+        "rules_version": s.rules_version,
         "source_synced_at": s.source_synced_at.isoformat() if s.source_synced_at else None,
         "created_by": s.created_by,
         "created_at": s.created_at.isoformat() if s.created_at else None,
@@ -122,6 +151,31 @@ async def _zones(session: AsyncSession, stocktake_id: uuid.UUID) -> list[dict[st
     return [_zone_out(z) for z in rows.all()]
 
 
+async def _matching(session: AsyncSession, stocktake_id: uuid.UUID, codes: list[str]) -> list[StocktakeItem]:
+    """Items matching any code, in id order. Matches in Python on 4 columns, then loads only the hits."""
+    rows = await session.execute(
+        select(StocktakeItem.id, StocktakeItem.serial, StocktakeItem.asset_tag, StocktakeItem.fa_code)
+        .where(StocktakeItem.stocktake_id == stocktake_id)
+        .order_by(StocktakeItem.id)
+    )
+    ids = [
+        r.id
+        for r in rows
+        if any(
+            matches({"serial": r.serial, "asset_tag": r.asset_tag, "fa_code": r.fa_code}, c) for c in codes
+        )
+    ]
+    if not ids:
+        return []
+    return list(
+        (
+            await session.scalars(
+                select(StocktakeItem).where(StocktakeItem.id.in_(ids)).order_by(StocktakeItem.id)
+            )
+        ).all()
+    )
+
+
 async def _items(session: AsyncSession, stocktake_id: uuid.UUID) -> list[StocktakeItem]:
     return list(
         (
@@ -132,6 +186,70 @@ async def _items(session: AsyncSession, stocktake_id: uuid.UUID) -> list[Stockta
             )
         ).all()
     )
+
+
+async def _reconcile(session: AsyncSession, s: Stocktake, zones: list[dict[str, Any]]) -> dict[str, Any]:
+    """Three-way reconciliation of the imported registers (with money: finance callers only)."""
+    names = {z["id"]: z["name"] for z in zones}
+    items = [
+        {**(o := _item_out(i, s.rules_version)), "zone": names.get(o["zone_id"] or "")}
+        for i in await _items(session, s.id)
+    ]
+    regs = (
+        await session.scalars(
+            select(FaRegisterRow)
+            .where(FaRegisterRow.stocktake_id == s.id)
+            .order_by(FaRegisterRow.kind, FaRegisterRow.row_no)
+        )
+    ).all()
+    return reconcile_registers([{**_row_out_orm(r), "kind": r.kind} for r in regs], items, s.rules_version)
+
+
+async def _my_zone_ids(session: AsyncSession, user: CurrentUser, stocktake_id: uuid.UUID) -> set[uuid.UUID]:
+    """The zones of this stocktake handed to me."""
+    return set(
+        await session.scalars(
+            select(StocktakeZone.id).where(
+                StocktakeZone.stocktake_id == stocktake_id, StocktakeZone.assignee_user_id == user.id
+            )
+        )
+    )
+
+
+def _clear_resolution(item: StocktakeItem) -> None:
+    item.resolution, item.resolution_note, item.resolved_by, item.resolved_at = None, "", None, None
+    item.resolution_suggested = False
+
+
+def _recheck_resolution(item: StocktakeItem, kind_before: str | None, rules_version: int) -> None:
+    """A handling agreed for one kind of difference does not carry over when the difference changes kind."""
+    if item.resolution and diff_kind(_item_out(item, rules_version), rules_version) != kind_before:
+        _clear_resolution(item)
+
+
+async def _can_touch(session: AsyncSession, user: CurrentUser, s: Stocktake, item: StocktakeItem) -> bool:
+    """One rule: without view_all a person touches only the assets of the zones handed to them."""
+    return user.has("lifecycle.stocktake.view_all") or (
+        item.zone_id is not None and item.zone_id in await _my_zone_ids(session, user, s.id)
+    )
+
+
+async def _walked_zone(
+    session: AsyncSession, user: CurrentUser, s: Stocktake, zone_id: uuid.UUID | None
+) -> StocktakeZone | None:
+    """The zone being walked (scan / extra): in this stocktake, and mine unless I have view_all.
+    Without view_all the zone is required, so nothing a person records ends up out of their sight."""
+    all_zones = user.has("lifecycle.stocktake.view_all")
+    if zone_id is None:
+        if not all_zones:
+            raise PermissionDenied("Chọn khu bạn được giao kiểm trước khi quét hoặc thêm tài sản.")
+        return None
+    zone = await session.get(StocktakeZone, zone_id)
+    if zone is None or zone.stocktake_id != s.id:
+        raise NotFound("Không tìm thấy khu trong kỳ kiểm kê.")
+    if not all_zones and zone.id not in await _my_zone_ids(session, user, s.id):
+        raise PermissionDenied("Chỉ quét được trong khu bạn được giao kiểm.")
+    return zone
 
 
 def _open_for_count(s: Stocktake) -> None:
@@ -261,24 +379,33 @@ async def create_stocktake(
 
 @router.get("/stocktakes/{stocktake_id}")
 async def get_stocktake(
-    stocktake_id: uuid.UUID, _: CurrentUser = Depends(view_perm), session: AsyncSession = Depends(get_session)
+    stocktake_id: uuid.UUID,
+    user: CurrentUser = Depends(view_perm),
+    session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
     s = await _get(session, stocktake_id)
-    items = [_item_out(i) for i in await _items(session, stocktake_id)]
+    rv = s.rules_version
+    items = [_item_out(i, rv) for i in await _items(session, stocktake_id)]
     zones = await _zones(session, stocktake_id)
-    record = await session.get(Document, s.record_document_id) if s.record_document_id else None
-    return {
-        **_stocktake_out(s),
-        "summary": summary(items),
-        "zones": zone_progress(zones, items),
-        "items": items,
-        "record": _record_out(record),
-    }
+    if not user.has("lifecycle.stocktake.view_all"):  # operators see only the zones handed to them
+        mine = {str(z) for z in await _my_zone_ids(session, user, stocktake_id)}
+        zones = [z for z in zones if z["id"] in mine]
+        items = [i for i in items if i["zone_id"] in mine]
+    out = {**_stocktake_out(s), "summary": summary(items, rv), "zones": zone_progress(zones, items, rv)}
+    out["items"], out["record"] = items, None
+    if user.has(
+        "lifecycle.stocktake.view_all"
+    ):  # the whole-period record and the unzoned warning: managers only
+        out["summary"]["unzoned"] = sum(1 for i in items if not i["zone_id"])
+        record = await session.get(Document, s.record_document_id) if s.record_document_id else None
+        out["record"] = _record_out(record)
+    return out
 
 
 class ScanIn(BaseModel):
     code: str = Field(min_length=1, max_length=128)
     seen_at: str = Field("", max_length=256)
+    zone_id: uuid.UUID | None = None  # the zone being walked: a still-pending asset found here moves here
 
 
 @router.post("/stocktakes/{stocktake_id}/scan")
@@ -291,8 +418,8 @@ async def scan(
     """A serial / asset tag / accounting code read on site. Marks the matching asset as present (idempotent)."""
     s = await _get(session, stocktake_id, lock=True)
     _open_for_count(s)
-    items = await _items(session, stocktake_id)
-    hits = [i for i in items if matches(_item_out(i), body.code)]
+    zone = await _walked_zone(session, user, s, body.zone_id)
+    hits = await _matching(session, stocktake_id, [body.code])
     if not hits:
         return {"matched": False, "item": None, "already": False}
     if len(hits) > 1:
@@ -301,11 +428,24 @@ async def scan(
                        code="ambiguous_code")  # fmt: skip
     item = hits[0]
     already = item.count in ("found", "extra")
+    if already and not await _can_touch(session, user, s, item):
+        return {"matched": True, "item": None, "already": True}  # counted in someone else's zone: no details
     if not already:
-        before = {"count": item.count}
+        kind_before = diff_kind(_item_out(item, s.rules_version), s.rules_version)
+        before: dict[str, Any] = {"count": item.count}
+        after: dict[str, Any] = {"count": "found", "code": body.code.strip()}
+        if zone and item.count == "pending" and item.zone_id != zone.id:
+            # First sighting wins: move it to the zone it was found in and keep where it was booked.
+            names = {z["id"]: z["name"] for z in await _zones(session, s.id)}
+            origin = names.get(str(item.zone_id)) if item.zone_id else None
+            before["zone"], after["zone"] = origin, zone.name
+            item.zone_id = zone.id
+            item.seen_at = origin or "Chưa phân khu"
+        else:
+            item.seen_at = body.seen_at.strip() or item.seen_at
         item.count, item.condition = "found", item.condition or "good"
-        item.seen_at = body.seen_at.strip() or item.seen_at
         item.counted_by, item.counted_at = user.upn, _now()
+        _recheck_resolution(item, kind_before, s.rules_version)
         await record(
             session,
             actor=user.actor,
@@ -315,10 +455,10 @@ async def scan(
             target_id=str(s.id),
             target_label=f"{s.name} · {item.name} ({item.asset_tag or item.serial or item.asset_id})",
             before=before,
-            after={"count": "found", "code": body.code.strip()},
+            after=after,
         )
         await session.commit()
-    return {"matched": True, "item": _item_out(item), "already": already}
+    return {"matched": True, "item": _item_out(item, s.rules_version), "already": already}
 
 
 class CountIn(BaseModel):
@@ -341,17 +481,19 @@ async def set_count(
     item = await session.get(StocktakeItem, item_id)
     if item is None or item.stocktake_id != s.id:
         raise NotFound("Không tìm thấy tài sản trong kỳ kiểm kê.")
+    if not await _can_touch(session, user, s, item):
+        raise PermissionDenied("Chỉ kiểm được tài sản thuộc khu bạn được giao.")
     if item.count == "extra":
         raise Conflict("Tài sản ngoài sổ: sửa ghi chú hoặc xoá dòng rồi thêm lại.", code="extra_item")
     if s.status == "reviewing" and body.count == "pending":
         raise Conflict("Đã kết thúc kiểm: chọn Có hoặc Không tìm thấy.", code="count_finished")
     before = {"count": item.count, "condition": item.condition, "seen_at": item.seen_at, "note": item.note}
+    kind_before = diff_kind(_item_out(item, s.rules_version), s.rules_version)
     item.count = body.count
     item.condition = (body.condition or "good") if body.count == "found" else None
     item.seen_at, item.note = body.seen_at.strip(), body.note.strip()
     item.counted_by, item.counted_at = (user.upn, _now()) if body.count != "pending" else (None, None)
-    if not difference(_item_out(item)):
-        item.resolution, item.resolution_note, item.resolved_by, item.resolved_at = None, "", None, None
+    _recheck_resolution(item, kind_before, s.rules_version)
     await record(
         session,
         actor=user.actor,
@@ -364,7 +506,69 @@ async def set_count(
         after={"count": item.count, "condition": item.condition, "seen_at": item.seen_at, "note": item.note},
     )
     await session.commit()
-    return _item_out(item)
+    return _item_out(item, s.rules_version)
+
+
+class CountBatchIn(BaseModel):
+    item_ids: list[int] = Field(min_length=1, max_length=100)
+    count: Literal["found", "missing"]
+    condition: Condition | None = None
+
+
+@router.post("/stocktakes/{stocktake_id}/count-batch")
+async def count_batch(
+    stocktake_id: uuid.UUID,
+    body: CountBatchIn,
+    user: CurrentUser = Depends(count_perm),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Count many assets at once (a whole desk). All or nothing: one bad id refuses the lot. Only pending
+    assets change; the ones already counted are skipped (and reported in ``skipped``)."""
+    s = await _get(session, stocktake_id, lock=True)
+    if s.status != "counting":
+        raise Conflict("Kỳ kiểm kê không ở bước kiểm.", code="not_counting")
+    ids = list(dict.fromkeys(body.item_ids))
+    items = {
+        i.id: i
+        for i in (
+            await session.scalars(
+                select(StocktakeItem).where(StocktakeItem.stocktake_id == s.id, StocktakeItem.id.in_(ids))
+            )
+        ).all()
+    }
+    if len(items) != len(ids):
+        raise NotFound("Có tài sản không thuộc kỳ kiểm kê.")
+    if any(i.count == "extra" for i in items.values()):
+        raise Conflict("Tài sản ngoài sổ không kiểm hàng loạt được.", code="extra_item")
+    if not user.has("lifecycle.stocktake.view_all"):
+        mine = await _my_zone_ids(session, user, s.id)
+        if any(i.zone_id not in mine for i in items.values()):
+            raise PermissionDenied("Chỉ kiểm được tài sản thuộc khu bạn được giao.")
+    skipped = 0
+    for iid in ids:
+        item = items[iid]
+        if item.count != "pending":  # already counted (maybe by someone else): never overwrite it
+            skipped += 1
+            continue
+        kind_before = diff_kind(_item_out(item, s.rules_version), s.rules_version)
+        before = {"count": item.count, "condition": item.condition}
+        item.count = body.count
+        item.condition = (body.condition or "good") if body.count == "found" else None
+        item.counted_by, item.counted_at = user.upn, _now()
+        _recheck_resolution(item, kind_before, s.rules_version)
+        await record(
+            session,
+            actor=user.actor,
+            module_id=MODULE_ID,
+            action="lifecycle.stocktake_counted",
+            target_type="stocktake",
+            target_id=str(s.id),
+            target_label=f"{s.name} · {item.name} ({item.asset_tag or item.serial or item.asset_id})",
+            before=before,
+            after={"count": item.count, "condition": item.condition, "batch": len(ids)},
+        )
+    await session.commit()
+    return {"items": [_item_out(items[i], s.rules_version) for i in ids], "skipped": skipped}
 
 
 class ExtraIn(BaseModel):
@@ -376,6 +580,7 @@ class ExtraIn(BaseModel):
     condition: Condition = "good"
     seen_at: str = Field("", max_length=256)
     note: str = Field("", max_length=1000)
+    zone_id: uuid.UUID | None = None  # required without view_all: the zone being walked
 
 
 @router.post("/stocktakes/{stocktake_id}/extras", status_code=201)
@@ -388,14 +593,20 @@ async def add_extra(
     """An asset found on site that is not on the SDP book."""
     s = await _get(session, stocktake_id, lock=True)
     _open_for_count(s)
+    zone = await _walked_zone(session, user, s, body.zone_id)
     if not (body.serial.strip() or body.asset_tag.strip() or body.fa_code.strip()):
         raise AppError(
             "Nhập ít nhất serial, asset tag hoặc mã TSCĐ để nhận diện tài sản.", code="extra_no_code"
         )
-    for i in await _items(session, stocktake_id):
-        if any(matches(_item_out(i), c) for c in (body.serial, body.asset_tag, body.fa_code) if c.strip()):
-            raise Conflict(f"Mã đã có trong kỳ kiểm kê: {i.name} ({i.asset_tag or i.serial or '—'}).",
-                           code="extra_duplicate")  # fmt: skip
+    dups = await _matching(
+        session, stocktake_id, [c for c in (body.serial, body.asset_tag, body.fa_code) if c.strip()]
+    )
+    if dups:
+        i = dups[0]
+        detail = (
+            f": {i.name} ({i.asset_tag or i.serial or '—'})" if await _can_touch(session, user, s, i) else ""
+        )
+        raise Conflict(f"Mã đã có trong kỳ kiểm kê{detail}.", code="extra_duplicate")
     item = StocktakeItem(
         stocktake_id=s.id,
         asset_id=None,
@@ -404,6 +615,7 @@ async def add_extra(
         serial=body.serial.strip() or None,
         asset_tag=body.asset_tag.strip() or None,
         fa_code=body.fa_code.strip() or None,
+        zone_id=zone.id if zone else None,
         count="extra",
         condition=body.condition,
         seen_at=body.seen_at.strip(),
@@ -424,7 +636,7 @@ async def add_extra(
         after={"serial": item.serial, "asset_tag": item.asset_tag, "fa_code": item.fa_code},
     )
     await session.commit()
-    return _item_out(item)
+    return _item_out(item, s.rules_version)
 
 
 @router.delete("/stocktakes/{stocktake_id}/extras/{item_id}", status_code=204)
@@ -439,6 +651,8 @@ async def delete_extra(
     item = await session.get(StocktakeItem, item_id)
     if item is None or item.stocktake_id != s.id or item.count != "extra":
         raise NotFound("Không tìm thấy tài sản ngoài sổ.")
+    if not await _can_touch(session, user, s, item):
+        raise PermissionDenied("Chỉ xoá được tài sản thuộc khu bạn được giao.")
     await record(
         session,
         actor=user.actor,
@@ -473,13 +687,19 @@ async def resolve(
     item = await session.get(StocktakeItem, item_id)
     if item is None or item.stocktake_id != s.id:
         raise NotFound("Không tìm thấy tài sản trong kỳ kiểm kê.")
-    if not difference(_item_out(item)):
+    kind = diff_kind(_item_out(item, s.rules_version), s.rules_version)
+    if not kind:
         raise Conflict("Tài sản này khớp sổ, không cần hướng xử lý.", code="no_difference")
+    if body.resolution and body.resolution not in ALLOWED_RESOLUTIONS.get(kind, ()):
+        raise AppError(
+            "Hướng xử lý này không áp dụng cho loại chênh lệch của tài sản.", code="resolution_not_allowed"
+        )
     if body.resolution == "investigate" and not body.note.strip():
         raise AppError("Ghi rõ cần tìm hoặc làm rõ điều gì.", code="resolution_note_required")
     before = {"resolution": item.resolution, "note": item.resolution_note}
     item.resolution, item.resolution_note = body.resolution, body.note.strip()
     item.resolved_by, item.resolved_at = (user.upn, _now()) if body.resolution else (None, None)
+    item.resolution_suggested = False  # a person decided
     await record(
         session,
         actor=user.actor,
@@ -492,7 +712,40 @@ async def resolve(
         after={"resolution": body.resolution, "note": item.resolution_note},
     )
     await session.commit()
-    return _item_out(item)
+    return _item_out(item, s.rules_version)
+
+
+@router.post("/stocktakes/{stocktake_id}/default-resolutions")
+async def default_resolutions(
+    stocktake_id: uuid.UUID,
+    user: CurrentUser = Depends(manage_perm),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Suggest a resolution for every difference that has none. They stay unresolved (and block closing)
+    until a person confirms each one."""
+    s = await _get(session, stocktake_id, lock=True)
+    if s.status != "reviewing":
+        raise Conflict("Chỉ áp hướng xử lý mặc định khi đang xử lý chênh lệch.", code="not_reviewing")
+    counts: dict[str, int] = {}
+    for i in await _items(session, stocktake_id):
+        kind = diff_kind(_item_out(i, s.rules_version), s.rules_version)
+        if not kind or i.resolution or kind not in DEFAULT_RESOLUTIONS:
+            continue
+        i.resolution, i.resolution_note = DEFAULT_RESOLUTIONS[kind]
+        i.resolved_by, i.resolved_at, i.resolution_suggested = None, None, True
+        counts[kind] = counts.get(kind, 0) + 1
+    await record(
+        session,
+        actor=user.actor,
+        module_id=MODULE_ID,
+        action="lifecycle.stocktake_default_resolutions",
+        target_type="stocktake",
+        target_id=str(s.id),
+        target_label=s.name,
+        after={"suggested": sum(counts.values()), **counts},
+    )
+    await session.commit()
+    return {"suggested": sum(counts.values()), **counts}
 
 
 @router.post("/stocktakes/{stocktake_id}/finish-count")
@@ -534,8 +787,8 @@ async def close_stocktake(
     s = await _get(session, stocktake_id, lock=True)
     if s.status != "reviewing":
         raise Conflict("Kết thúc kiểm trước khi đóng kỳ.", code="not_reviewing")
-    items = [_item_out(i) for i in await _items(session, stocktake_id)]
-    if left := summary(items)["unresolved"]:
+    items = [_item_out(i, s.rules_version) for i in await _items(session, stocktake_id)]
+    if left := summary(items, s.rules_version)["unresolved"]:
         raise Conflict(f"Còn {left} chênh lệch chưa có hướng xử lý.", code="differences_unresolved")
     s.status, s.closed_by, s.closed_at = "closed", user.upn, _now()
     await record(
@@ -547,7 +800,7 @@ async def close_stocktake(
         target_id=str(s.id),
         target_label=s.name,
         before={"status": "reviewing"},
-        after={"status": "closed", **summary(items)},
+        after={"status": "closed", **summary(items, s.rules_version)},
     )
     await session.commit()
     return _stocktake_out(s)
@@ -570,7 +823,7 @@ async def export_stocktake(
         raise PermissionDenied("Chỉ tải được file của khu bạn được giao kiểm.")
     names = {z["id"]: z["name"] for z in zones}
     items = [
-        {**(o := _item_out(i)), "zone": names.get(o["zone_id"] or "")}
+        {**(o := _item_out(i, s.rules_version)), "zone": names.get(o["zone_id"] or "")}
         for i in await _items(session, stocktake_id)
     ]
     part = ""
@@ -580,6 +833,15 @@ async def export_stocktake(
         items = [i for i in items if (i["zone_id"] or "none") == zone_id]
         zones = [z for z in zones if z["id"] == zone_id]
         part = names.get(zone_id, "Chưa phân khu")
+    # Money sheets: the full file only, and only for someone with the finance permission.
+    recon = (
+        await _reconcile(session, s, zones)
+        if not zone_id
+        and user.has("lifecycle.stocktake.finance")
+        and user.has("lifecycle.stocktake.view_all")
+        and s.fa_registers
+        else None
+    )
     head = {
         **_stocktake_out(s),
         "cutoff": fmt_date(s.cutoff),
@@ -593,12 +855,13 @@ async def export_stocktake(
         target_type="stocktake",
         target_id=str(s.id),
         target_label=f"{s.name} · {part}" if part else s.name,
+        after={"finance_sheets": recon is not None},
     )
     await session.commit()
     if part:
         head["name"] = f"{s.name} – {part}"
     return Response(
-        to_xlsx(head, items, zones, await logo_bytes(session)),
+        to_xlsx(head, items, zones, await logo_bytes(session), s.rules_version, recon),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
             "Content-Disposition": f'attachment; filename="kiem-ke-{s.cutoff:%Y%m%d}{"-" + _slug(part) if part else ""}.xlsx"'
@@ -646,13 +909,21 @@ class RecordIn(BaseModel):
 
 
 def _record_data(
-    s: Stocktake, zones: list[dict[str, Any]], items: list[dict[str, Any]], body: RecordIn
+    s: Stocktake,
+    zones: list[dict[str, Any]],
+    items: list[dict[str, Any]],
+    body: RecordIn,
+    book_counts: dict[str, int],
 ) -> dict[str, Any]:
     names = {z["id"]: z["name"] for z in zones}
-    totals = summary(items)
+    rv = s.rules_version
+    totals = summary(items, rv)
+    found = [i for i in items if i["count"] == "found"]
+    light = sum(1 for i in found if i.get("condition") == "damaged")
+    broken = sum(1 for i in found if i.get("condition") == "broken")
     diffs = []
     for i in items:
-        if not (d := difference(i)):
+        if not (d := difference(i, rv)):
             continue
         res = RESOLUTION_LABEL.get(i.get("resolution") or "", "")
         diffs.append(
@@ -669,17 +940,17 @@ def _record_data(
         "stocktake_id": str(s.id),
         "title": s.name,
         "cutoff": s.cutoff.isoformat(),
-        "date": datetime.now(UTC).date().isoformat(),
+        "date": today_vn().isoformat(),
         "synced_at": fmt_date(s.source_synced_at) if s.source_synced_at else "",
         "totals": {
             "book": totals["book"],
             "found": totals["found"],
             "missing": totals["missing"],
             "extra": totals["extra"],
-            "damaged": sum(
-                1 for i in items if i["count"] == "found" and i.get("condition") in ("damaged", "broken")
-            ),
+            "damaged": broken + light if rv < 2 else broken,
+            "damaged_light": light if rv >= 2 else 0,  # rules 1 already counts light damage in "damaged"
             "differences": totals["differences"],
+            **book_counts,  # accounting register: counts only, never money
         },
         "zones": [
             {
@@ -690,7 +961,7 @@ def _record_data(
                 "missing": z["missing"],
                 "extra": z["extra"],
             }
-            for z in zone_progress(zones, items)
+            for z in zone_progress(zones, items, rv)
         ],
         "differences": diffs,
         "assets": [
@@ -731,8 +1002,9 @@ async def make_record(
         raise Conflict(
             "Đóng kỳ kiểm kê (mọi chênh lệch đã có hướng xử lý) trước khi lập biên bản.", code="not_closed"
         )
-    items = [_item_out(i) for i in await _items(session, stocktake_id)]
-    data = _record_data(s, await _zones(session, stocktake_id), items, body)
+    items = [_item_out(i, s.rules_version) for i in await _items(session, stocktake_id)]
+    zones = await _zones(session, stocktake_id)
+    data = _record_data(s, zones, items, body, register_totals(await _reconcile(session, s, zones)))
     doc = await session.get(Document, s.record_document_id) if s.record_document_id else None
     if doc is not None and doc.status == "void":
         doc = None
@@ -749,7 +1021,7 @@ async def make_record(
 
 @router.get("/stocktake-meta")
 async def stocktake_meta(_: CurrentUser = Depends(view_perm)) -> dict[str, Any]:
-    return {"resolutions": RESOLUTION_LABEL}
+    return {"resolutions": RESOLUTION_LABEL, "allowed": ALLOWED_RESOLUTIONS}
 
 
 # ---------------------------------------------------------------- zones of one stocktake: who counts what
@@ -790,8 +1062,8 @@ async def assign_zone(
     user: CurrentUser = Depends(assign_perm),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    """Hand a zone to the person who counts it (None = nobody yet). Anyone with the count permission may still
-    count assets of any zone: devices move between floors."""
+    """Hand a zone to the person who counts it (None = nobody yet). Without view_all that person counts only
+    the assets of their zones; a device found on another floor moves to the zone it is scanned in."""
     s = await _get(session, stocktake_id, lock=True)
     _open_for_count(s)
     zone = await session.get(StocktakeZone, zone_id)
@@ -855,7 +1127,7 @@ async def move_item(
         after={"zone": zone.name if zone else None},
     )
     await session.commit()
-    return _item_out(item)
+    return _item_out(item, s.rules_version)
 
 
 # ---------------------------------------------------------------- areas (khu kiểm kê), kept from year to year
@@ -1074,3 +1346,286 @@ async def next_action(session: AsyncSession, user: Any) -> list[dict[str, Any]]:
             }
         )
     return items
+
+
+# --- Accounting registers (sổ TSCĐ / CCDC) -------------------------------------------------------------
+
+
+def _kind(kind: str) -> str:
+    if kind not in KINDS:
+        raise NotFound("Loại sổ không hợp lệ (tscd hoặc ccdc).")
+    return kind
+
+
+def _mapping(raw: str | None) -> dict[str, str] | None:
+    """Columns picked by hand: a JSON object {field: column letter}."""
+    if not raw:
+        return None
+    try:
+        m = json.loads(raw)
+    except ValueError:
+        m = None
+    if not isinstance(m, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in m.items()):
+        raise AppError("Cột chọn tay không hợp lệ.", code="register_mapping_invalid")
+    return m
+
+
+async def _parse_upload(file: UploadFile, sheet: str | None, mapping: str | None) -> tuple[bytes, Parsed]:
+    data = await file.read(MAX_FILE_BYTES + 1)
+    check_size(data)
+    sniff(data, {XLSX_MIME})
+    return data, await asyncio.to_thread(parse_register, data, sheet or None, _mapping(mapping))
+
+
+def _token(digest: str, parsed: Parsed, mapping: str | None) -> str:
+    """Binds an import to the exact file + sheet + column choice that was previewed."""
+    canon = json.dumps(_mapping(mapping) or {}, sort_keys=True)
+    return hashlib.sha256(f"{digest}|{parsed.sheet}|{canon}".encode()).hexdigest()
+
+
+def _row_out(r: Any) -> dict[str, Any]:
+    return {
+        "row_no": r.row_no,
+        "code": r.code,
+        "name": r.name,
+        "group": r.group,
+        "quantity": str(r.quantity) if r.quantity is not None else None,
+        "cost": str(r.cost) if r.cost is not None else None,
+        "accumulated": str(r.accumulated) if r.accumulated is not None else None,
+        "net": str(r.net) if r.net is not None else None,
+        "in_use_date": r.in_use_date.isoformat() if r.in_use_date else None,
+        "department": r.department,
+        "life_months": r.life_months,
+        "account": r.account,
+        "serial": r.serial,
+    }
+
+
+@router.get("/stocktakes/{stocktake_id}/reconciliation")
+async def reconciliation(
+    stocktake_id: uuid.UUID,
+    _: CurrentUser = Depends(finance_perm),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Sổ KT ↔ SDP ↔ thực tế, per code (finance only: carries nguyên giá / giá trị còn lại)."""
+    s = await _get(session, stocktake_id)
+    recon = await _reconcile(session, s, await _zones(session, stocktake_id))
+    return jsonable(
+        {
+            **recon,
+            "totals": register_totals(recon),
+            "meta": {
+                "registers": s.fa_registers,
+                "rules_version": s.rules_version,
+                "provisional": s.status
+                == "counting",  # still being counted: pending lines, figures may change
+            },
+        }
+    )
+
+
+@router.post("/stocktakes/{stocktake_id}/registers/{kind}/preview")
+async def preview_register(
+    stocktake_id: uuid.UUID,
+    kind: str,
+    file: UploadFile = File(...),
+    sheet: str | None = Form(None),
+    mapping: str | None = Form(None),
+    user: CurrentUser = Depends(finance_perm),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Step 1 of the import: how the columns were read, the first rows and the total. Nothing is stored.
+    The import must echo ``preview_token`` back so it applies exactly the file, sheet and columns previewed."""
+    _kind(kind)
+    await _get(session, stocktake_id)
+    data, parsed = await _parse_upload(file, sheet, mapping)
+    return {
+        "kind": kind,
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "preview_token": _token(hashlib.sha256(data).hexdigest(), parsed, mapping),
+        "headers": parsed.headers,
+        "mapping": parsed.positions,
+        "ambiguous": parsed.ambiguous,
+        "errors": parsed.errors[:100],
+        "errors_total": len(parsed.errors),
+        "skipped": parsed.skipped,
+        "sheet": parsed.sheet,
+        "sheets": parsed.sheets,
+        "header_rows": parsed.header_rows,
+        "columns": parsed.columns,
+        "rows": len(parsed.rows),
+        "total_cost": str(parsed.total_cost),
+        "first_rows": [_row_out(r) for r in parsed.rows[:5]],
+        "warnings": parsed.warnings[:50],
+        "warnings_total": len(parsed.warnings),
+    }
+
+
+@router.post("/stocktakes/{stocktake_id}/registers/{kind}")
+async def import_register(
+    stocktake_id: uuid.UUID,
+    kind: str,
+    file: UploadFile = File(...),
+    confirm: bool = Form(False),
+    sheet: str | None = Form(None),
+    mapping: str | None = Form(None),
+    preview_token: str = Form(...),
+    as_of: date | None = Form(None),
+    user: CurrentUser = Depends(finance_perm),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Step 2: replace the whole register of this kind in one transaction (an import is never merged).
+    The file itself is not kept: only its name and sha256 (``preview_token`` must equal the previewed one)."""
+    _kind(kind)
+    if not confirm:
+        raise AppError("Cần xác nhận sau khi xem trước.", code="confirm_required")
+    data, parsed = await _parse_upload(file, sheet, mapping)  # parsed before the lock: it can take seconds
+    digest = hashlib.sha256(data).hexdigest()
+    if _token(digest, parsed, mapping) != preview_token.lower():
+        raise Conflict(
+            "File, sheet hoặc cột chọn khác với lần xem trước – xem trước lại.", code="register_file_changed"
+        )
+    if parsed.ambiguous:
+        raise AppError(
+            "Có cột trùng nhãn (vd. đầu kỳ/cuối kỳ) – chọn cột đúng rồi xem trước lại.",
+            code="register_ambiguous_columns",
+            details={"ambiguous": parsed.ambiguous},
+        )
+    if parsed.errors:
+        raise AppError(
+            f"Còn {len(parsed.errors)} ô không đọc được – sửa file hoặc chọn lại cột rồi xem trước lại.",
+            code="register_bad_cells",
+            details={"errors": parsed.errors[:100], "errors_total": len(parsed.errors)},
+        )
+    s = await _get(session, stocktake_id, lock=True)
+    _open_for_count(s)
+    await session.execute(
+        delete(FaRegisterRow).where(FaRegisterRow.stocktake_id == s.id, FaRegisterRow.kind == kind)
+    )
+    session.add_all(
+        FaRegisterRow(stocktake_id=s.id, kind=kind, **_row_out_orm(r)) for r in parsed.rows
+    )  # fmt: skip
+    meta = {
+        "filename": file.filename or "so-ke-toan.xlsx",
+        "sha256": digest,
+        "rows": len(parsed.rows),
+        "total_cost": str(parsed.total_cost),
+        "as_of": as_of.isoformat() if as_of else None,
+        "imported_by": user.upn,
+        "imported_at": _now().isoformat(),
+    }
+    before = s.fa_registers.get(kind)
+    s.fa_registers = {**s.fa_registers, kind: meta}
+    await record(
+        session,
+        actor=user.actor,
+        module_id=MODULE_ID,
+        action="lifecycle.stocktake_register_imported",
+        target_type="stocktake",
+        target_id=str(s.id),
+        target_label=f"{s.name} · sổ {kind.upper()}",
+        before={k: before[k] for k in ("sha256", "rows", "total_cost")} if before else None,
+        after={k: meta[k] for k in ("filename", "sha256", "rows", "total_cost")},
+    )
+    await session.commit()
+    return {"kind": kind, **meta, "warnings": parsed.warnings[:50], "warnings_total": len(parsed.warnings)}
+
+
+def _row_out_orm(r: Any) -> dict[str, Any]:
+    return {
+        k: getattr(r, k)
+        for k in ("row_no", "code", "code_norm", "name", "group", "quantity", "cost", "accumulated", "net",
+                  "in_use_date", "department", "life_months", "account", "serial")
+    }  # fmt: skip
+
+
+@router.get("/stocktakes/{stocktake_id}/registers")
+async def get_registers(
+    stocktake_id: uuid.UUID,
+    kind: str | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(200, ge=1, le=500),
+    _: CurrentUser = Depends(finance_perm),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    s = await _get(session, stocktake_id)
+    q = select(FaRegisterRow).where(FaRegisterRow.stocktake_id == s.id)
+    if kind:
+        q = q.where(FaRegisterRow.kind == _kind(kind))
+    total = await session.scalar(select(func.count()).select_from(q.subquery()))
+    rows = (
+        await session.scalars(
+            q.order_by(FaRegisterRow.kind, FaRegisterRow.row_no).offset(offset).limit(limit)
+        )
+    ).all()
+    return {
+        "meta": s.fa_registers,
+        "total": total,
+        "rows": [{"kind": r.kind, **_row_out(r)} for r in rows],
+    }
+
+
+@router.delete("/stocktakes/{stocktake_id}/registers/{kind}", status_code=204)
+async def delete_register(
+    stocktake_id: uuid.UUID,
+    kind: str,
+    user: CurrentUser = Depends(finance_perm),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    _kind(kind)
+    s = await _get(session, stocktake_id, lock=True)
+    _open_for_count(s)
+    before = s.fa_registers.get(kind)
+    if before is None:
+        raise NotFound("Kỳ này chưa nhập sổ này.")
+    await session.execute(
+        delete(FaRegisterRow).where(FaRegisterRow.stocktake_id == s.id, FaRegisterRow.kind == kind)
+    )
+    s.fa_registers = {k: v for k, v in s.fa_registers.items() if k != kind}
+    await record(
+        session,
+        actor=user.actor,
+        module_id=MODULE_ID,
+        action="lifecycle.stocktake_register_deleted",
+        target_type="stocktake",
+        target_id=str(s.id),
+        target_label=f"{s.name} · sổ {kind.upper()}",
+        before={k: before[k] for k in ("sha256", "rows", "total_cost")},
+    )
+    await session.commit()
+    return Response(status_code=204)
+
+
+class FaCodeIn(BaseModel):
+    fa_code: str = Field("", max_length=128)
+
+
+@router.patch("/stocktakes/{stocktake_id}/items/{item_id}/fa-code")
+async def set_fa_code(
+    stocktake_id: uuid.UUID,
+    item_id: int,
+    body: FaCodeIn,
+    user: CurrentUser = Depends(manage_perm),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Fix the Mã TSCĐ of an item (SDP's value may be missing or mistyped) so it joins the register."""
+    s = await _get(session, stocktake_id, lock=True)
+    _open_for_count(s)
+    item = await session.get(StocktakeItem, item_id)
+    if item is None or item.stocktake_id != s.id:
+        raise NotFound("Không tìm thấy tài sản trong kỳ kiểm kê.")
+    before = item.fa_code
+    item.fa_code = body.fa_code.strip() or None
+    await record(
+        session,
+        actor=user.actor,
+        module_id=MODULE_ID,
+        action="lifecycle.stocktake_fa_code_set",
+        target_type="stocktake",
+        target_id=str(s.id),
+        target_label=f"{s.name} · {item.name} ({item.asset_tag or item.serial or '—'})",
+        before={"fa_code": before},
+        after={"fa_code": item.fa_code},
+    )
+    await session.commit()
+    return _item_out(item, s.rules_version)

@@ -78,6 +78,9 @@ class FakeSdp:
             "504": req("504", "Open", None, 10, far),
             "505": req("505", "Canceled", "12", 3, None),
         }
+        self.reread: dict[str, dict] = {}  # answers to the by-id category re-read
+        self.deny_reread = False
+        self.unchanged = False  # incremental read finds nothing new on SDP
         self.puts: list[str] = []
         self.assets: list[dict] = [{"id": "900", "serial_number": "SN-OLD", "name": "OLD"}]
         self.asset_posts: list[dict] = []
@@ -105,12 +108,18 @@ class FakeSdp:
                 )
             )
         )
-        r.get(f"{SDP}/api/v3/requests").mock(
-            side_effect=lambda _: httpx.Response(
-                200,
-                json={**OK, "list_info": {"has_more_rows": False}, "requests": list(self.requests.values())},
-            )
-        )
+
+        def listing(request: httpx.Request) -> httpx.Response:
+            crit = json.loads(request.url.params["input_data"])["list_info"].get("search_criteria")
+            if isinstance(crit, dict) and crit["field"] == "id":  # category re-read by id
+                if self.deny_reread:
+                    return httpx.Response(500, json={"response_status": {"status_code": 5000}})
+                rows = [self.reread[i] for i in crit["values"] if i in self.reread]
+            else:
+                rows = [] if self.unchanged else list(self.requests.values())
+            return httpx.Response(200, json={**OK, "list_info": {"has_more_rows": False}, "requests": rows})
+
+        r.get(f"{SDP}/api/v3/requests").mock(side_effect=listing)
 
         def detail(request: httpx.Request, rid: str) -> httpx.Response:
             if request.method == "PUT":
@@ -506,8 +515,22 @@ async def test_portal_accounts_and_purchase_flow(admin, client, sdp) -> None:  #
     listed = (await client.get("/api/workload/purchases")).json()
     assert any(p["id"] == pid for p in listed["items"])
     assert listed["counts"]["received"] == sum(p["status"] == "received" for p in listed["items"])
+    evil = await client.post(
+        "/api/workload/purchases",
+        json={"source": "manual", "kind": "new", "item": "=1+1", "reason": "@SUM(A1)"},
+    )
+    assert evil.status_code == 201, evil.text
     x = await client.get("/api/workload/purchases/export")
     assert x.status_code == 200 and x.content[:2] == b"PK"
+    import io
+
+    from openpyxl import load_workbook
+
+    ws = load_workbook(io.BytesIO(x.content)).active
+    assert ws is not None
+    cells = {c.value: c for row in ws.iter_rows(min_row=2) for c in row}
+    assert "'=1+1" in cells and cells["'=1+1"].data_type == "s"
+    assert "'@SUM(A1)" in cells
 
     # Another operator only sees their own proposals; dismissing hides a suggestion.
     await client.login("wl-op2@test.local")
@@ -1283,3 +1306,101 @@ async def test_onboard_line_is_proposed_once_whoever_proposes(admin, client) -> 
     assert r.status_code == 200, r.text
     await client.login("dup-op2@test.local")
     assert (await client.post("/api/workload/purchases", json=body)).status_code == 201
+
+
+def test_ticket_state_vietnamese_done_and_cancelled():
+    import unicodedata
+
+    s = WorkloadSettings()
+    assert ticket_state("Đã xong", s) == "done" and ticket_state("Hoàn tất", s) == "done"
+    assert ticket_state(unicodedata.normalize("NFD", "Đã hủy"), s) == "cancelled"
+    assert ticket_state("Đang xử lý", s) == "open"
+
+
+# ------------------------------------------------------------------ SLA board
+SOON_H = 24
+
+
+def _sla_ticket(tid: str, tech: str | None, due: datetime | None, phase: str = "in_progress", **kw):  # type: ignore[no-untyped-def]
+    from app.modules.workload.models import Ticket
+
+    return Ticket(
+        id=tid,
+        display_id=tid,
+        subject=f"SLA {tid}",
+        technician_id=tech,
+        status="Open",
+        state="open",
+        phase=phase,
+        category="SLA-T",
+        due_by=due,
+        created_at=kw.pop("created_at", datetime(2026, 11, 20, tzinfo=UTC)),
+        **kw,
+    )
+
+
+async def test_sla_classification_boundaries_and_scope(admin, client, sdp, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from datetime import timedelta
+
+    from app.modules.workload import api as wl_api
+
+    now = datetime(2026, 11, 25, 12, tzinfo=UTC)
+    monkeypatch.setattr(wl_api, "_now", lambda: now)
+    soon = now + timedelta(hours=SOON_H)
+    async with get_sessionmaker()() as s:
+        s.add_all(
+            [
+                _sla_ticket("s1", "11", now - timedelta(seconds=1)),  # overdue
+                _sla_ticket(
+                    "s2", "11", now - timedelta(days=2), phase="on_hold"
+                ),  # on_hold wins over overdue
+                _sla_ticket("s3", "11", now),  # exactly now: not yet overdue -> due soon
+                _sla_ticket("s4", "11", soon - timedelta(seconds=1)),  # due soon
+                _sla_ticket("s5", "11", soon),  # exactly now+soon -> on track
+                _sla_ticket("s6", "11", None),  # no due time
+                _sla_ticket("s7", "12", now - timedelta(hours=1)),  # someone else's overdue
+            ]
+        )
+        await s.commit()
+    q = {"category": "SLA-T"}
+    body = (await admin.get("/api/workload/sla", params=q)).json()
+    assert body["groups"] == {"overdue": 2, "due_soon": 2, "on_track": 1, "on_hold": 1, "no_due": 1}
+    assert [i["id"] for i in body["items"]] == ["s7", "s1", "s3", "s4"]  # by due time, on_hold left out
+    assert all(i["category"] == "SLA-T" for i in body["items"])
+    assert sum(a["count"] for a in body["aging"]) == 7 and body["aging"][-1]["bucket"] == ">14d"
+    tech = {r["key"]: r for r in body["by"]["technician"]}
+    assert (tech["11"]["overdue"], tech["11"]["due_soon"], tech["11"]["open"]) == (1, 2, 6)
+    assert body["by"]["category"][0]["key"] == "SLA-T"
+    only12 = (await admin.get("/api/workload/sla", params={**q, "tech": "12"})).json()
+    assert only12["groups"]["overdue"] == 1 and only12["groups"]["on_hold"] == 0
+
+    await client.login("wl-op1@test.local")  # operator of technician 11: own tasks only, no technician table
+    mine = (await client.get("/api/workload/sla", params={**q, "tech": "12"})).json()
+    assert mine["groups"] == {"overdue": 1, "due_soon": 2, "on_track": 1, "on_hold": 1, "no_due": 1}
+    assert "technician" not in mine["by"] and {i["id"] for i in mine["items"]} == {"s1", "s3", "s4"}
+
+
+@respx.mock(assert_all_called=False)
+async def test_sync_rereads_category_of_open_tickets_once(sdp) -> None:  # type: ignore[no-untyped-def]
+    from app.modules.workload.models import Ticket
+    from app.modules.workload.sync import run_sync
+
+    async with get_sessionmaker()() as s:  # tickets stored before the column existed
+        for t in (await s.scalars(select(Ticket))).all():
+            t.category = t.subcategory = None
+        await s.commit()
+    sdp.reread = {
+        "501": {**sdp.requests["501"], "category": {"name": "Hardware"}, "subcategory": {"name": "Laptop"}}
+    }
+    sdp.unchanged = True
+    sdp.deny_reread = True  # SDP fails: tickets keep NULL and are retried
+    async with get_sessionmaker()() as s:
+        await run_sync(s)
+        assert (await s.get(Ticket, "501")).category is None  # type: ignore[union-attr]
+    sdp.deny_reread = False
+    async with get_sessionmaker()() as s:
+        await run_sync(s)
+        t501, t504, t502 = [await s.get(Ticket, i) for i in ("501", "504", "502")]
+        assert (t501.category, t501.subcategory) == ("Hardware", "Laptop")  # type: ignore[union-attr]
+        assert t504.category is None  # type: ignore[union-attr]  # not in the answer: retried next sync
+        assert t502.category is None  # type: ignore[union-attr]  # finished tickets are not re-read

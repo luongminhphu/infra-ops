@@ -216,6 +216,7 @@ HANDOVER = DocumentKind(
     view_permission="lifecycle.documents.view",
     create_permission="lifecycle.documents.create",
     manage_permission="lifecycle.templates.manage",
+    view_all_permission="lifecycle.job.view_all",
 )
 
 RETURN = DocumentKind(
@@ -246,6 +247,7 @@ RETURN = DocumentKind(
     view_permission="lifecycle.documents.view",
     create_permission="lifecycle.documents.create",
     manage_permission="lifecycle.templates.manage",
+    view_all_permission="lifecycle.job.view_all",
 )
 
 KIND_BY_SHORT = {"handover": HANDOVER, "return": RETURN}

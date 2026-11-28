@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { FileSearch, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/core/api/client";
-import { formatNumber, formatVnd } from "@/core/lib/format";
+import { formatNumber, formatVnd, isoDateVn } from "@/core/lib/format";
 import { Button } from "@/core/ui/button";
 import { DateInput } from "@/core/ui/date-input";
 import { Dialog } from "@/core/ui/dialog";
@@ -33,7 +33,7 @@ export function PdfImportDialog({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
   const [vendor, setVendor] = useState("");
-  const [quoted, setQuoted] = useState(new Date().toISOString().slice(0, 10));
+  const [quoted, setQuoted] = useState(isoDateVn());
   const [quotedBad, setQuotedBad] = useState(false);
   const [tried, setTried] = useState(false);
   const [applyTried, setApplyTried] = useState(false);

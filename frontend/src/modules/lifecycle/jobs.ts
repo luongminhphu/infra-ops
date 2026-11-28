@@ -52,8 +52,13 @@ export interface Assignment {
   at: string;
 }
 
+/** Step as returned by `GET /api/core/jobs?lean=1` (heavy fields omitted). */
+export type JobListStep = Omit<JobStep, "before_state" | "output" | "checklist" | "evidence" | "message" | "verify_note">;
+/** Job as returned by `GET /api/core/jobs?lean=1`: no assignments, lean steps. Every full Job is assignable. */
+export type JobListItem = Omit<Job, "assignments" | "steps"> & { steps: JobListStep[] };
+
 /** Onboard / offboard / transfer (the reassignment workflow is an internal helper). */
-export const JOB_WORKFLOWS = "lifecycle.onboard,lifecycle.offboard,lifecycle.transfer";
+export const JOB_WORKFLOWS = "lifecycle.onboard,lifecycle.offboard,lifecycle.transfer,lifecycle.mailbox_release";
 
 export interface Evidence {
   id: string;
@@ -81,6 +86,8 @@ export interface Job {
     effective_date: string | null;
     employee: { id: string; full_name: string; department: string; job_title: string; work_location: string };
     assets?: JobAsset[];
+    options?: { mailbox_handover?: boolean };
+    microsoft?: boolean;
     sdp_user_id: string | null;
     sdp_user_name: string | null;
   };
@@ -130,7 +137,7 @@ export function idleText(minutes: number): string {
   return minutes >= 60 * 24 ? `${Math.floor(minutes / 1440)} ngày` : minutes >= 60 ? `${Math.floor(minutes / 60)} giờ` : `${minutes} phút`;
 }
 
-export function jobStatusLabel(job: Pick<Job, "status" | "current_step" | "steps"> & { stalled_minutes?: number | null }): string {
+export function jobStatusLabel(job: Pick<JobListItem, "status" | "current_step" | "steps"> & { stalled_minutes?: number | null }): string {
   if (job.stalled_minutes) {
     const cur = job.steps.find((x) => x.key === job.current_step);
     return `Đứng yên ${idleText(job.stalled_minutes)}${cur ? ` ở bước ${cur.seq}` : ""}`;
@@ -145,7 +152,7 @@ export function jobStatusLabel(job: Pick<Job, "status" | "current_step" | "steps
 }
 
 /** What the operator has to do now on a running job – an instruction, or that nothing is needed. */
-export function operatorTask(job: Pick<Job, "status" | "current_step" | "steps"> & { stalled_minutes?: number | null }): { act: boolean; text: string } {
+export function operatorTask(job: Pick<JobListItem, "status" | "current_step" | "steps"> & { stalled_minutes?: number | null }): { act: boolean; text: string } {
   const s = job.steps.find((x) => x.key === job.current_step);
   const at = s ? `bước ${s.seq} “${s.title}”` : "bước hiện tại";
   if (job.status === "failed") return { act: true, text: `Bạn cần: đọc lỗi ở ${at}, sửa nguyên nhân rồi bấm Chạy lại bước (không rõ thì báo Supervisor).` };
@@ -159,7 +166,7 @@ export function operatorTask(job: Pick<Job, "status" | "current_step" | "steps">
   return { act: false, text: `Không cần làm gì: hệ thống đang chạy ${at}, trang tự cập nhật.` };
 }
 
-export const WORKFLOW_LABEL: Record<string, string> = { "lifecycle.onboard": "Onboard", "lifecycle.offboard": "Offboard", "lifecycle.transfer": "Thuyên chuyển" };
+export const WORKFLOW_LABEL: Record<string, string> = { "lifecycle.onboard": "Onboard", "lifecycle.offboard": "Offboard", "lifecycle.transfer": "Thuyên chuyển", "lifecycle.mailbox_release": "Hết hạn giữ mailbox" };
 /** Request kinds that get a Job, with the label used on buttons and headings. */
 export const JOB_KIND_LABEL: Record<string, string> = { onboard: "onboard", offboard: "offboard", transfer: "thuyên chuyển" };
 export const SYSTEM_WRITE_LABEL: Record<string, string> = { sdp: "ServiceDesk Plus", biostar: "BioStar" };

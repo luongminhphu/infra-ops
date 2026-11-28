@@ -538,3 +538,538 @@ def test_old_pending_disposal_default_becomes_expired() -> None:
         == "Expired"
     )
     assert LifecycleSettings(asset_state_pending_disposal="Retired").asset_state_pending_disposal == "Retired"
+
+
+def test_closed_and_cancelled_vietnamese_statuses():
+    import unicodedata
+
+    from app.modules.lifecycle.settings import LifecycleSettings
+
+    s = LifecycleSettings()
+    for ok in ("Đã xong", "HOÀN TẤT", unicodedata.normalize("NFD", "Đã huỷ"), "Từ chối"):
+        assert s.is_closed(ok), ok
+    for no in ("Chờ hoàn thành", "Đang xử lý", "", None):
+        assert not s.is_closed(no), no
+    assert s.is_cancelled("Đã hủy") and not s.is_cancelled("Đã xong")
+    s.sdp_cancelled_statuses = [x for x in s.sdp_cancelled_statuses if x not in ("Đã huỷ", "Đã hủy")]
+    assert not s.is_cancelled("Đã huỷ")
+
+
+def _rq(rid, kind, day, status=None, errors=None, emp="003551"):  # type: ignore[no-untyped-def]
+    return {"id": rid, "employee_id": emp, "full_name": "Nguyễn Văn An", "kind": kind, "effective_date": day,
+            "created_at": day, "parse_errors": errors or [], "status": status}  # fmt: skip
+
+
+def test_cancelled_request_does_not_decide_kind() -> None:
+    _, users, assets, bs = _data()
+    run = lambda reqs: reconcile(reqs, users, assets, bs, S, date(2026, 11, 16))  # noqa: E731
+    rules, row = _issues(
+        run(
+            [
+                _rq("1", "onboard", "2026-11-02", "Đã xong", emp="002100"),
+                _rq("2", "offboard", "2026-11-10", "Đã huỷ", emp="002100"),
+            ]
+        ),
+        "002100",
+    )
+    assert row.kind == "onboard" and not any(r.startswith("offboard_") for r in rules)
+    assert row.request_ids == ["1", "2"]
+    rules, row = _issues(run([_rq("2", "offboard", "2026-11-10", "Đã xong", emp="002100")]), "002100")
+    assert row.kind == "offboard" and "offboard_biostar_active" in rules
+    rules, row = _issues(run([_rq("2", "offboard", "2026-11-10", "Đã huỷ", emp="002100")]), "002100")
+    assert row.kind is None and row.cells["sdp"]["label"] == "RTR đã huỷ"
+
+
+def test_closed_request_parse_errors_are_not_reported() -> None:
+    _, users, assets, bs = _data()
+    err = ["Thiếu Mã nhân viên"]
+    for status, reported in (("Đã xong", False), ("Đang xử lý", True)):
+        by_emp = reconcile(
+            [_rq("1", "onboard", "2026-11-02", status, err, emp="002100")],
+            users,
+            assets,
+            bs,
+            S,
+            date(2026, 11, 16),
+        )
+        rules, _ = _issues(by_emp, "002100")
+        assert ("request_parse_error" in rules) is reported
+        orphan = {**_rq("3", None, "2026-11-02", status, err), "employee_id": None}
+        res = reconcile([orphan], users, assets, bs, S, date(2026, 11, 16))
+        assert any(n["rule"] == "request_parse_error" for n in res.notes) is reported
+
+
+def _bs(uid, name="Nguyễn Văn An", active=True, retired=False):  # type: ignore[no-untyped-def]
+    return {"user_id": uid, "name": name, "active": active, "disabled": not active, "retired": retired,
+            "cards": 1, "fingerprints": 0, "faces": 0}  # fmt: skip
+
+
+def _cancelled_onboard_rules(reqs, bs, users=(), assets=(), sources=None, emp="003551"):  # type: ignore[no-untyped-def]
+    res = reconcile(reqs, list(users), list(assets), bs, S, date(2026, 11, 16), sources)
+    rules, row = _issues(res, emp)
+    return {r for r in rules if r.startswith("onboard_cancelled")}, row
+
+
+def test_cancelled_onboard_with_access_or_assets_still_granted() -> None:
+    cancelled = [_rq("7", "onboard", "2026-11-02", "Đã huỷ")]
+    users = [{"id": "u1", "name": "Nguyễn Văn An", "employee_id": "003551", "department": None}]
+    in_use = [{"id": "a1", "user_id": "u1", "state": S.asset_state_in_use, "name": "PC", "asset_tag": "T1"}]
+    bs = [_bs("003551")]
+    rules, row = _cancelled_onboard_rules(cancelled, bs, users, in_use)
+    assert rules == {"onboard_cancelled_biostar_active", "onboard_cancelled_assets_in_use"}
+    by = {i.rule: i for i in row.issues}
+    assert by["onboard_cancelled_biostar_active"].severity == "high"
+    assert by["onboard_cancelled_assets_in_use"].severity == "medium"
+    assert "#7 (tạo 02/11/2026)" in by["onboard_cancelled_biostar_active"].message
+    # sources not read -> not judged
+    src = {"sdp": True, "assets": True, "biostar": False}
+    assert _cancelled_onboard_rules(cancelled, bs, users, in_use, src)[0] == {
+        "onboard_cancelled_assets_in_use"
+    }
+    src = {"sdp": True, "assets": False, "biostar": True}
+    assert _cancelled_onboard_rules(cancelled, bs, users, in_use, src)[0] == {
+        "onboard_cancelled_biostar_active"
+    }
+
+
+def test_cancelled_onboard_rules_do_not_fire_when_unsafe() -> None:
+    bs = [_bs("003551")]
+    cancelled = _rq("7", "onboard", "2026-11-02", "Đã huỷ")
+    # another onboard is done
+    done = _rq("6", "onboard", "2026-11-01", "Đã xong")
+    assert not _cancelled_onboard_rules([done, cancelled], bs)[0]
+    # wrong ID typed: names differ
+    assert not _cancelled_onboard_rules([cancelled], [_bs("003551", "Lê Văn Cường")])[0]
+    # retired BioStar user
+    assert not _cancelled_onboard_rules([cancelled], [_bs("003551", retired=True)])[0]
+    # a live request of unclassified kind (C-37) and a cancelled offboard
+    live = _rq("8", None, "2026-11-03", "Đang xử lý")
+    assert not _cancelled_onboard_rules([cancelled, live], bs)[0]
+    assert not _cancelled_onboard_rules([_rq("9", "offboard", "2026-11-02", "Đã huỷ")], bs)[0]
+
+
+def test_cancelled_onboard_finds_unclaimed_biostar_user_by_id_digits() -> None:
+    cancelled = [_rq("7", "onboard", "2026-11-02", "Đã huỷ")]
+    # SDP has employee IDs (so BioStar users are not employees themselves) but none for this person
+    users = [normalize.sdp_user(u, "employee_id") for u in SDP_USERS if u.get("employee_id") != "003551"]
+    rules, _ = _cancelled_onboard_rules(cancelled, [_bs("3551")], users)
+    assert rules == {"onboard_cancelled_biostar_active"}
+    # ambiguous: two unclaimed candidates
+    assert not _cancelled_onboard_rules(cancelled, [_bs("3551"), _bs("103551")], users)[0]
+
+
+def _other_users():  # type: ignore[no-untyped-def]
+    return [normalize.sdp_user(u, "employee_id") for u in SDP_USERS if u.get("employee_id") != "003551"]
+
+
+def test_cancelled_onboard_fallback_rejects_candidates_claimed_by_others() -> None:
+    cancelled = [_rq("7", "onboard", "2026-11-02", "Đã huỷ")]
+    users = _other_users()
+    # key "3551" already belongs to another SDP user
+    owner = {"id": "u9", "name": "Khác", "employee_id": "3551", "department": None}
+    assert not _cancelled_onboard_rules(cancelled, [_bs("3551")], [*users, owner])[0]
+    # ... or to another request
+    other_req = _rq("8", "onboard", "2026-11-02", "Đã xong", emp="3551")
+    assert not _cancelled_onboard_rules([*cancelled, other_req], [_bs("3551")], users)[0]
+
+
+def test_cancelled_onboard_assets_need_one_user_with_same_name() -> None:
+    cancelled = [_rq("7", "onboard", "2026-11-02", "Đã huỷ")]
+    in_use = [{"id": "a1", "user_id": "u1", "state": S.asset_state_in_use, "name": "PC", "asset_tag": "T1"}]
+    mk = lambda uid, name: {"id": uid, "name": name, "employee_id": "003551", "department": None}  # noqa: E731
+    assert not _cancelled_onboard_rules(cancelled, [], [mk("u1", "Lê Văn Cường")], in_use)[0]
+    dup = [mk("u1", "Nguyễn Văn An"), mk("u2", "Nguyễn Văn An")]
+    assert "onboard_cancelled_assets_in_use" not in _cancelled_onboard_rules(cancelled, [], dup, in_use)[0]
+
+
+def test_cancelled_onboard_fallback_filters_before_counting() -> None:
+    cancelled = [_rq("7", "onboard", "2026-11-02", "Đã huỷ")]
+    users = _other_users()
+    # inactive exact match and no twin
+    assert not _cancelled_onboard_rules(cancelled, [_bs("003551", active=False)], users)[0]
+    # inactive exact + active twin with the same name
+    bs = [_bs("003551", active=False), _bs("3551")]
+    assert _cancelled_onboard_rules(cancelled, bs, users)[0] == {"onboard_cancelled_biostar_active"}
+    # retired twin does not make the match ambiguous
+    bs = [_bs("3551"), _bs("103551", retired=True)]
+    assert _cancelled_onboard_rules(cancelled, bs, users)[0] == {"onboard_cancelled_biostar_active"}
+    # SDP without any employee ID
+    assert _cancelled_onboard_rules(cancelled, [_bs("3551")], [])[0] == {"onboard_cancelled_biostar_active"}
+
+
+def test_cancelled_onboard_fallback_row_has_name_and_no_unknown_note() -> None:
+    cancelled = [_rq("7", "onboard", "2026-11-02", "Đã huỷ")]
+    res = reconcile(cancelled, _other_users(), [], [_bs("3551")], S, date(2026, 11, 16))
+    assert res.notes == [] or all(n.get("employee_id") != "3551" for n in res.notes)
+    _, row = _issues(res, "003551")
+    assert row.full_name == "Nguyễn Văn An"
+
+
+def test_cancelled_onboard_label_uses_vietnam_date() -> None:
+    cancelled = [{**_rq("7", "onboard", "2026-11-02", "Đã huỷ"), "created_at": "2026-11-01T18:30:00+00:00"}]
+    _, row = _cancelled_onboard_rules(cancelled, [_bs("003551")])
+    assert "(tạo 02/11/2026)" in row.issues[0].message
+
+
+# ---------------------------------------------------------------- SDP ID suggestions
+def _sdpu(name, emp=None, uid="1", dept=None):  # type: ignore[no-untyped-def]
+    return {"id": uid, "name": name, "email": f"{uid}@x.vn", "employee_id": emp, "department": dept}
+
+
+def _bsu(name, uid, **kw):  # type: ignore[no-untyped-def]
+    return {"user_id": uid, "name": name, "source": "BS", "active": True, **kw}
+
+
+def _one(sdp_name, *bs, others=()):  # type: ignore[no-untyped-def]
+    from app.modules.lifecycle.id_suggest import suggest
+
+    (row,) = suggest([_sdpu(sdp_name), *others], list(bs))
+    return row
+
+
+@pytest.mark.parametrize(
+    ("sdp", "bio"),
+    [("Nguyễn Văn An", "NGUYEN VAN AN"), ("An. Nguyen Van", "Nguyễn Văn An")],
+)
+def test_suggest_exact_ignores_accents_and_order(sdp: str, bio: str) -> None:
+    row = _one(sdp, _bsu(bio, "003551"))
+    assert row["status"] == "matched"
+    assert row["suggestion"]["employee_id"] == "03551"  # last 5 digits, never padded to 6
+    assert row["suggestion"]["biostar_user_id"] == "003551"
+
+
+@pytest.mark.parametrize(
+    ("sdp", "bio"),
+    [("Nguyễn Thị Ngọc Hà", "Nguyễn Thị Thu Hà"), ("Lê Thị Thu Hà", "Nguyễn Thị Thu Hà")],
+)
+def test_suggest_different_person_is_not_matched(sdp: str, bio: str) -> None:
+    assert _one(sdp, _bsu(bio, "1001"))["status"] == "none"
+
+
+def test_suggest_accent_difference_between_accented_names_is_near() -> None:
+    row = _one("Nguyễn Văn Hùng", _bsu("Nguyễn Văn Hưng", "1001"))
+    assert row["status"] == "near" and "khác dấu" in row["suggestion"]["notes"]
+
+
+@pytest.mark.parametrize(
+    ("sdp", "bio"), [("Nguyễn Thị Hà", "Nguyễn Thị Thu Hà"), ("Ha. Nguyen Thi Thu", "Nguyễn Thị Hà")]
+)
+def test_suggest_missing_middle_name_is_near(sdp: str, bio: str) -> None:
+    assert _one(sdp, _bsu(bio, "1001"))["status"] == "near"
+
+
+def test_suggest_ambiguous_claimed_and_ranking() -> None:
+    assert (
+        _one("Nguyễn Văn An", _bsu("Nguyễn Văn An", "1"), _bsu("Nguyễn Văn An", "2"))["status"] == "ambiguous"
+    )
+    row = _one("Nguyễn Văn An", _bsu("Nguyễn Văn An", "100008"), others=[_sdpu("Khác", "000008", uid="9")])
+    assert row["status"] == "claimed" and row["suggestion"] is None
+    assert "Mã đã thuộc user SDP khác" in row["candidates"][0]["notes"][0]
+    row = _one(
+        "Nguyễn Văn An",
+        _bsu("Nguyễn Văn An", "1001", active=False),
+        _bsu("Nguyễn Văn An", "1002", retired=True, active=False),
+        _bsu("Nguyễn Văn An", "1003"),
+    )
+    assert row["status"] == "matched" and row["suggestion"]["biostar_user_id"] == "1003"
+    assert row["candidates"][0]["biostar_user_id"] == "1003"
+
+
+def test_suggest_junk_ids_are_missing() -> None:
+    from app.modules.lifecycle.id_suggest import missing
+
+    assert all(missing(v) for v in (None, "", "N/A", "-", "000000", "1"))
+    assert not missing("003551") and not missing("3551")
+    assert _one("Nguyễn Văn An")["status"] == "none"
+
+
+def test_suggest_same_top_for_two_sdp_users_is_ambiguous() -> None:
+    from app.modules.lifecycle.id_suggest import suggest
+
+    rows = suggest(
+        [_sdpu("Nguyễn Văn An", uid="1"), _sdpu("Nguyen Van An", uid="2")], [_bsu("NGUYEN VAN AN", "1001")]
+    )
+    assert [r["status"] for r in rows] == ["ambiguous", "ambiguous"]
+    assert all(
+        r["suggestion"] is None and "Cùng ứng viên với user SDP" in r["candidates"][0]["notes"][-1]
+        for r in rows
+    )
+
+
+def test_suggest_inactive_or_retired_top_is_near() -> None:
+    assert _one("Nguyễn Văn An", _bsu("Nguyễn Văn An", "1001", active=False))["status"] == "near"
+    assert _one("Nguyễn Văn An", _bsu("Nguyễn Văn An", "1001", retired=True))["status"] == "near"
+
+
+def test_suggest_exact_any_word_order_and_whitespace_not_accent_diff() -> None:
+    row = _one("An Van Nguyen", _bsu("NGUYEN  VAN AN ", "1001"))
+    assert row["status"] == "matched" and row["suggestion"]["notes"] == []
+    assert _one("Nguyễn Văn An", _bsu("Nguyễn  Văn An ", "1001"))["status"] == "matched"
+    assert _one("Nguyễn An An", _bsu("Nguyễn An", "1001"))["status"] == "none"
+
+
+def test_suggest_junk_values_are_missing() -> None:
+    from app.modules.lifecycle.id_suggest import missing
+
+    assert all(missing(v) for v in ("na", "NA", "n/a", "None", "null", "TBD", "x", "-"))
+
+
+def test_microsoft_settings_defaults_and_validation() -> None:
+    from pydantic import ValidationError
+
+    s = LifecycleSettings()
+    assert s.microsoft_enabled is False and s.ad_ou_map == [] and s.sam_max_length == 20
+    assert s.naming_order == ["short", "short2", "given_family", "given_full", "short3"]
+    assert s.usage_location == "VN" and (s.entra_wait_hours, s.mailbox_wait_hours) == (3, 2)
+    ok = LifecycleSettings(
+        upn_domain="corp.vn", ad_base_ou="OU=Users,DC=corp,DC=local",
+        ad_ou_map=[{"department": "IT", "ou": "OU=IT,OU=Users,DC=corp,DC=local"}],
+    )  # fmt: skip
+    assert ok.ad_ou_map[0].unit == ""
+    for bad in (
+        {"upn_domain": "not a domain"}, {"ad_ban_ou": "Ban_Users"}, {"naming_order": ["bogus"]},
+        {"sam_max_length": 21}, {"usage_location": "VNM"}, {"ad_ou_map": [{"ou": "x"}]},
+    ):  # fmt: skip
+        with pytest.raises(ValidationError):
+            LifecycleSettings(**bad)
+
+
+def test_matrix_license_software_validated_and_ignored_by_allocation() -> None:
+    from pydantic import ValidationError
+
+    from app.modules.lifecycle.allocation import Need, allocate
+    from app.modules.lifecycle.settings import AllocationMatrix, MatrixCell, MatrixDevice, MatrixLevel
+
+    guid = "05e9a617-0261-4cee-bb44-138d3ef5d965"
+    with pytest.raises(ValidationError):
+        MatrixLevel(name="A", license_skus=["not-a-guid"])
+
+    def run(**extra: object) -> tuple[list[tuple[str, int]], object]:
+        m = AllocationMatrix(
+            devices=[MatrixDevice(label="Laptop", product_types=["Laptop"])],
+            levels=[MatrixLevel(name="A", **extra)],  # type: ignore[arg-type]
+            cells=[[MatrixCell(on=True)]],
+        )
+        s = LifecycleSettings(allocation_matrix=m)
+        items, _, _ = s.items_for_employee(None, None)
+        plan = allocate([Need("r1", date(2026, 12, 1), None, items=items)], s.allocation_standard, [])
+        return [(i.label, i.quantity) for i in s.allocation_standard], plan
+
+    base = run()
+    with_ms = run(license_skus=[guid], license_names=["M365 E3"], software=["Word", "Excel"])
+    assert base[0] == with_ms[0] and repr(base[1]) == repr(with_ms[1])
+
+
+def test_job_params_new_keys_and_invalid_stored_settings_fall_back() -> None:
+    from types import SimpleNamespace
+
+    from app.modules.lifecycle.jobs_api import job_params
+
+    req = SimpleNamespace(
+        kind="onboard", id="1", display_id="2", effective_date=None, employee_id="003551", full_name="A",
+        fields={"department": "Kinh Doanh", "unit": "HCM 2", "division": "Khối KD", "phone": "0900",
+                "manager": "Trần Văn B (001200)"},
+    )  # fmt: skip
+    p = job_params(req)  # type: ignore[arg-type]
+    e = p["employee"]
+    assert e["department"] == "Kinh Doanh – HCM 2" and e["department_only"] == "Kinh Doanh"
+    assert (e["unit"], e["division"], e["phone"], e["manager_employee_id"]) == (
+        "HCM 2",
+        "Khối KD",
+        "0900",
+        "001200",
+    )
+    assert p["options"] == {"mailbox_handover": False}
+    req.fields = {"manager": "Trần Văn B (000012)"}
+    assert job_params(req)["employee"]["manager_employee_id"] == "000012"  # type: ignore[arg-type]
+
+
+def test_account_username_candidates() -> None:
+    from app.modules.lifecycle.accounts import pick_username, username_candidates
+
+    order = S.naming_order
+    want = ["binh.nt", "binh.nt2", "binh.nguyen", "binh.nguyenthanh", "binh.nt3"]
+    assert username_candidates("Nguyễn Thanh Bình", order) == want
+    assert username_candidates("Bình. Nguyễn Thanh", order) == want
+    assert username_candidates("Đặng Thị Ánh Đào", order)[:3] == ["dao.dta", "dao.dta2", "dao.dang"]
+    assert username_candidates("Bình", order) == ["binh", "binh2", "binh3"]
+    long = username_candidates("Nguyễn Thị Thanh Hoàng Phương", order)
+    assert long and all(len(c) <= 20 for c in long) and "phuong.nguyenthithanhhoang" not in long
+    assert pick_username(want, lambda c: c in {"binh.nt", "binh.nt2"}) == "binh.nguyen"
+    assert pick_username(want, lambda c: True) is None
+
+
+def test_account_upn_ou_entitlements() -> None:
+    from app.modules.lifecycle.accounts import entitlements, ou_for, upn
+    from app.modules.lifecycle.settings import MatrixLevel, OuRule
+
+    assert upn("Binh.NT", "Corp.Local") == "binh.nt@corp.local"
+    with pytest.raises(ValueError):
+        upn("binh", "")
+    dn = lambda n: f"OU={n},DC=c,DC=l"  # noqa: E731
+    s = LifecycleSettings(
+        ad_default_ou=dn("Def"),
+        ad_ou_map=[
+            OuRule(division="Khối A", ou=dn("Div")),
+            OuRule(department="Kinh Doanh", ou=dn("Dept")),
+            OuRule(division="Khối A", department="Kinh Doanh", ou=dn("DivDept")),
+            OuRule(division="Khối A", department="Kinh Doanh", unit="Nhóm 1", ou=dn("Unit")),
+        ],
+    )
+    emp = {"division": "KHỐI a", "department": "kinh doanh", "unit": "Nhóm 1"}
+    assert ou_for(emp, s)[0] == dn("Unit")
+    assert ou_for({**emp, "unit": "X"}, s)[0] == dn("DivDept")
+    assert ou_for({"division": "Khác", "department": "Kinh Doanh"}, s)[0] == dn("Dept")
+    assert ou_for({"division": "Khối A"}, s)[0] == dn("Div")
+    assert ou_for({"division": "Z"}, s) == (dn("Def"), "OU mặc định")
+    assert ou_for({}, LifecycleSettings()) == (None, "")
+    assert entitlements(None) == {"license_skus": [], "license_names": [], "software": []}
+    g = "11111111-2222-3333-4444-555555555555"
+    lv = MatrixLevel(name="L", license_skus=[g], license_names=["E3"], software=["Word"])
+    assert entitlements(lv) == {"license_skus": [g], "license_names": ["E3"], "software": ["Word"]}
+    with pytest.raises(ValueError):
+        MatrixLevel(name="L", license_names=["E3"])  # names without matching SKUs
+
+
+def test_ou_for_matches_department_only_from_real_job_params() -> None:
+    from types import SimpleNamespace
+
+    from app.modules.lifecycle.accounts import ou_for
+    from app.modules.lifecycle.jobs_api import job_params
+    from app.modules.lifecycle.settings import OuRule
+
+    req = SimpleNamespace(
+        kind="onboard", id="1", display_id="2", effective_date=None, employee_id="003551", full_name="A",
+        fields={"department": "Kinh Doanh", "unit": "HCM 2", "division": "Khối KD"},
+    )  # fmt: skip
+    s = LifecycleSettings(ad_ou_map=[OuRule(department="Kinh Doanh", ou="OU=KD,DC=c,DC=l")])
+    emp = job_params(req)["employee"]  # type: ignore[arg-type]
+    assert emp["department"] == "Kinh Doanh – HCM 2"
+    assert ou_for(emp, s)[0] == "OU=KD,DC=c,DC=l"
+
+
+def test_name_parts_empty_and_settings_microsoft_validation() -> None:
+    from app.modules.lifecycle.accounts import name_parts, username_candidates
+    from app.modules.lifecycle.settings import OuRule
+
+    for blank in ("", "   "):
+        assert name_parts(blank) == ("", [])
+        assert username_candidates(blank, S.naming_order) == []
+    base = "OU=Users,DC=corp,DC=local"
+    with pytest.raises(ValueError):
+        LifecycleSettings(microsoft_enabled=True, upn_domain="corp.local")
+    with pytest.raises(ValueError):
+        LifecycleSettings(microsoft_enabled=True, ad_base_ou=base)
+    LifecycleSettings(microsoft_enabled=True, ad_base_ou=base, upn_domain="corp.local")
+    ok = f"OU=IT,{base}"
+    LifecycleSettings(
+        ad_base_ou=base, ad_default_ou=ok, ad_ban_ou=ok, ad_ou_map=[OuRule(ou=ok, department="x")]
+    )
+    for kw in (
+        {"ad_default_ou": "OU=X,DC=corp,DC=local"},
+        {"ad_ban_ou": "OU=Ban,DC=corp,DC=local"},
+        {"ad_ou_map": [OuRule(ou="OU=X,DC=corp,DC=local", department="x")]},
+        {"ad_default_ou": f"CN=a\\,{base}"},  # escaped comma: not inside base
+        {"ad_retained_ou": "OU=X,DC=corp,DC=local"},  # outside the base
+        {"ad_retained_ou": ok, "ad_ban_ou": ok},  # same as Ban_Users
+        {"ad_retained_ou": ok, "ad_ban_ou": f"OU=Old,{ok}"},  # nested in each other
+        {"mailbox_retention_days": 0},
+    ):
+        with pytest.raises(ValueError):
+            LifecycleSettings(ad_base_ou=base, **kw)  # type: ignore[arg-type]
+    assert LifecycleSettings().mailbox_retention_days == 90
+    LifecycleSettings(ad_base_ou=base, ad_retained_ou=ok, ad_ban_ou=f"OU=Ban,{base}")
+
+
+def _transfer_settings() -> LifecycleSettings:
+    from app.modules.lifecycle.settings import OuRule
+
+    g = lambda n: f"CN={n},OU=Groups,DC=c,DC=l"  # noqa: E731
+    return LifecycleSettings(
+        ad_default_ou="OU=Def,DC=c,DC=l",
+        biostar_access_group_ids=["1"],
+        ad_ou_map=[
+            OuRule(division="KD", groups=[g("All"), g("Shared")], biostar_access_group_ids=["10"]),
+            OuRule(department="Sales", ou="OU=Sales,DC=c,DC=l", groups=[g("Sales"), g("Shared")]),
+            OuRule(department="Sales", unit="HCM", groups=[g("SalesHCM")], biostar_access_group_ids=["11"]),
+            OuRule(department="Ops", ou="OU=Ops,DC=c,DC=l", groups=[g("Ops"), g("Shared")]),
+        ],
+    )
+
+
+def test_transfer_parse_new_and_old_labels_and_onboard_unchanged() -> None:
+    s = LifecycleSettings(
+        transfer_new_labels={"department": ["Phòng mới"], "job_title": ["Chức danh mới"]},
+        transfer_old_labels={"department": ["Phòng cũ"]},
+    )
+    body = "Loại biến động: Thuyên chuyển<br>Phòng cũ: Ops<br>Phòng mới: Sales<br>Phòng: Ops<br>Khối: KD"
+    p = parse_rtr_description(body, s)
+    assert p.kind == "transfer"
+    assert p.fields["department"] == "Sales" and p.fields["job_title"] is None  # configured: own labels only
+    assert p.fields["division"] == "KD"  # not configured: normal label
+    assert p.old_fields == {"department": "Ops"}
+    p = parse_rtr_description(body.replace("Thuyên chuyển", "Nhân viên mới"), s)
+    assert p.kind == "onboard" and p.fields["department"] == "Ops" and p.old_fields == {}
+
+
+def test_transfer_job_params_keep_only_new_values() -> None:
+    from types import SimpleNamespace
+
+    from app.modules.lifecycle.jobs_api import job_params
+
+    req = SimpleNamespace(
+        kind="transfer", id="1", display_id="2", effective_date=None, employee_id="003551", full_name="A",
+        fields={"manager": "B (001200)", "department": None, "old": {"department": "Ops", "manager": "C (000999)"}},
+    )  # fmt: skip
+    p = job_params(req)  # type: ignore[arg-type]
+    assert p["employee"] == {"id": "003551", "full_name": "A", "manager_employee_id": "001200"}
+    assert p["employee_old"] == {
+        "department": "Ops",
+        "manager": "C (000999)",
+        "manager_employee_id": "000999",
+    }
+    assert p["sources"] == {
+        "manager": "request",
+        "old.department": "request_old",
+        "old.manager": "request_old",
+    }
+
+
+def test_transfer_plan_pure_diff() -> None:
+    from app.modules.lifecycle import transfer as t
+
+    s = _transfer_settings()
+    g = lambda n: f"CN={n},OU=Groups,DC=c,DC=l"  # noqa: E731
+    only_manager = {"id": "1", "manager_employee_id": "000012"}
+    assert t.target_ou(only_manager, s) is None and t.target_groups(only_manager, s) is None
+    assert t.group_changes([g("Sales")], only_manager, s) == {"add": [], "remove": []}
+    assert t.biostar_groups(["5"], only_manager, s) == (["5"], False)
+    # same department, different unit: department-level groups stay, unit group changes
+    new = {"division": "KD", "department": "Sales – HCM", "department_only": "Sales", "unit": "HCM"}
+    cur = [g("All"), g("Sales"), g("Shared"), g("Other"), g("Ops").lower()]
+    ch = t.group_changes(cur, new, s)
+    assert ch["add"] == [g("SalesHCM")]
+    assert ch["remove"] == [g("Ops").lower()]  # shared kept, unmanaged "Other" kept, DN compare ignores case
+    assert t.target_ou(new, s) == "OU=Sales,DC=c,DC=l"  # rule without ou does not win
+    # biostar: unmanaged id 99 kept, managed 10 not in target (no KD rule match) dropped
+    out, changed = t.biostar_groups(["1", "10", "99"], {"department_only": "Sales", "unit": "HCM"}, s)
+    assert changed and out == ["1", "99", "11"]
+    assert t.biostar_groups(["1", "99", "11"], {"department_only": "Sales", "unit": "HCM"}, s)[1] is False
+    # attributes
+    assert t.attribute_changes(
+        {"title": "X"}, {"job_title": "X", "department": "", "manager_employee_id": "7"}
+    ) == {"manager_employee_id": "7"}
+    assert len(t.attribute_changes({}, {"department": "D" * 80})["department"]) == 64
+
+
+def test_transfer_license_changes() -> None:
+    from app.modules.lifecycle import transfer as t
+    from app.modules.lifecycle.settings import AllocationMatrix, MatrixLevel
+
+    a, b, other = (f"11111111-2222-3333-4444-55555555555{i}" for i in (1, 2, 3))
+    lv_a = MatrixLevel(name="A", titles=["a"], license_skus=[a])
+    lv_b = MatrixLevel(name="B", titles=["b"], license_skus=[b])
+    m = AllocationMatrix(levels=[lv_a, lv_b, MatrixLevel(name="Z")], devices=[], cells=[[], [], []])
+    assert t.license_changes([a, other], lv_b, m) == {"add": [b], "remove": [a]}  # unmanaged SKU kept
+    assert t.license_changes([a], MatrixLevel(name="Z"), m) == {"add": [], "remove": []}
+    assert t.license_changes([a], None, m) == {"add": [], "remove": []}

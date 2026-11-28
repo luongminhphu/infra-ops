@@ -18,13 +18,13 @@ from app.core.connectors.biostar import BioStarClient
 from app.core.db import get_session
 from app.core.errors import AppError, Conflict, NotFound
 from app.core.workflow import engine
-from app.core.workflow.api import job_out
+from app.core.workflow.api import check_job_scope, job_out
 from app.core.workflow.models import Job
 from app.modules.lifecycle.assignment import ASSIGN, JOB_WORKFLOWS, assign_from_request, assignment_params
 from app.modules.lifecycle.models import LifecycleRequest, ReconRow, Snapshot
-from app.modules.lifecycle.parsing import fold
+from app.modules.lifecycle.parsing import fold, split_person
 from app.modules.lifecycle.queries import latest_run
-from app.modules.lifecycle.settings import MODULE_ID, main_biostar
+from app.modules.lifecycle.settings import FIELD_TITLES, MODULE_ID, main_biostar
 from app.modules.lifecycle.settings import load as load_module_settings
 from app.modules.lifecycle.workflows import WORKFLOW_BY_KIND
 
@@ -54,7 +54,7 @@ async def _sdp_user_guess(session: AsyncSession, employee_id: str) -> tuple[str 
 def job_params(req: LifecycleRequest) -> dict[str, Any]:
     f = req.fields or {}
     dept, unit = f.get("department") or "", f.get("unit")
-    return {
+    params = {
         "kind": req.kind,
         "request_id": req.id,
         "request_display_id": req.display_id,
@@ -65,15 +65,35 @@ def job_params(req: LifecycleRequest) -> dict[str, Any]:
             "department": f"{dept} – {unit}" if dept and unit else dept,
             "job_title": f.get("job_title") or "",
             "work_location": f.get("work_location") or "",
+            "manager_employee_id": split_person(f.get("manager"))[1],
+            "phone": f.get("phone") or "",
+            "division": f.get("division") or "",
+            "department_only": dept,
+            "unit": unit or "",
         },
+        "options": {"mailbox_handover": False},
         "assets": [],
         "sdp_user_id": None,
         "sdp_user_name": None,
     }
+    if req.kind == "transfer":
+        # An absent key means "unchanged": nothing empty is ever written.
+        emp = params["employee"]
+        params["employee"] = {k: v for k, v in emp.items() if v or k in ("id", "full_name")}
+        old = {k: v for k, v in (f.get("old") or {}).items() if v}
+        employee_old = dict(old)
+        if mid := split_person(old.get("manager"))[1]:
+            employee_old["manager_employee_id"] = mid
+        params["employee_old"] = employee_old
+        params["sources"] = {
+            **{k: "request" for k in FIELD_TITLES if f.get(k) and k not in ("change_type", "effective_date")},
+            **{f"old.{k}": "request_old" for k in old},
+        }
+    return params
 
 
 async def create_job_for_request(
-    session: AsyncSession, actor: Actor, req: LifecycleRequest
+    session: AsyncSession, actor: Actor, req: LifecycleRequest, key_suffix: str = ""
 ) -> tuple[Job, bool]:
     if req.kind not in WORKFLOW_BY_KIND:
         raise AppError(
@@ -85,8 +105,15 @@ async def create_job_for_request(
         raise AppError(
             "Request chưa có Mã NV hợp lệ. Sửa nội dung request trên SDP rồi đồng bộ lại.", code="no_employee"
         )
+    settings = await load_module_settings(session)
+    if settings.is_closed(req.status):
+        raise AppError(
+            f"Request #{req.display_id or req.id} đã đóng trên SDP (“{req.status}”) – không tạo Job.",
+            code="request_closed",
+        )
     wf = WORKFLOW_BY_KIND[req.kind]
     params = job_params(req)
+    params["microsoft"] = settings.microsoft_enabled  # decides which steps the job gets
     params["sdp_user_id"], params["sdp_user_name"] = await _sdp_user_guess(session, req.employee_id)
     if params["sdp_user_id"] is None:
         params["sdp_user_name"] = None
@@ -98,7 +125,7 @@ async def create_job_for_request(
         subject_key=req.employee_id,
         subject_label=f"{req.full_name or req.employee_id} ({req.employee_id})",
         external_ref=req.id,
-        idempotency_key=f"lifecycle:{req.kind}:{req.id}",
+        idempotency_key=f"lifecycle:{req.kind}:{req.id}{key_suffix}",
     )
     if new:
         await session.flush()
@@ -130,35 +157,79 @@ async def auto_create_jobs(session: AsyncSession) -> int:
     return created
 
 
-async def cancel_closed_drafts(session: AsyncSession) -> int:
-    """Called after a sync: a draft Job (never started, nothing written anywhere) whose RTR request is now closed on
-    SDP leaves the queues – cancelled with the reason and audited, so it can be reopened if the request reopens."""
+async def _requests_for(session: AsyncSession, jobs: list[Job]) -> dict[str, LifecycleRequest]:
+    rows = await session.scalars(
+        select(LifecycleRequest).where(LifecycleRequest.id.in_([j.external_ref for j in jobs]))
+    )
+    return {r.id: r for r in rows.all()}
+
+
+async def cancel_closed_jobs(session: AsyncSession) -> int:
+    """Called after a sync: a draft Job, or a failed one where no step did any work, whose RTR request is now closed
+    on SDP leaves the queues – cancelled with the reason, marked `auto_cancelled_at` (= its closed_at) and audited.
+    A failed job is cancelled only when the request itself was cancelled or it failed at the first check."""
     settings = await load_module_settings(session)
-    drafts = (
+    jobs = (
         await session.scalars(
-            select(Job).where(
-                Job.module_id == MODULE_ID, Job.status == "draft", Job.external_ref.is_not(None)
+            select(Job)
+            .where(
+                Job.module_id == MODULE_ID, Job.status.in_(("draft", "failed")), Job.external_ref.is_not(None)
             )
+            .with_for_update(skip_locked=True)
         )
     ).all()
-    reqs = {
-        r.id: r
-        for r in (
-            await session.scalars(
-                select(LifecycleRequest).where(LifecycleRequest.id.in_([j.external_ref for j in drafts]))
-            )
-        ).all()
-    }
+    reqs = await _requests_for(session, list(jobs))
     cancelled = 0
-    for job in drafts:
+    for job in jobs:
         req = reqs.get(job.external_ref or "")
-        if req is not None and settings.is_closed(req.status):
-            reason = (
-                f"Request #{req.display_id or req.id} đã đóng trên SDP (“{req.status}”) – Job nháp tự huỷ."
-            )
-            await engine.cancel_job(session, Actor(None, "system (đồng bộ)"), job, reason)
-            cancelled += 1
+        if req is None or not settings.is_closed(req.status) or engine.steps_with_work(job):
+            continue
+        if job.status == "failed" and not (
+            settings.is_cancelled(req.status) or job.current_step == "check_request"
+        ):
+            continue
+        tail = "Job nháp tự huỷ." if job.status == "draft" else "Job chưa ghi gì ra hệ thống nên tự huỷ."
+        reason = f"Request #{req.display_id or req.id} đã đóng trên SDP (“{req.status}”) – {tail}"
+        await engine.cancel_job(session, Actor(None, "system (đồng bộ)"), job, reason)
+        assert job.closed_at is not None  # set by cancel_job
+        job.params = {**job.params, "auto_cancelled_at": job.closed_at.isoformat()}
+        cancelled += 1
     return cancelled
+
+
+async def reopen_reopened_jobs(session: AsyncSession) -> int:
+    """Called after a sync: a Job auto-cancelled because its request closed returns to draft when the request is open
+    again. Jobs cancelled by a person carry no marker, or a stale one (closed_at moved on), and stay cancelled."""
+    settings = await load_module_settings(session)
+    jobs = (
+        await session.scalars(
+            select(Job)
+            .where(Job.module_id == MODULE_ID, Job.status == "cancelled", Job.external_ref.is_not(None))
+            .where(Job.params.has_key("auto_cancelled_at"))
+            .with_for_update(skip_locked=True)
+        )
+    ).all()
+    reqs = await _requests_for(session, list(jobs))
+    reopened = 0
+    for job in jobs:
+        req = reqs.get(job.external_ref or "")
+        if req is None or settings.is_closed(req.status):
+            continue
+        marker = job.params["auto_cancelled_at"]
+        job.params = {k: v for k, v in job.params.items() if k != "auto_cancelled_at"}
+        if job.closed_at is None or job.closed_at.isoformat() != marker:
+            continue  # stale: a person cancelled it after the auto-cancel
+        try:
+            await engine.reopen_job(
+                session,
+                Actor(None, "system (đồng bộ)"),
+                job,
+                f"Request #{req.display_id or req.id} mở lại trên SDP",
+            )
+        except Conflict:  # job_has_work: leave it cancelled
+            continue
+        reopened += 1
+    return reopened
 
 
 class CreateIn(BaseModel):
@@ -172,7 +243,23 @@ async def create_job(
     req = await session.get(LifecycleRequest, body.request_id)
     if req is None:
         raise NotFound("Không tìm thấy request. Đồng bộ dữ liệu trước.")
-    job, _ = await create_job_for_request(session, user.actor, req)
+    suffix = ""
+    if req.kind in WORKFLOW_BY_KIND:
+        # A cancelled job that did work cannot be reopened and holds the request's key: "huỷ và tạo lại" starts a
+        # fresh one, unless another job for the request is still alive. Sync never does this (it keeps the key).
+        old = await session.scalar(select(Job).where(Job.idempotency_key == f"lifecycle:{req.kind}:{req.id}"))
+        if old is not None and old.status == "cancelled" and engine.steps_with_work(old):
+            alive = await session.scalar(
+                select(Job).where(
+                    Job.workflow_key == old.workflow_key,
+                    Job.external_ref == req.id,
+                    Job.status != "cancelled",
+                )
+            )
+            if alive is not None:
+                return job_out(alive)
+            suffix = f":{uuid.uuid4().hex[:8]}"
+    job, _ = await create_job_for_request(session, user.actor, req, suffix)
     await session.commit()
     await session.refresh(job)
     return job_out(job)
@@ -191,6 +278,15 @@ class ParamsIn(BaseModel):
     sdp_user_id: str | None = Field(None, max_length=32)
     sdp_user_name: str | None = Field(None, max_length=200)
     clear_sdp_user: bool = False
+    mailbox_handover: bool | None = None  # offboard drafts only
+
+
+def _option_open(job: Job) -> bool:
+    """The mailbox option can change until `ad_move_ban` is confirmed or has run (it reads the option when it runs)."""
+    if job.status in ("completed", "cancelled"):
+        return False
+    st = next((x for x in job.steps if x.key == "ad_move_ban"), None)
+    return st is not None and st.status in ("pending", "waiting") and st.confirmed_at is None
 
 
 @router.put("/jobs/{job_id}/params")
@@ -203,14 +299,29 @@ async def update_params(
     job = await engine.get_job(session, job_id, for_update=True)
     if job.module_id != MODULE_ID:
         raise NotFound("Không tìm thấy Job.")
+    check_job_scope(user, job)
     engine.check_version(job, body.version)
-    if job.status != "draft":
+    if (body.assets is not None or body.sdp_user_id or body.clear_sdp_user) and job.status != "draft":
         raise Conflict("Chỉ sửa được Job ở trạng thái nháp.", code="job_not_draft")
+    if body.mailbox_handover is not None:
+        if job.params.get("kind") != "offboard" or not job.params.get("microsoft"):
+            raise AppError(
+                "Chỉ Job offboard có bước Microsoft mới có tuỳ chọn giữ mailbox.",
+                code="option_not_applicable",
+            )
+        if job.status != "draft" and not _option_open(job):
+            raise Conflict(
+                "Không đổi được tuỳ chọn giữ mailbox: bước chuyển vào Ban_Users đã được xác nhận hoặc đã chạy.",
+                code="option_locked",
+            )
     before = {
         "assets": [a["id"] for a in job.params.get("assets", [])],
         "sdp_user_id": job.params.get("sdp_user_id"),
+        "mailbox_handover": (job.params.get("options") or {}).get("mailbox_handover"),
     }
     params = dict(job.params)
+    if body.mailbox_handover is not None:
+        params["options"] = {**(params.get("options") or {}), "mailbox_handover": body.mailbox_handover}
     if body.assets is not None:
         params["assets"] = [a.model_dump() for a in body.assets]
     if body.clear_sdp_user:
@@ -231,6 +342,7 @@ async def update_params(
         after={
             "assets": [a["id"] for a in params.get("assets", [])],
             "sdp_user_id": params.get("sdp_user_id"),
+            "mailbox_handover": (params.get("options") or {}).get("mailbox_handover"),
         },
     )
     await session.commit()
@@ -320,19 +432,24 @@ async def assignees(
 ) -> list[dict[str, Any]]:
     """Active people who can run jobs (and have an e-mail to find them on SDP)."""
     from app.core.auth.models import User
-    from app.core.modules.registry import get_registry
-    from app.core.rbac.service import permissions_for_user
+    from app.core.rbac.models import Role, RolePermission, UserRole
 
+    # Same rule as permissions_for_user: an all-permissions role, or a role granting the code.
+    can_execute = (
+        select(UserRole.user_id)
+        .join(Role, Role.id == UserRole.role_id)
+        .outerjoin(
+            RolePermission,
+            (RolePermission.role_id == Role.id) & (RolePermission.permission_code == "lifecycle.job.execute"),
+        )
+        .where(Role.all_permissions.is_(True) | RolePermission.role_id.is_not(None))
+    )
     users = (
-        await session.scalars(select(User).where(User.is_active.is_(True)).order_by(User.display_name))
+        await session.scalars(
+            select(User).where(User.is_active.is_(True), User.id.in_(can_execute)).order_by(User.display_name)
+        )
     ).all()
-    out = []
-    for u in users:
-        if (u.email or "@" in u.upn) and "lifecycle.job.execute" in await permissions_for_user(
-            session, u.id, get_registry()
-        ):
-            out.append({"id": str(u.id), "name": u.display_name, "upn": u.upn})
-    return out
+    return [{"id": str(u.id), "name": u.display_name, "upn": u.upn} for u in users if u.email or "@" in u.upn]
 
 
 class AssignIn(BaseModel):

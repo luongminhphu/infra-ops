@@ -182,7 +182,19 @@ async def sample_template(
 
 
 # ------------------------------------------------------------------ documents
-def document_out(doc: Document, kind: DocumentKind | None = None) -> dict[str, Any]:
+def document_out(
+    doc: Document, kind: DocumentKind | None = None, user: CurrentUser | None = None
+) -> dict[str, Any]:
+    """Callers pass only records already in `user`'s view scope, so the flags need no extra query."""
+    can_edit = can_upload_signed = False
+    if user is not None and kind is not None:
+        can_edit = (
+            kind.view_all_permission is None
+            or doc.created_by == user.upn
+            or user.has(kind.manage_permission)
+            or (doc.job_id is not None and user.has(kind.create_permission))
+        )
+        can_upload_signed = doc.status in ("finalized", "signed") and user.has(kind.create_permission)
     return {
         "id": str(doc.id),
         "kind": doc.kind,
@@ -195,6 +207,7 @@ def document_out(doc: Document, kind: DocumentKind | None = None) -> dict[str, A
         "external_ref": doc.external_ref,
         "data": doc.data,
         "created_by": doc.created_by,
+        "job_id": str(doc.job_id) if doc.job_id else None,
         "created_at": doc.created_at,
         "updated_at": doc.updated_at,
         "finalized_at": doc.finalized_at,
@@ -205,6 +218,8 @@ def document_out(doc: Document, kind: DocumentKind | None = None) -> dict[str, A
         "void_reason": doc.void_reason,
         "has_pdf": doc.pdf_file_id is not None,
         "has_signed": doc.signed_file_id is not None,
+        "can_edit": can_edit,
+        "can_upload_signed": can_upload_signed,
         "events": doc.events,
         "version": doc.version,
     }
@@ -216,10 +231,15 @@ async def _doc(
     doc_id: uuid.UUID,
     which: Literal["view", "create", "manage"],
     for_update: bool = False,
+    *,
+    draft_edit: bool = False,
 ) -> tuple[Document, DocumentKind]:
     doc = await service.get_document(session, doc_id, for_update=for_update)
     _, kind = service.kind_or_404(doc.kind)
     _need(user, kind, which)
+    await service.check_doc_scope(session, user, kind, doc)
+    if draft_edit and not await service.can_edit_draft(session, user, kind, doc):
+        raise PermissionDenied("Chỉ người lập hoặc người phụ trách Job mới sửa được biên bản này.")
     return doc, kind
 
 
@@ -237,7 +257,11 @@ async def list_documents(
     kinds = {k.key: k for _, k in get_registry().document_kinds() if user.has(k.view_permission)}
     if kind and kind not in kinds:
         raise PermissionDenied("Bạn không có quyền xem loại biên bản này.")
-    stmt = select(Document).where(Document.kind.in_([kind] if kind else list(kinds)))
+    keys = [kind] if kind else list(kinds)
+    scoped = [
+        or_(Document.kind != k, c) for k in keys if (c := service.scope_clause(user, kinds[k])) is not None
+    ]
+    stmt = select(Document).where(Document.kind.in_(keys), *scoped)
     if status:
         stmt = stmt.where(Document.status == status)
     if subject_key:
@@ -255,7 +279,7 @@ async def list_documents(
     rows = (
         await session.scalars(stmt.order_by(Document.created_at.desc()).offset(offset).limit(limit))
     ).all()
-    return {"total": total, "items": [document_out(d, kinds.get(d.kind)) for d in rows]}
+    return {"total": total, "items": [document_out(d, kinds.get(d.kind), user) for d in rows]}
 
 
 class CreateIn(BaseModel):
@@ -271,7 +295,7 @@ async def create_document(
     _need(user, kind, "create")
     doc = await service.create_draft(session, user.actor, kind, module_id, body.data)
     await session.commit()
-    return document_out(doc, kind)
+    return document_out(doc, kind, user)
 
 
 @router.get("/documents/{doc_id}")
@@ -279,7 +303,7 @@ async def get_document(
     doc_id: uuid.UUID, user: CurrentUser = Depends(current_user), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
     doc, kind = await _doc(session, user, doc_id, "view")
-    return document_out(doc, kind)
+    return document_out(doc, kind, user)
 
 
 class UpdateIn(BaseModel):
@@ -294,10 +318,10 @@ async def update_document(
     user: CurrentUser = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    doc, kind = await _doc(session, user, doc_id, "create", for_update=True)
+    doc, kind = await _doc(session, user, doc_id, "create", for_update=True, draft_edit=True)
     await service.update_draft(session, user.actor, doc, kind, body.data, body.version)
     await session.commit()
-    return document_out(doc, kind)
+    return document_out(doc, kind, user)
 
 
 @router.get("/documents/{doc_id}/preview.pdf")
@@ -313,10 +337,10 @@ async def preview(
 async def finalize(
     doc_id: uuid.UUID, user: CurrentUser = Depends(current_user), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
-    doc, kind = await _doc(session, user, doc_id, "create", for_update=True)
+    doc, kind = await _doc(session, user, doc_id, "create", for_update=True, draft_edit=True)
     await service.finalize(session, user.actor, doc, kind)
     await session.commit()
-    return document_out(doc, kind)
+    return document_out(doc, kind, user)
 
 
 @router.get("/documents/{doc_id}/file/{which}")
@@ -347,7 +371,7 @@ async def upload_signed(
     ext = {"application/pdf": "pdf", "image/png": "png", "image/jpeg": "jpg"}[mime]
     await service.attach_signed(session, user.actor, doc, data, f"{doc.number}-da-ky.{ext}", mime)
     await session.commit()
-    return document_out(doc, kind)
+    return document_out(doc, kind, user)
 
 
 class VoidIn(BaseModel):
@@ -361,10 +385,10 @@ async def void_document(
     user: CurrentUser = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    doc, kind = await _doc(session, user, doc_id, "create", for_update=True)
+    doc, kind = await _doc(session, user, doc_id, "create", for_update=True, draft_edit=True)
     # Drafts can be discarded by their creators; numbered records need the manage permission.
     if doc.status != "draft":
         _need(user, kind, "manage")
     await service.void(session, user.actor, doc, body.reason)
     await session.commit()
-    return document_out(doc, kind)
+    return document_out(doc, kind, user)

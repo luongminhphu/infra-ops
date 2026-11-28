@@ -28,4 +28,4 @@ def all_connectors() -> list[ConnectorType]:
 
 def load_builtin_connectors() -> None:
     """Import built-in connector modules so they register themselves."""
-    from app.core.connectors import biostar, sdp  # noqa: F401
+    from app.core.connectors import active_directory, biostar, exchange, msgraph, sdp, smtp, teams  # noqa: F401

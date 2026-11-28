@@ -9,6 +9,7 @@ external systems never happen inside an HTTP request. Each job is advanced under
 from __future__ import annotations
 
 import traceback
+from collections.abc import Iterable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -18,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit.service import Actor, record
 from app.core.errors import AppError, Conflict, NotFound, PermissionDenied, PersonalCredentialMissing
-from app.core.logging import get_logger
+from app.core.logging import correlation_id_var, get_logger
 from app.core.modules.registry import get_registry
 from app.core.timeutil import today_vn
 from app.core.workflow.checklist import check_verification, snapshot, verifies
@@ -408,6 +409,31 @@ async def retry_step(session: AsyncSession, actor: Actor, job: Job, key: str) ->
     return step
 
 
+async def reprepare_step(session: AsyncSession, actor: Actor, job: Job, key: str) -> JobStep:
+    """Re-run `prepare` of a manual step that is waiting (e.g. a blocked plan): the worker does it, not the request."""
+    step = _find_step(job, key)
+    _, wf = workflow_or_404(job.workflow_key)
+    if step.kind != "manual" or step.status != "waiting" or step_def(wf, key).prepare is None:
+        raise Conflict("Chỉ chuẩn bị lại bước thủ công đang chờ có dữ liệu chuẩn bị.", code="not_preparable")
+    if job.status not in ACTIVE:
+        raise Conflict("Job chưa chạy hoặc đã kết thúc.", code="job_not_active")
+    step.status = "pending"  # advance() prepares a manual step that is not "waiting"
+    step.waiting_since = None
+    _resume(job)
+    touch(job)
+    event(session, job, f"Chuẩn bị lại bước “{step.title}”.", step=key, actor=actor.upn)
+    await record(
+        session,
+        actor=actor,
+        module_id=job.module_id,
+        action="workflow.step_reprepared",
+        target_type="job",
+        target_id=str(job.id),
+        target_label=f"{job.subject_label} – {step.title}",
+    )
+    return step
+
+
 async def skip_step(session: AsyncSession, actor: Actor, job: Job, key: str, reason: str) -> JobStep:
     _, wf = workflow_or_404(job.workflow_key)
     step = _find_step(job, key)
@@ -462,20 +488,26 @@ async def cancel_job(session: AsyncSession, actor: Actor, job: Job, reason: str)
     return job
 
 
+def steps_with_work(job: Job) -> list[str]:
+    """Titles of steps that wrote to an external system or that a person finished by hand."""
+    _, wf = workflow_or_404(job.workflow_key)
+    defs = {d.key: d for d in wf.steps}
+
+    def did_work(s: JobStep) -> bool:
+        d = defs.get(s.key)
+        return bool(s.before_state) or (
+            s.status in ("done", "verify") and d is not None and (bool(d.writes) or d.kind == "manual")
+        )
+
+    return [s.title for s in job.steps if did_work(s)]
+
+
 async def reopen_job(session: AsyncSession, actor: Actor, job: Job, reason: str) -> Job:
     """Bring a cancelled job back to draft when none of its steps did anything (no step finished, none wrote to
     an external system): the case is handed back as not done. Anything else must be redone as a new job."""
     if job.status != "cancelled":
         raise Conflict("Chỉ mở lại được Job đã huỷ.", code="not_cancelled")
-    _, wf = workflow_or_404(job.workflow_key)
-    defs = {d.key: d for d in wf.steps}
-
-    def did_work(s: JobStep) -> bool:  # wrote to an external system, or a person did a manual step
-        d = defs.get(s.key)
-        finished = s.status in ("done", "verify")
-        return bool(s.before_state) or (finished and d is not None and (bool(d.writes) or d.kind == "manual"))
-
-    touched = [s.title for s in job.steps if did_work(s)]
+    touched = steps_with_work(job)
     if touched:
         raise Conflict(
             "Job đã có bước thực hiện (" + ", ".join(touched) + ") nên không mở lại được – tạo Job mới.",
@@ -603,6 +635,11 @@ def _blocked_by_earlier(job: Job, step: JobStep) -> bool:
     return any(s.seq < step.seq and s.status not in FINISHED_STEP for s in job.steps)
 
 
+def _error_ref() -> str:
+    """Short reference shown to users; the same value is written to the log line."""
+    return correlation_id_var.get() or uuid4().hex[:8]
+
+
 async def advance(session: AsyncSession, job: Job, worker_actor: Actor) -> None:
     """Run as many steps as possible; stop at a manual step, a wait, a confirmation or a failure."""
     _, wf = workflow_or_404(job.workflow_key)
@@ -626,8 +663,14 @@ async def advance(session: AsyncSession, job: Job, worker_actor: Actor) -> None:
                     try:
                         prep = await definition.prepare(ctx)
                         _apply(step, StepOutcome("waiting", prep.message, prep.output), None)
+                    except AppError as exc:
+                        step.message = f"Không chuẩn bị được dữ liệu: {exc.message}"
                     except Exception as exc:
-                        step.message = f"Không chuẩn bị được dữ liệu: {getattr(exc, 'message', str(exc))}"
+                        ref = _error_ref()
+                        log.warning("workflow_prepare_failed", step=step.key, ref=ref, error=str(exc))
+                        step.message = (
+                            f"Không chuẩn bị được dữ liệu (mã tham chiếu: {ref}). Xem nhật ký hệ thống."
+                        )
                 event(session, job, f"Chờ xác nhận thủ công: “{step.title}”.", step=step.key)
             job.status = "waiting"
             return
@@ -656,10 +699,17 @@ async def advance(session: AsyncSession, job: Job, worker_actor: Actor) -> None:
         except AppError as exc:
             outcome = StepOutcome("failed", exc.message)
         except Exception as exc:
+            ref = _error_ref()
             log.error(
-                "workflow_step_crashed", step=step.key, error=str(exc), trace=traceback.format_exc(limit=5)
+                "workflow_step_crashed",
+                step=step.key,
+                ref=ref,
+                error=str(exc),
+                trace=traceback.format_exc(limit=5),
             )
-            outcome = StepOutcome("failed", f"Lỗi không mong đợi: {type(exc).__name__}: {exc}"[:1000])
+            outcome = StepOutcome(
+                "failed", f"Lỗi không mong đợi khi chạy bước (mã tham chiếu: {ref}). Xem nhật ký hệ thống."
+            )
         if outcome.status == "waiting":
             _apply(step, outcome, None)
             step.status = "waiting"
@@ -706,7 +756,7 @@ async def advance(session: AsyncSession, job: Job, worker_actor: Actor) -> None:
                 target_type="job",
                 target_id=str(job.id),
                 target_label=f"{job.subject_label} – {step.title}",
-                before=outcome.before_state,
+                before=step.before_state,  # merged first-seen state, not just the last run
                 after=outcome.output or None,
                 message=outcome.message[:1000],
             )
@@ -723,9 +773,9 @@ async def advance(session: AsyncSession, job: Job, worker_actor: Actor) -> None:
 
 async def pump(session: AsyncSession) -> dict[str, Any]:
     """Scheduled task: start due scheduled jobs and advance active ones (one transaction per job)."""
-    ids = (
-        await session.scalars(
-            select(Job.id)
+    rows = (
+        await session.execute(
+            select(Job.id, Job.status)
             .where(
                 or_(
                     Job.status.in_(ACTIVE),
@@ -736,6 +786,23 @@ async def pump(session: AsyncSession) -> dict[str, Any]:
             .order_by(Job.updated_at)
         )
     ).all()
+    waiting = [r.id for r in rows if r.status == "waiting"]
+    steps: dict[Any, list[Any]] = {}
+    if waiting:
+        step_rows = await session.execute(
+            select(
+                JobStep.job_id,
+                JobStep.seq,
+                JobStep.status,
+                JobStep.kind,
+                JobStep.requires_confirm,
+                JobStep.confirmed_at,
+                JobStep.next_run_at,
+            ).where(JobStep.job_id.in_(select(Job.id).where(Job.status == "waiting")))
+        )
+        for r in step_rows:
+            steps.setdefault(r.job_id, []).append(r)
+    ids = [r.id for r in rows if r.status != "waiting" or _has_due_work(steps.get(r.id, []))]
     advanced = 0
     for job_id in ids:
         job = await session.scalar(
@@ -746,11 +813,17 @@ async def pump(session: AsyncSession) -> dict[str, Any]:
         )
         if job is None:
             continue
+        # Re-check under the lock: the job may have been cancelled/reopened since the candidate read.
+        if job.status not in ACTIVE and not (
+            job.status == "scheduled" and job.scheduled_for is not None and job.scheduled_for <= today_vn()
+        ):
+            await session.rollback()
+            continue
         if job.status == "scheduled":
             job.status = "running"
             job.started_at = now()
             event(session, job, "Đến ngày đã lên lịch – bắt đầu Job.")
-        if job.status == "waiting" and not _has_due_work(job):
+        if job.status == "waiting" and not _has_due_work(job.steps):
             await session.commit()
             continue
         actor = Actor(user_id=None, upn=f"worker ({job.started_by or 'system'})")
@@ -765,9 +838,9 @@ async def pump(session: AsyncSession) -> dict[str, Any]:
     return {"advanced": advanced, "candidates": len(ids)}
 
 
-def _has_due_work(job: Job) -> bool:
+def _has_due_work(steps: Iterable[Any]) -> bool:
     """A waiting job only needs the worker when an automatic step is due (confirmed or timer elapsed)."""
-    for s in sorted(job.steps, key=lambda s: s.seq):
+    for s in sorted(steps, key=lambda s: s.seq):
         if s.status in FINISHED_STEP:
             continue
         if s.status == "verify":

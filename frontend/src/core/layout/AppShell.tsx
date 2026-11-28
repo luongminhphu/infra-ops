@@ -5,11 +5,12 @@ import { ArrowLeft } from "lucide-react";
 import { api } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { iconFor } from "@/core/ui/icons";
+import { useNextActions } from "@/core/lib/nextActions";
 import { cn } from "@/core/lib/cn";
 import { activeFor, railSections, type RailSection } from "./nav";
 import { Topbar } from "./Topbar";
 
-function RailLink({ s, active, tab = false }: { s: RailSection; active: boolean; tab?: boolean }) {
+function RailLink({ s, active, tab = false, badge = 0 }: { s: RailSection; active: boolean; tab?: boolean; badge?: number }) {
   const Icon = iconFor(s.icon);
   return (
     <li className={tab ? "flex-1" : undefined}>
@@ -23,8 +24,16 @@ function RailLink({ s, active, tab = false }: { s: RailSection; active: boolean;
           active ? "bg-primary-soft text-primary" : "text-muted hover:bg-surface-2 hover:text-ink",
         )}
       >
-        <Icon className="size-5" aria-hidden="true" />
+        <span className="relative">
+          <Icon className="size-5" aria-hidden="true" />
+          {badge > 0 && (
+            <span className="absolute -top-1.5 left-3 min-w-4 rounded-full bg-failed px-1 text-[10px] leading-4 font-semibold text-on-primary tabular">
+              <span aria-hidden="true">{badge > 99 ? "99+" : badge}</span>
+            </span>
+          )}
+        </span>
         {s.label}
+        {badge > 0 && <span className="sr-only">, {badge} việc cần làm</span>}
       </Link>
     </li>
   );
@@ -37,6 +46,10 @@ function RailLink({ s, active, tab = false }: { s: RailSection; active: boolean;
 export function AppShell() {
   const { me } = useAuth();
   const location = useLocation();
+  // Shares the cached queue (same query key as the page): no extra request.
+  const next = useNextActions();
+  const pending = (next.data?.items ?? []).filter((i) => !i.passive && i.kind !== "notice").length;
+  const badgeFor = (s: RailSection) => (s.id === "mine" ? pending : 0);
   const sections = useMemo(() => railSections(me?.nav ?? []), [me?.nav]);
   const { section } = activeFor(sections, location.pathname);
   const sub = section && section.items.length > 1 ? section : null;
@@ -91,7 +104,7 @@ export function AppShell() {
         Bỏ qua điều hướng
       </a>
       <nav aria-label="Phân hệ" className="sticky top-0 hidden h-dvh w-[var(--rail-w)] shrink-0 flex-col items-center border-r border-line bg-rail py-2 sm:flex">
-        <Link to="/" className="mb-2 flex h-10 items-center rounded-sm px-2" aria-label="infra-ops – Tổng quan">
+        <Link to="/" className="mb-2 flex h-10 items-center rounded-sm px-2" aria-label="infra-ops – Trang chủ">
           {logo ? (
             <img src={logo} alt="" className="max-h-8 max-w-[calc(var(--rail-w)-1rem)] object-contain" />
           ) : (
@@ -99,10 +112,10 @@ export function AppShell() {
           )}
         </Link>
         <ul className="flex flex-1 flex-col items-center gap-1 overflow-y-auto">
-          {sections.filter((s) => !s.bottom).map((s) => <RailLink key={s.id} s={s} active={s.id === section?.id} />)}
+          {sections.filter((s) => !s.bottom).map((s) => <RailLink key={s.id} s={s} badge={badgeFor(s)} active={s.id === section?.id} />)}
         </ul>
         <ul className="flex flex-col items-center gap-1 pt-2">
-          {sections.filter((s) => s.bottom).map((s) => <RailLink key={s.id} s={s} active={s.id === section?.id} />)}
+          {sections.filter((s) => s.bottom).map((s) => <RailLink key={s.id} s={s} badge={badgeFor(s)} active={s.id === section?.id} />)}
         </ul>
       </nav>
       {sub && (
@@ -130,7 +143,7 @@ export function AppShell() {
         {/* Phones: the module rail becomes a bottom tab bar so content gets the full width. */}
         <nav aria-label="Phân hệ" className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-rail pb-[env(safe-area-inset-bottom)] sm:hidden">
           <ul className="flex h-[var(--tabbar-h)] items-center gap-1 px-2">
-            {sections.map((s) => <RailLink key={s.id} s={s} active={s.id === section?.id} tab />)}
+            {sections.map((s) => <RailLink key={s.id} s={s} badge={badgeFor(s)} active={s.id === section?.id} tab />)}
           </ul>
         </nav>
       </div>

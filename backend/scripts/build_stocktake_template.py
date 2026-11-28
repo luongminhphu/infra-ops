@@ -102,21 +102,38 @@ def build(path: str) -> None:
     )
 
     para(doc, "II. KẾT QUẢ TỔNG HỢP", bold=True)
-    t = doc.add_table(rows=6, cols=2)
+    t = doc.add_table(rows=7, cols=2)
     t.style = "Table Grid"
     rows = [
         ("Tài sản trên sổ SDP", "{{ totals.book }}"),
         ("Có trên thực tế", "{{ totals.found }}"),
         ("Không tìm thấy", "{{ totals.missing }}"),
         ("Có trên thực tế, không có trên SDP (ngoài sổ)", "{{ totals.extra }}"),
-        ("Hư hỏng", "{{ totals.damaged }}"),
+        ("Hư hỏng nhẹ (vẫn dùng được, không tính là chênh lệch)", "{{ totals.damaged_light }}"),
+        ("Hỏng, không dùng được", "{{ totals.damaged }}"),
         ("Tổng số chênh lệch", "{{ totals.differences }}"),
     ]
     for r, (k, v) in zip(t.rows, rows, strict=True):
         set_cell(r.cells[0], k)
         set_cell(r.cells[1], v, align=WD_ALIGN_PARAGRAPH.RIGHT)
         r.cells[0].width, r.cells[1].width = Cm(12), Cm(4)
-    para(doc, space_after=6)
+    para(doc, space_after=4)
+    para(doc, "Đối chiếu sổ kế toán (số lượng; bằng 0 nếu chưa nhập sổ)", bold=True)
+    bt = doc.add_table(rows=3, cols=4)
+    bt.style = "Table Grid"
+    for r, vals in zip(
+        bt.rows,
+        [
+            ("", "Khớp", "Thiếu / chưa có trên SDP", "Thiếu một phần"),
+            ("TSCĐ", "{{ totals.tscd_matched }}", "{{ totals.tscd_missing }}", "{{ totals.tscd_partial }}"),
+            ("CCDC", "{{ totals.ccdc_matched }}", "{{ totals.ccdc_missing }}", "{{ totals.ccdc_partial }}"),
+        ],
+        strict=True,
+    ):
+        for n, (c, v) in enumerate(zip(r.cells, vals, strict=True)):
+            set_cell(c, v, bold=r is bt.rows[0], align=WD_ALIGN_PARAGRAPH.RIGHT if n else None)
+            c.width = Cm(4.5 if n == 0 else 4)
+    para(doc, "Có trên thực tế, không có trong sổ kế toán: {{ totals.off_register }}", space_after=6)
 
     para(doc, "III. KẾT QUẢ THEO KHU", bold=True)
     loop_table(

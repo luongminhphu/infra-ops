@@ -4,9 +4,9 @@ import { toast } from "sonner";
 import { api, errorDetails } from "@/core/api/client";
 import { Button } from "@/core/ui/button";
 import { ErrorState, LoadingRows, PageHeader, Panel } from "@/core/ui/feedback";
-import { Field, Input, Select, Switch } from "@/core/ui/field";
+import { Field, Input, Select, Switch, Textarea } from "@/core/ui/field";
 import { HelpTip } from "@/core/ui/help-tip";
-import { Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Plus, Trash2, X } from "lucide-react";
 import { DateInput } from "@/core/ui/date-input";
 import { announce } from "@/core/ui/live-region";
 import type { Kind } from "../api";
@@ -42,6 +42,7 @@ interface Values {
   auto_create_jobs: boolean;
   sdp_close_status: string;
   sdp_closed_statuses: string[];
+  sdp_cancelled_statuses: string[];
   sdp_add_note: boolean;
   biostar_user_group_id: string;
   biostar_access_group_ids: string[];
@@ -53,7 +54,56 @@ interface Values {
   allocation_matrix: Matrix;
   device_tiers: DeviceTier[];
   allocation_past_days: number;
+  microsoft_enabled: boolean;
+  exchange_profile_id: string | null;
+  ad_profile_id: string | null;
+  graph_profile_id: string | null;
+  upn_domain: string;
+  naming_order: string[];
+  ad_base_ou: string;
+  ad_default_ou: string;
+  ad_ou_map: OuRule[];
+  ad_group_base: string;
+  transfer_new_labels: Record<string, string[]>;
+  transfer_old_labels: Record<string, string[]>;
+  ad_ban_ou: string;
+  ad_retained_ou: string;
+  mailbox_retention_days: number;
+  usage_location: string;
+  remote_routing_domain: string;
+  entra_wait_hours: number;
+  mailbox_wait_hours: number;
 }
+
+interface OuRule {
+  division: string;
+  department: string;
+  unit: string;
+  ou: string;
+  groups: string[];
+  biostar_access_group_ids: string[];
+}
+
+/** Comma / newline separated list; edits stay local until blur so typing separators is not eaten. */
+function ListInput({ value, onCommit, separator, ...rest }: { value: string[]; onCommit: (v: string[]) => void; separator: "," | "\n" } & { id?: string; className?: string; "aria-describedby"?: string; "aria-invalid"?: "true" | "false" }) {
+  const joined = value.join(separator === "," ? ", " : "\n");
+  const [text, setText] = useState(joined);
+  useEffect(() => setText(joined), [joined]);
+  const props = { ...rest, value: text, onBlur: () => onCommit(text.split(separator).map((x) => x.trim()).filter(Boolean)) };
+  // DNs contain commas, so DN lists are one per line.
+  return separator === "\n"
+    ? <Textarea {...props} rows={2} onChange={(e) => setText(e.target.value)} />
+    : <Input {...props} onChange={(e) => setText(e.target.value)} />;
+}
+
+// Example for "Nguyễn Thanh Bình"; the order is the order candidates are tried when a name is taken.
+const NAMING_LABEL: Record<string, string> = {
+  short: "Tên + viết tắt họ đệm (binh.nt)",
+  short2: "Tên + viết tắt, thêm số 2 (binh.nt2)",
+  given_family: "Tên + họ (binh.nguyen)",
+  given_full: "Tên + họ và đệm (binh.nguyenthanh)",
+  short3: "Tên + viết tắt, thêm số 3 (binh.nt3)",
+};
 
 interface BioStarSource {
   profile_id: string;
@@ -89,6 +139,7 @@ export function SettingsPage() {
   const [hrCc, setHrCc] = useState("");
   const [serverError, setServerError] = useState("");
   const [closedStatuses, setClosedStatuses] = useState("");
+  const [cancelledStatuses, setCancelledStatuses] = useState("");
   const [excludedGroups, setExcludedGroups] = useState("");
   const [loadGroups, setLoadGroups] = useState(false);
   const groups = useQuery({
@@ -102,6 +153,7 @@ export function SettingsPage() {
       setV(q.data.values);
       setProductTypes(q.data.values.asset_product_types.join(", "));
       setClosedStatuses(q.data.values.sdp_closed_statuses.join(", "));
+      setCancelledStatuses(q.data.values.sdp_cancelled_statuses.join(", "));
       setExcludedGroups(q.data.values.biostar_excluded_groups.join(", "));
       setHrTo(q.data.values.hr_review_to.join(", "));
       setHrCc(q.data.values.hr_review_cc.join(", "));
@@ -133,6 +185,7 @@ export function SettingsPage() {
       ...v,
       asset_product_types: list(productTypes),
       sdp_closed_statuses: list(closedStatuses),
+      sdp_cancelled_statuses: list(cancelledStatuses),
       biostar_excluded_groups: list(excludedGroups),
       hr_review_to: list(hrTo),
       hr_review_cc: list(hrCc),
@@ -140,6 +193,23 @@ export function SettingsPage() {
     });
   };
   const profileOptions = (type: string) => d.profiles.filter((p) => p.system_type === type);
+  const msProfile = (label: string, key: "exchange_profile_id" | "ad_profile_id" | "graph_profile_id", type: string) => (
+    <Field label={label}>
+      <Select value={v[key] ?? ""} onChange={(e) => set(key, e.target.value || null)}>
+        <option value="">Tự động</option>
+        {profileOptions(type).map((p) => <option key={p.id} value={p.id}>{p.name}{p.enabled ? "" : " (đang tắt)"}</option>)}
+      </Select>
+    </Field>
+  );
+  const ouRules = v.ad_ou_map;
+  const setRule = (i: number, patch: Partial<OuRule>) => set("ad_ou_map", ouRules.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const moveToken = (i: number, to: number) => {
+    const next = [...v.naming_order];
+    const [t] = next.splice(i, 1);
+    next.splice(to, 0, t!);
+    set("naming_order", next);
+  };
+  const unusedTokens = Object.keys(NAMING_LABEL).filter((t) => !v.naming_order.includes(t));
 
   return (
     <>
@@ -217,6 +287,130 @@ export function SettingsPage() {
           />
         </Panel>
 
+        <Panel
+          title={
+            <span className="inline-flex items-center gap-1">
+              Tích hợp Microsoft (AD · Exchange · M365)
+              <HelpTip title="Tích hợp Microsoft">
+                <span className="block">Tắt: các bước AD/mailbox/license trong Job tự bỏ qua. Job nháp tạo trước khi bật vẫn chạy luồng cũ.</span>
+              </HelpTip>
+            </span>
+          }
+          description="Tài khoản AD, mailbox Exchange và license Microsoft 365 cho Job onboard / offboard. License và Office tools sửa theo từng cấp bậc trong ma trận bên dưới."
+        >
+          <Switch label="Bật tích hợp Microsoft" checked={v.microsoft_enabled} onChange={(x) => set("microsoft_enabled", x)} />
+          <div className="mt-4 grid gap-4 sm:grid-cols-3">
+            {msProfile("Kết nối Exchange", "exchange_profile_id", "exchange")}
+            {msProfile("Kết nối Active Directory", "ad_profile_id", "active_directory")}
+            {msProfile("Kết nối Microsoft Graph", "graph_profile_id", "msgraph")}
+          </div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <Field label="Tên miền UPN" hint="Phần sau @ của email / UPN, vd. congty.com.vn.">
+              <Input value={v.upn_domain} onChange={(e) => set("upn_domain", e.target.value.trim())} placeholder="congty.com.vn" />
+            </Field>
+            <Field label="Tên miền remote routing" hint="Để trống: chính sách Exchange quyết định.">
+              <Input value={v.remote_routing_domain} onChange={(e) => set("remote_routing_domain", e.target.value.trim())} placeholder="congty.mail.onmicrosoft.com" />
+            </Field>
+            <Field label="Usage location" hint="Mã quốc gia 2 chữ cái, vd. VN. Bắt buộc để gán license.">
+              <Input value={v.usage_location} maxLength={2} onChange={(e) => set("usage_location", e.target.value.toUpperCase())} className="w-24" />
+            </Field>
+          </div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <Field label="Chờ đồng bộ Entra (giờ)" hint="Từ 1 đến 72 giờ.">
+              <Input type="number" min={1} max={72} value={v.entra_wait_hours} onChange={num("entra_wait_hours")} className="w-28" />
+            </Field>
+            <Field label="Chờ mailbox (giờ)" hint="Từ 1 đến 72 giờ.">
+              <Input type="number" min={1} max={72} value={v.mailbox_wait_hours} onChange={num("mailbox_wait_hours")} className="w-28" />
+            </Field>
+          </div>
+
+          <h3 className="mt-5 mb-1 flex items-center gap-1 text-base font-semibold">
+            Thứ tự đặt tên đăng nhập
+            <HelpTip title="Thứ tự đặt tên">
+              <span className="block">Thử lần lượt từ trên xuống; tên đã có người dùng thì thử kiểu kế tiếp. Ví dụ cho “Nguyễn Thanh Bình”: binh.nt, binh.nt2, binh.nguyen, binh.nguyenthanh, binh.nt3.</span>
+            </HelpTip>
+          </h3>
+          <ol className="space-y-1.5" aria-label="Thứ tự đặt tên">
+            {v.naming_order.map((t, i) => (
+              <li key={t} className="flex items-center gap-2 rounded-sm border border-line px-3 py-1.5 text-sm">
+                <span className="tabular text-muted">{i + 1}.</span>
+                <span className="mr-auto">{NAMING_LABEL[t] ?? t}</span>
+                <Button size="icon" variant="ghost" aria-label={`Đưa “${NAMING_LABEL[t] ?? t}” lên`} disabled={i === 0} onClick={() => moveToken(i, i - 1)}><ArrowUp className="size-4" aria-hidden="true" /></Button>
+                <Button size="icon" variant="ghost" aria-label={`Đưa “${NAMING_LABEL[t] ?? t}” xuống`} disabled={i === v.naming_order.length - 1} onClick={() => moveToken(i, i + 1)}><ArrowDown className="size-4" aria-hidden="true" /></Button>
+                <Button size="icon" variant="ghost" aria-label={`Bỏ “${NAMING_LABEL[t] ?? t}”`} onClick={() => set("naming_order", v.naming_order.filter((x) => x !== t))}><Trash2 className="size-4" aria-hidden="true" /></Button>
+              </li>
+            ))}
+          </ol>
+          {unusedTokens.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {unusedTokens.map((t) => (
+                <Button key={t} size="sm" onClick={() => set("naming_order", [...v.naming_order, t])}><Plus className="size-4" aria-hidden="true" />{NAMING_LABEL[t]}</Button>
+              ))}
+            </div>
+          )}
+
+          <h3 className="mt-5 mb-1 text-base font-semibold">Active Directory OU</h3>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="Base OU" hint="User ngoài OU này không bao giờ bị đụng tới. Vd. OU=Users,DC=corp,DC=local.">
+              <Input value={v.ad_base_ou} onChange={(e) => set("ad_base_ou", e.target.value)} className="font-mono" />
+            </Field>
+            <Field label="OU mặc định" hint="Dùng khi không có dòng ánh xạ nào khớp.">
+              <Input value={v.ad_default_ou} onChange={(e) => set("ad_default_ou", e.target.value)} className="font-mono" />
+            </Field>
+            <Field label="OU Ban_Users" hint="Nơi chuyển user nghỉ việc.">
+              <Input value={v.ad_ban_ou} onChange={(e) => set("ad_ban_ou", e.target.value)} className="font-mono" />
+            </Field>
+          </div>
+          <h3 className="mt-5 mb-1 flex items-center gap-1 text-base font-semibold">
+            Giữ mailbox khi nghỉ việc
+            <HelpTip title="OU giữ mailbox">
+              <span className="block">OU này phải nằm trong phạm vi Entra Connect sync để giữ mailbox.</span>
+              <span className="block">Khi quản lý yêu cầu giữ mailbox, tài khoản được chuyển vào OU này; hết hạn giữ, một Job riêng chuyển tiếp vào Ban_Users (Entra xoá user, mailbox và license, khôi phục được trong 30 ngày).</span>
+            </HelpTip>
+          </h3>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="OU giữ mailbox" hint="Nằm trong Base OU, khác OU Ban_Users.">
+              <Input value={v.ad_retained_ou} onChange={(e) => set("ad_retained_ou", e.target.value)} className="font-mono" />
+            </Field>
+            <Field label="Số ngày giữ mailbox" hint="Từ 1 đến 3650 ngày.">
+              <Input type="number" min={1} max={3650} value={v.mailbox_retention_days} onChange={num("mailbox_retention_days")} className="w-28" />
+            </Field>
+          </div>
+          <h3 className="mt-5 mb-1 flex items-center gap-1 text-base font-semibold">
+            Ánh xạ OU theo tổ chức
+            <HelpTip title="Ánh xạ OU">
+              <span className="block">Dòng khớp cụ thể nhất (có nhiều ô khớp nhất) thắng. Ô để trống khớp mọi giá trị.</span>
+            </HelpTip>
+          </h3>
+          <ul className="space-y-3">
+            {ouRules.map((r, i) => (
+              <li key={i} className="grid items-start gap-2 rounded-sm border border-line p-3 sm:grid-cols-[1fr_1fr_1fr_2fr_auto]">
+                <Field label="Khối"><Input value={r.division} onChange={(e) => setRule(i, { division: e.target.value })} /></Field>
+                <Field label="Phòng"><Input value={r.department} onChange={(e) => setRule(i, { department: e.target.value })} /></Field>
+                <Field label="Bộ phận"><Input value={r.unit} onChange={(e) => setRule(i, { unit: e.target.value })} /></Field>
+                <Field label="OU DN" hint="Để trống nếu dòng chỉ khai nhóm."><Input value={r.ou} onChange={(e) => setRule(i, { ou: e.target.value })} className="font-mono" placeholder="OU=Kinh doanh,DC=corp,DC=local" /></Field>
+                <Button size="icon" variant="ghost" className="mt-6" aria-label={`Bỏ dòng ánh xạ OU ${i + 1}`} onClick={() => set("ad_ou_map", ouRules.filter((_, j) => j !== i))}>
+                  <Trash2 className="size-4" aria-hidden="true" />
+                </Button>
+                <div className="grid gap-2 sm:col-span-full sm:grid-cols-2">
+                  <Field label="Nhóm AD (mỗi DN một dòng)" hint="Thuyên chuyển thêm nhóm của phòng ban mới và gỡ nhóm của phòng ban cũ.">
+                    <ListInput value={r.groups} separator={"\n"} onCommit={(x) => setRule(i, { groups: x })} className="font-mono" />
+                  </Field>
+                  <Field label="Nhóm quyền ra vào BioStar (ID, phân cách bằng dấu phẩy)" hint="Áp dụng cho onboard và thuyên chuyển.">
+                    <ListInput value={r.biostar_access_group_ids} separator="," onCommit={(x) => setRule(i, { biostar_access_group_ids: x })} className="font-mono" />
+                  </Field>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <Field label="OU chứa nhóm AD" hint="Nhóm khai trong quy tắc phải nằm trong OU này (để trống = không kiểm tra)." className="mt-3 max-w-xl">
+            <Input value={v.ad_group_base} onChange={(e) => set("ad_group_base", e.target.value)} className="font-mono" placeholder="OU=Groups,DC=corp,DC=local" />
+          </Field>
+          <Button className="mt-3" disabled={ouRules.length >= 200} onClick={() => set("ad_ou_map", [...ouRules, { division: "", department: "", unit: "", ou: "", groups: [], biostar_access_group_ids: [] }])}>
+            <Plus className="size-4" aria-hidden="true" />Thêm dòng ánh xạ
+          </Button>
+        </Panel>
+
         <Panel title="Request RTR trên ServiceDesk Plus">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Tên người yêu cầu (requester)" hint="Request do hệ thống RTR tạo có requester này.">
@@ -236,6 +430,24 @@ export function SettingsPage() {
                   onChange={(e) => set("field_labels", { ...v.field_labels, [key]: e.target.value })}
                 />
               </Field>
+            ))}
+          </div>
+          <h3 className="mt-5 mb-1 flex items-center gap-1 text-base font-semibold">
+            Nhãn riêng cho request Thuyên chuyển
+            <HelpTip title="Nhãn thuyên chuyển">
+              <span className="block">Request thuyên chuyển có thể ghi giá trị mới và cũ dưới các nhãn khác nhau (vd. “Phòng ban mới”, “Phòng ban cũ”). Mỗi ô nhận nhiều nhãn, phân cách bằng dấu phẩy; để trống = dùng nhãn thường.</span>
+            </HelpTip>
+          </h3>
+          <div className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
+            {Object.entries(d.field_titles).map(([key, title]) => (
+              <div key={key} className="grid gap-2 rounded-sm border border-line p-2">
+                <Field label={`${title} – nhãn giá trị mới`}>
+                  <ListInput value={v.transfer_new_labels[key] ?? []} separator="," onCommit={(x) => set("transfer_new_labels", { ...v.transfer_new_labels, [key]: x })} />
+                </Field>
+                <Field label={`${title} – nhãn giá trị cũ`}>
+                  <ListInput value={v.transfer_old_labels[key] ?? []} separator="," onCommit={(x) => set("transfer_old_labels", { ...v.transfer_old_labels, [key]: x })} />
+                </Field>
+              </div>
             ))}
           </div>
         </Panel>
@@ -348,8 +560,11 @@ export function SettingsPage() {
               <Field label="Trạng thái request khi đóng Job" hint="Tên trạng thái trên SDP, ví dụ Resolved hoặc Closed.">
                 <Input value={v.sdp_close_status} onChange={(e) => set("sdp_close_status", e.target.value)} />
               </Field>
-              <Field label="Trạng thái được coi là đã đóng" hint="Đúng như SDP hiển thị (SDP tiếng Việt: Đã đóng, Đã xử lý…), cách nhau dấu phẩy, không phân biệt hoa thường / dấu. Request ở các trạng thái này: không tạo Job nháp, Job nháp có sẵn tự huỷ khi đồng bộ, Job đang chạy dừng ở bước kiểm tra request.">
+              <Field label="Trạng thái được coi là đã đóng" hint="Luôn được coi là đã đóng: Closed, Resolved, Completed, Đã đóng, Đã xử lý, Đã xong, Hoàn tất, Đã hoàn tất, Hoàn thành, Đã hoàn thành. Thêm tên khác đúng như SDP hiển thị, cách nhau dấu phẩy, không phân biệt hoa thường / dấu. Request ở các trạng thái này: không tạo Job nháp, Job nháp có sẵn tự huỷ khi đồng bộ, Job đang chạy dừng ở bước kiểm tra request.">
                 <Input value={closedStatuses} onChange={(e) => setClosedStatuses(e.target.value)} />
+              </Field>
+              <Field label="Trạng thái được coi là đã huỷ" hint="Request ở các trạng thái này không còn quyết định loại onboard/offboard khi đối soát. Bỏ một trạng thái nếu đội IT dùng nó để đóng việc đã xử lý.">
+                <Input value={cancelledStatuses} onChange={(e) => setCancelledStatuses(e.target.value)} />
               </Field>
             </div>
             <Switch label="Thêm ghi chú tóm tắt vào request khi đóng" checked={v.sdp_add_note} onChange={(x) => set("sdp_add_note", x)} />
@@ -468,7 +683,7 @@ export function SettingsPage() {
 
         {serverError && <p role="alert" className="rounded-sm bg-failed-soft px-3 py-2 text-sm text-failed">{serverError}</p>}
         <div className="sticky bottom-0 -mx-4 sm:-mx-5 flex justify-end gap-2 border-t border-line bg-paper/95 px-5 py-3 backdrop-blur">
-          <Button onClick={() => { setV(d.values); setProductTypes(d.values.asset_product_types.join(", ")); setClosedStatuses(d.values.sdp_closed_statuses.join(", ")); setExcludedGroups(d.values.biostar_excluded_groups.join(", ")); setHrTo(d.values.hr_review_to.join(", ")); setHrCc(d.values.hr_review_cc.join(", ")); }}>Hoàn tác thay đổi</Button>
+          <Button onClick={() => { setV(d.values); setProductTypes(d.values.asset_product_types.join(", ")); setClosedStatuses(d.values.sdp_closed_statuses.join(", ")); setCancelledStatuses(d.values.sdp_cancelled_statuses.join(", ")); setExcludedGroups(d.values.biostar_excluded_groups.join(", ")); setHrTo(d.values.hr_review_to.join(", ")); setHrCc(d.values.hr_review_cc.join(", ")); }}>Hoàn tác thay đổi</Button>
           <Button type="submit" variant="primary" loading={save.isPending}>Lưu cấu hình</Button>
         </div>
       </form>

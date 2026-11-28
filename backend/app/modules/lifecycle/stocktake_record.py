@@ -20,8 +20,17 @@ class Totals(BaseModel):
     found: int = Field(ge=0)
     missing: int = Field(ge=0)
     extra: int = Field(ge=0)
-    damaged: int = Field(ge=0)
+    damaged: int = Field(ge=0)  # broken (rules_version 2) or broken + light damage (rules_version 1)
+    damaged_light: int = Field(0, ge=0)
     differences: int = Field(ge=0)
+    # Accounting register counts (defaults keep older records valid).
+    tscd_matched: int = Field(0, ge=0)
+    tscd_missing: int = Field(0, ge=0)
+    tscd_partial: int = Field(0, ge=0)
+    ccdc_matched: int = Field(0, ge=0)
+    ccdc_missing: int = Field(0, ge=0)
+    ccdc_partial: int = Field(0, ge=0)
+    off_register: int = Field(0, ge=0)
 
 
 class ZoneLine(BaseModel):
@@ -114,7 +123,14 @@ STOCKTAKE_RECORD = DocumentKind(
         PlaceholderDoc("date", "Ngày lập biên bản (dd/MM/yyyy)", "05/01/2027"),
         PlaceholderDoc("synced_at", "Thời điểm dữ liệu SDP được chốt", "31/12/2026"),
         PlaceholderDoc(
-            "totals.book / found / missing / extra / damaged / differences", "Số liệu tổng hợp", "412"
+            "totals.book / found / missing / extra / damaged / damaged_light / differences",
+            "Số liệu tổng hợp",
+            "412",
+        ),
+        PlaceholderDoc(
+            "totals.tscd_* / ccdc_* (matched / missing / partial) / off_register",
+            "Đối chiếu sổ kế toán: chỉ số lượng dòng, không có tiền",
+            "35",
         ),
         PlaceholderDoc(
             "zones[i].name / assignee / book / found / missing / extra", "Kết quả theo khu", "Tầng 5"
@@ -184,7 +200,7 @@ STOCKTAKE_RECORD = DocumentKind(
             },
         ],
     },
-    view_permission="lifecycle.stocktake.view",
+    view_permission="lifecycle.stocktake.view_all",  # the record lists every zone: not for Operators
     create_permission="lifecycle.stocktake.manage",
     manage_permission="lifecycle.stocktake.manage",
 )

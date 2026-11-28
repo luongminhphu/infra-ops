@@ -60,6 +60,31 @@ FactSource("assets.renewals_due", "Số dịch vụ sắp hết hạn", "number"
 # manifest: facts=[...]; keys start with the module id.
 ```
 
+Records the global search (Ctrl+K) should find are declared like the "Việc tiếp theo" queue (`NextActionSource`): a `SearchSource` per
+entity, in the manifest (`search_sources=[...]`; keys start with the module id):
+
+```python
+async def search_renewals(session, user, q, limit):
+    # Same row scope as the list endpoint, and only fields that list shows to this user (never hidden columns / prices).
+    hay = func.concat_ws(" ", Renewal.name, Renewal.owner)
+    rows = await session.scalars(
+        select(Renewal).where(fold_sql(hay).contains(fold(q), autoescape=True)).limit(limit)
+    )
+    return [{"title": r.name, "detail": r.owner, "href": f"/assets/renewals?open={r.id}", "kind": "renewal"} for r in rows]
+
+SearchSource("assets.renewals", "assets.renewal.view", "Gia hạn", search_renewals)
+```
+
+Core calls it only for users holding `permission`, only from 2 characters, with a 2 s timeout (a slow or failing source is reported, not
+fatal), `limit` = 5. `fold` / `fold_sql` come from `app.core.text` (accent-insensitive: "nguyen" finds "Nguyễn"). Use stable page paths for `href`.
+
+Printable records of a kind that has a Job behind it (or an owner) can restrict who sees them: `DocumentKind(view_all_permission="…")`.
+Without that permission (and without `manage_permission`) people see only records they created or whose Job they may see – `create_draft(…, job_id=job.id)`
+links the Job. `None` (default) = everyone with `view_permission` sees all.
+
+Exports to Excel go through `app.core.xlsx`: wrap every user/system-derived string in `safe(...)` (formula injection) and write the header with
+`header(ws, headers, widths)`; limit the row count and audit the export.
+
 Every module nav page is also a *tool* a Playbook step can open; its key is the path without slashes
 (`/assets/renewals` → `assets.renewals`), so keep page paths stable.
 

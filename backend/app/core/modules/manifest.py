@@ -81,6 +81,21 @@ class NextActionSource:
 
 
 @dataclass(frozen=True)
+class SearchSource:
+    """Records the global search (Ctrl+K) can find, declared by the module that owns them.
+
+    ``search(session, user, q, limit)`` returns items ``{title, detail, href, kind}``. It must apply the same row
+    scope as the entity's list endpoint and match only fields that list shows to this user. ``q`` is raw (use
+    ``app.core.text.fold``). ``key`` is prefixed with the module id; ``label`` is the group heading.
+    """
+
+    key: str
+    permission: str
+    label: str
+    search: Callable[[AsyncSession, Any, str, int], Awaitable[list[dict[str, Any]]]]
+
+
+@dataclass(frozen=True)
 class ScheduledTask:
     """Periodic background job run by the worker (``python -m app.worker``).
 
@@ -124,6 +139,8 @@ class DocumentKind:
     view_permission: str
     create_permission: str
     manage_permission: str
+    # Row scope: holders see every record; others only their own or those of Jobs they may view. None = no scope.
+    view_all_permission: str | None = None
 
 
 @dataclass(frozen=True)
@@ -168,6 +185,7 @@ class ModuleManifest:
     document_kinds: Sequence[DocumentKind] = ()
     workflows: Sequence[Any] = ()  # WorkflowDefinition (app.core.workflow.definitions)
     facts: Sequence[FactSource] = ()
+    search_sources: Sequence[SearchSource] = ()
     tags: Sequence[str] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
@@ -183,6 +201,9 @@ class ModuleManifest:
         for kind in self.document_kinds:
             if not kind.key.startswith(f"{self.id}."):
                 raise ValueError(f"Document kind {kind.key!r} must be prefixed with module id {self.id!r}")
+        for src in self.search_sources:
+            if not src.key.startswith(f"{self.id}."):
+                raise ValueError(f"Search source {src.key!r} must be prefixed with module id {self.id!r}")
         for task in self.scheduled_tasks:
             if not task.key.startswith(f"{self.id}."):
                 raise ValueError(f"Scheduled task {task.key!r} must be prefixed with module id {self.id!r}")

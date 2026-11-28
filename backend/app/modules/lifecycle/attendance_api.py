@@ -9,6 +9,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, Response, UploadFile
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit.service import record
@@ -32,6 +33,11 @@ from app.modules.lifecycle.attendance import (
     to_xlsx,
 )
 from app.modules.lifecycle.attendance_input import MAX_FILE_BYTES, extract, rows_from_file, rows_from_text
+from app.modules.lifecycle.id_suggest import failed_sources
+from app.modules.lifecycle.models import Snapshot
+from app.modules.lifecycle.normalize import id_key
+from app.modules.lifecycle.parsing import name_key
+from app.modules.lifecycle.queries import latest_run
 from app.modules.lifecycle.settings import MODULE_ID, main_biostar
 from app.modules.lifecycle.settings import load as load_settings
 
@@ -88,6 +94,69 @@ async def attendance_status(
     except AppError as exc:
         return {"ready": False, "message": exc.message}
     return {"ready": True, "message": None}
+
+
+class PreviewIn(BaseModel):
+    employee_ids: str = Field(min_length=1, max_length=20000)
+
+
+@router.post("/attendance/preview")
+async def preview_employees(
+    body: PreviewIn, _: CurrentUser = Depends(export_perm), session: AsyncSession = Depends(get_session)
+) -> dict[str, Any]:
+    """Who the pasted IDs are in the latest synced SDP / BioStar data (last 5 digits). Nothing is read live."""
+    ids = parse_ids(body.employee_ids)
+    if not ids or len(ids) > MAX_EMPLOYEES or any(len(e) > 20 for e in ids):
+        raise AppError(f"Nhập từ 1 đến {MAX_EMPLOYEES} Mã NV hợp lệ.", code="bad_employee_ids")
+    run = await latest_run(session)
+    if run is None:
+        return {"synced_at": None, "failed_sources": [], "items": []}
+    snaps = (
+        await session.scalars(
+            select(Snapshot).where(
+                Snapshot.run_id == run.id, Snapshot.system.in_(["sdp_user", "biostar_user"])
+            )
+        )
+    ).all()
+    sdp_by_key: dict[str, list[str]] = {}
+    for s_ in snaps:
+        if s_.system == "sdp_user" and s_.data.get("employee_id"):
+            sdp_by_key.setdefault(id_key(s_.data["employee_id"]), []).append(s_.data.get("name") or "")
+    bs_users = [s_.data for s_ in snaps if s_.system == "biostar_user"]
+    by_user = match_users(ids, bs_users)  # one pass over all users
+    users_by_id = {str(u.get("user_id")): u for u in bs_users}
+    bs_by_emp: dict[str, list[dict[str, Any]]] = {}
+    for uid, emp in by_user.items():
+        u = users_by_id[uid]
+        bs_by_emp.setdefault(emp, []).append(
+            {
+                "name": u.get("name") or "",
+                "user_id": u.get("user_id"),
+                "source": u.get("source"),
+                "active": bool(u.get("active")),
+            }
+        )
+    sdp_failed, bs_failed = failed_sources(run.errors)
+    items = []
+    for emp in ids:
+        sdp_names = sdp_by_key.get(id_key(emp))
+        sdp_name = sdp_names[0] if sdp_names else None
+        bs = bs_by_emp.get(emp, [])
+        if bs and sdp_names:
+            keys = {name_key(n) for n in sdp_names}
+            status = "ok" if any(name_key(b["name"]) in keys for b in bs) else "name_differs"
+        elif bs:
+            status = "unknown" if sdp_failed else "biostar_only"
+        elif sdp_names:
+            status = "unknown" if bs_failed else "sdp_only"
+        else:
+            status = "unknown" if bs_failed or sdp_failed else "not_found"
+        items.append({"employee_id": emp, "sdp_name": sdp_name, "biostar": bs, "status": status})
+    return {
+        "synced_at": run.finished_at,
+        "failed_sources": [str(k) for k in run.errors if str(k).startswith(("biostar", "sdp"))],
+        "items": items,
+    }
 
 
 @router.post("/attendance/export")

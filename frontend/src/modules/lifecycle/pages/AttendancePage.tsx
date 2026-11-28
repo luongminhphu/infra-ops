@@ -1,8 +1,10 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Download, FileSpreadsheet, ScanSearch } from "lucide-react";
 import { toast } from "sonner";
+import { fold, formatDateTime } from "@/core/lib/format";
+import { useDebounced } from "@/core/lib/useDebounced";
 import { api, downloadFile, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { Button } from "@/core/ui/button";
@@ -10,7 +12,7 @@ import { DateInput } from "@/core/ui/date-input";
 import { Mono, PageHeader, Panel } from "@/core/ui/feedback";
 import { Field, Textarea } from "@/core/ui/field";
 import { HelpTip } from "@/core/ui/help-tip";
-import { StatusBadge } from "@/core/ui/status";
+import { StatusBadge, type Status } from "@/core/ui/status";
 
 const MAX_DAYS = 62;
 const MAX_IDS = 500;
@@ -30,6 +32,11 @@ export function parseIds(text: string): string[] {
 /** Text that is more than a list of IDs (a table copied from an e-mail or Excel, IDs mixed with names). */
 export function looksLikeTable(text: string): boolean {
   return text.includes("\t") || /\p{L}/u.test(text);
+}
+
+/** Stable string for a set of IDs: same content gives the same string (a new array each render must not retrigger debounce). */
+export function idsKey(ids: string[]): string {
+  return [...ids].sort().join(",");
 }
 
 /** Existing IDs plus new ones, in order, once each. */
@@ -61,6 +68,41 @@ export function periodErrors(from: string, to: string, fromBad: boolean, toBad: 
             ? `Tối đa ${MAX_DAYS} ngày mỗi lần (đang chọn ${days} ngày).`
             : "";
   return { fromError, toError, days };
+}
+
+/** Name compared without accents, punctuation or word order (same rule as the server's name_key). */
+export function nameKey(name: string): string {
+  return (fold(name).match(/\p{L}+|\d+/gu) ?? []).sort().join(" ");
+}
+
+export interface PreviewItem {
+  employee_id: string;
+  sdp_name: string | null;
+  biostar: { name: string; user_id: string; source: string | null; active: boolean }[];
+  status: "ok" | "name_differs" | "sdp_only" | "biostar_only" | "not_found" | "unknown";
+}
+interface Preview {
+  synced_at: string | null;
+  failed_sources: string[];
+  items: PreviewItem[];
+}
+
+const PREVIEW_BADGE: Record<PreviewItem["status"], [Status, string]> = {
+  ok: ["match", "Khớp"],
+  name_differs: ["mismatch", "Lệch tên"],
+  sdp_only: ["warning", "Chỉ có ở SDP"],
+  biostar_only: ["warning", "Chỉ có ở BioStar"],
+  not_found: ["failed", "Chưa thấy"],
+  unknown: ["skipped", "Chưa rõ"],
+};
+
+/** "38 đúng · 2 lệch tên · 1 chưa thấy" (other groups only when present). */
+export function previewSummary(items: { status: PreviewItem["status"] }[]): string {
+  const n = (...st: PreviewItem["status"][]) => items.filter((i) => st.includes(i.status)).length;
+  const parts = [`${n("ok")} đúng`, `${n("name_differs")} lệch tên`, `${n("not_found")} chưa thấy`];
+  if (n("sdp_only", "biostar_only")) parts.push(`${n("sdp_only", "biostar_only")} chỉ có ở một hệ thống`);
+  if (n("unknown")) parts.push(`${n("unknown")} chưa rõ`);
+  return parts.join(" · ");
 }
 
 interface Recognized {
@@ -115,6 +157,16 @@ export function AttendancePage() {
         : count > MAX_IDS
           ? `Tối đa ${MAX_IDS} Mã NV mỗi lần (đang có ${count}).`
           : "";
+  // Check of the IDs against the last synced SDP / BioStar data; never blocks the export.
+  // Debounce a string, not an array: a fresh array every render would restart the timer forever.
+  const debouncedKey = useDebounced(idsKey(known ?? (looksLikeTable(ids) ? [] : parseIds(ids))), 400);
+  const previewKey = useMemo(() => (debouncedKey ? debouncedKey.split(",") : []), [debouncedKey]);
+  const preview = useQuery({
+    queryKey: ["lifecycle", "attendance", "preview", previewKey],
+    queryFn: () => api<Preview>("/api/lifecycle/attendance/preview", { method: "POST", json: { employee_ids: `Mã NV\n${previewKey.join("\n")}` } }),
+    enabled: count !== null && !idError && previewKey.length > 0,
+  });
+  const hrNames = new Map((known && found ? found.items : []).map((i) => [i.employee_id, i.name]));
   const { fromError, toError } = periodErrors(from, to, fromBad, toBad, iso(new Date()));
   const valid = !idError && !fromError && !toError;
 
@@ -280,6 +332,41 @@ export function AttendancePage() {
                   </Button>
                 )}
               </div>
+              {count !== null && !idError && (
+                <section className="grid gap-2 rounded-md border border-line bg-surface-2 px-3 py-2 text-sm" aria-label="Kiểm tra Mã NV theo dữ liệu đồng bộ">
+                  {preview.isError ? (
+                    <StatusBadge status="warning" label="Chưa kiểm tra được Mã NV" />
+                  ) : !preview.data ? (
+                    <span className="text-muted">Đang kiểm tra Mã NV…</span>
+                  ) : (
+                    <>
+                      <b className="font-semibold">{previewSummary(preview.data.items)}</b>
+                      <ul className="max-h-56 overflow-y-auto" tabIndex={0} aria-label="Kết quả kiểm tra từng Mã NV">
+                        {preview.data.items.map((i) => {
+                          const [st, label] = PREVIEW_BADGE[i.status];
+                          const hr = hrNames.get(i.employee_id);
+                          const ref = i.sdp_name ?? i.biostar[0]?.name;
+                          return (
+                            <li key={i.employee_id} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-0.5">
+                              <Mono>{i.employee_id}</Mono>
+                              <span>SDP: {i.sdp_name ?? "—"}</span>
+                              <span className="text-muted">BioStar: {i.biostar.length ? i.biostar.map((b) => b.name).join(", ") : "—"}</span>
+                              {hr && <span className="text-muted">HR: {hr}</span>}
+                              {hr && ref && nameKey(hr) !== nameKey(ref) && <StatusBadge status="mismatch" label="Lệch tên HR" />}
+                              <StatusBadge status={st} label={label} />
+                              {i.biostar.some((b) => !b.active) && <StatusBadge status="warning" label="BioStar đã khoá" />}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      <span className="text-muted">
+                        {preview.data.synced_at ? `Theo dữ liệu đồng bộ lúc ${formatDateTime(preview.data.synced_at)}` : "Chưa có lần đồng bộ nào."}
+                        {preview.data.failed_sources.length > 0 && " · Một số nguồn đọc lỗi ở lần đồng bộ này."}
+                      </span>
+                    </>
+                  )}
+                </section>
+              )}
               {found && (
                 <details className="rounded-md border border-line bg-surface-2 px-3 py-2 text-sm">
                   <summary className="cursor-pointer">

@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/core/api/client";
-import { JOB_WORKFLOWS, jobStatusLabel, WORKFLOW_LABEL, type Job } from "./jobs";
+import { JOB_WORKFLOWS, jobStatusLabel, WORKFLOW_LABEL, type JobListItem } from "./jobs";
 import { AlertTriangle, ChevronRight, GitCompareArrows } from "lucide-react";
 import { EmptyState } from "@/core/ui/feedback";
 import { StatusBadge } from "@/core/ui/status";
@@ -22,7 +22,7 @@ export function JobsWidget({ data }: { data: unknown }) {
   const sum = (statuses: string[]) => rows.filter((r) => statuses.includes(r.status)).reduce((n, r) => n + r.count, 0);
   const q = useQuery({
     queryKey: ["jobs", "dashboard-waiting"],
-    queryFn: () => api<{ items: Job[] }>(`/api/core/jobs?status=open&limit=50&workflows=${JOB_WORKFLOWS}`),
+    queryFn: () => api<{ items: JobListItem[] }>(`/api/core/jobs?lean=1&status=open&limit=50&workflows=${JOB_WORKFLOWS}`),
     refetchInterval: 30_000,
   });
   // Waiting for a person, or running but stalled (worker not advancing it): the same list as "Cần xử lý tiếp".
@@ -52,7 +52,7 @@ export function JobsWidget({ data }: { data: unknown }) {
 }
 
 /** The next action on onboarding/offboarding: jobs stopped on a step that needs a person. */
-function WaitingJobs({ jobs }: { jobs: Job[] }) {
+function WaitingJobs({ jobs }: { jobs: JobListItem[] }) {
   if (!jobs.length) return null;
   return (
     <div className="mb-3">

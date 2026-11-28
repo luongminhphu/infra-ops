@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from app.core.config import get_settings
 from app.modules.playbook.tree import Tree, unreachable
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 32
@@ -73,6 +74,11 @@ async def test_guide_draft_publish_versions_and_readers(admin, client) -> None: 
         f"/api/playbook/guides/{gid}/images", files={"file": ("a.png", b"<svg/>", "image/png")}
     )
     assert fake.json()["error"]["code"] == "unsupported_file"
+    big = await admin.post(
+        f"/api/playbook/guides/{gid}/images",
+        files={"file": ("a.png", PNG + b"0" * (get_settings().max_upload_mb * 1024 * 1024), "image/png")},
+    )
+    assert big.json()["error"]["code"] == "file_too_large"
 
     # An IT Support operator reads the published version only, and cannot edit.
     roles = {x["code"]: x["id"] for x in (await admin.get("/api/core/roles")).json()}
@@ -251,18 +257,19 @@ async def test_onboard_template_is_a_valid_connected_guide(admin) -> None:  # ty
     assert [t["key"] for t in listed] == [
         "onboard",
         "offboard",
+        "transfer",
         "extra_device",
         "recall_device",
         "replace_device",
     ]
-    assert 15 < listed[0]["steps"] < 21
+    assert 14 < listed[0]["steps"] < 21
     r = await admin.post("/api/playbook/guides", json={"title": "Onboard (mẫu)", "template": "onboard"})
     assert r.status_code == 201, r.text
     d = (await admin.get(f"/api/playbook/guides/{r.json()['id']}", params={"version": "draft"})).json()
     assert d["category"] == "Vòng đời nhân sự" and d["tree"]["root"] == "receive"
     # Onboard always means a new employee ID and new accounts: no rehire / duplicate branch.
-    assert "rehire" not in d["tree"]["nodes"] and d["tree"]["nodes"]["license_level"]["kind"] == "step"
-    for key in ("offboard", "extra_device", "recall_device", "replace_device"):
+    assert "rehire" not in d["tree"]["nodes"] and d["tree"]["nodes"]["m365_license"]["kind"] == "job"
+    for key in ("offboard", "transfer", "extra_device", "recall_device", "replace_device"):
         r = await admin.post("/api/playbook/guides", json={"title": f"{key} (mẫu)", "template": key})
         assert r.status_code == 201, r.text
     assert (
@@ -273,11 +280,17 @@ async def test_onboard_template_is_a_valid_connected_guide(admin) -> None:  # ty
 async def test_job_steps_link_playbook_and_jobs(admin, client) -> None:  # type: ignore[no-untyped-def]
     """A "Bước của Job" points at a workflow step (no copied checklist); publishing refuses a step that does not
     exist; a Job step finds the published guide that explains it."""
+    from app.modules.lifecycle.workflows import OFFBOARD, ONBOARD, TRANSFER
     from app.modules.playbook.templates import TEMPLATES
 
-    for key in ("onboard", "offboard"):
+    WORKFLOWS = (ONBOARD, OFFBOARD, TRANSFER)
+    for key in ("onboard", "offboard", "transfer"):
         jobs = [n for n in TEMPLATES[key]["tree"]["nodes"].values() if n["kind"] == "job"]
         assert len(jobs) >= 3, key
+        # Every referenced step really exists in the workflow (a rename must not silently orphan a node).
+        for n in jobs:
+            wf = next(w for w in WORKFLOWS if w.key == n["job"]["workflow"])
+            assert n["job"]["step"] in {st.key for st in wf.steps}, (key, n["job"])
     with pytest.raises(ValidationError):
         Tree.model_validate({"root": "a", "nodes": {"a": {"title": "A", "kind": "job"}}})
 

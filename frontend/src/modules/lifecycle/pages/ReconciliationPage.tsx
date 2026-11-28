@@ -8,6 +8,7 @@ import { api, errorMessage } from "@/core/api/client";
 import { useAuth } from "@/core/auth/AuthProvider";
 import { Button, buttonVariants } from "@/core/ui/button";
 import { DataTable, type Density } from "@/core/ui/data-table";
+import { TruncationNotice } from "../TruncationNotice";
 import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui/feedback";
 import { Dialog } from "@/core/ui/dialog";
 import { Field, Input, Select, Textarea } from "@/core/ui/field";
@@ -487,6 +488,7 @@ export function ReconciliationPage() {
               Dòng thoáng
             </label>
           </div>
+          <TruncationNotice shown={data.items.length} total={data.total} />
           <div className={selected && wide ? "grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]" : undefined}>
             <DataTable
               data={data.items}

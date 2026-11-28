@@ -14,6 +14,7 @@ describe("presetRange", () => {
   });
   it("uses Vietnam time for today", () => {
     expect(todayVn(new Date("2026-11-23T18:30:00Z"))).toBe("2026-11-24");
+    expect(todayVn(new Date("2026-11-23T17:30:00Z"))).toBe("2026-11-24"); // 00:30 in Vietnam
   });
   it("labels buckets", () => {
     expect(bucketLabel("2026-11-02", "week")).toBe("02/11");

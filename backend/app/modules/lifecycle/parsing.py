@@ -4,22 +4,15 @@ from __future__ import annotations
 
 import html
 import re
-import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
+from app.core.text import fold
 from app.modules.lifecycle.settings import FIELD_TITLES, REQUIRED_FIELDS, EventKind, LifecycleSettings
 
 _BLOCK_TAGS = re.compile(r"<\s*(br|/p|/div|/li|/tr|/h\d)\b[^>]*>", re.IGNORECASE)
 _TAGS = re.compile(r"<[^>]+>")
 _NULLS = {"", "null", "none", "n/a", "-"}
-
-
-def fold(text: str) -> str:
-    """Lower-case and strip Vietnamese diacritics (đ → d) for tolerant comparisons."""
-    text = text.replace("đ", "d").replace("Đ", "D")
-    decomposed = unicodedata.normalize("NFD", text)
-    return re.sub(r"\s+", " ", "".join(c for c in decomposed if not unicodedata.combining(c))).strip().lower()
 
 
 def name_key(name: str) -> tuple[str, ...]:
@@ -44,6 +37,10 @@ def _find(text: str, label: str) -> str | None:
         return None
     value = m.group(1).strip()
     return None if value.lower() in _NULLS else value
+
+
+def _first(text: str, labels: list[str]) -> str | None:
+    return next((v for label in labels if (v := _find(text, label)) is not None), None)
 
 
 _EMP_IN_PARENS = re.compile(r"\((\d{3,12})\)\s*$")
@@ -109,6 +106,9 @@ def classify_change_type(raw: str | None, settings: LifecycleSettings) -> EventK
 @dataclass
 class ParsedRequest:
     fields: dict[str, str | None] = field(default_factory=dict)
+    old_fields: dict[str, str] = field(
+        default_factory=dict
+    )  # transfer only: values read with transfer_old_labels
     employee_id: str | None = None
     full_name: str | None = None
     change_type_raw: str | None = None
@@ -124,6 +124,15 @@ def parse_rtr_description(description_html: str, settings: LifecycleSettings) ->
     out = ParsedRequest()
     for key in FIELD_TITLES:
         out.fields[key] = _find(text, settings.label(key))
+    kind = classify_change_type(out.fields.get("change_type"), settings)
+    if kind == "transfer":
+        # A configured field is read only with its own labels: the normal label could pick up the old value.
+        for key, labels in settings.transfer_new_labels.items():
+            if labels:
+                out.fields[key] = _first(text, labels)
+        for key, labels in settings.transfer_old_labels.items():
+            if (value := _first(text, labels)) is not None:
+                out.old_fields[key] = value
     emp = (out.fields.get("employee_id") or "").strip()
     if emp and not re.fullmatch(r"[0-9A-Za-z]{2,20}", emp):
         out.errors.append(f"Mã nhân viên không hợp lệ: “{emp}”.")

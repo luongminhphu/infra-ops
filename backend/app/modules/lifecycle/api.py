@@ -7,7 +7,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
@@ -21,6 +21,7 @@ from app.core.db import get_session
 from app.core.errors import NotFound
 from app.core.scheduler.service import get_task, request_run, task_out
 from app.core.settings.service import save_settings
+from app.core.text import fold_sql
 from app.modules.lifecycle.export import to_csv, to_xlsx
 from app.modules.lifecycle.models import IssueAck, LifecycleRequest, ReconRow, Snapshot, SyncRun
 from app.modules.lifecycle.parsing import classify_change_type, fold, html_to_text
@@ -312,27 +313,37 @@ async def list_requests(
     offset: int = Query(0, ge=0),
     limit: int = Query(200, ge=1, le=1000),
 ) -> dict[str, Any]:
+    kind_col = func.coalesce(LifecycleRequest.kind, "unknown")
+    has_errors = func.jsonb_array_length(LifecycleRequest.parse_errors) > 0
+    where = []
+    if needle := fold(q):
+        # SQL fold keeps whitespace as stored; fine for ids and names (see core.text.fold_sql).
+        hay = func.concat_ws(
+            " ", LifecycleRequest.display_id, LifecycleRequest.employee_id, LifecycleRequest.full_name,
+            LifecycleRequest.subject,
+        )  # fmt: skip
+        where.append(fold_sql(hay).contains(needle, autoescape=True))
+    if kind:
+        where.append(kind_col == kind)
+    if errors_only:
+        where.append(has_errors)
+    total = await session.scalar(select(func.count()).select_from(LifecycleRequest).where(*where))
     reqs = (
         await session.scalars(
             select(LifecycleRequest)
             .options(defer(LifecycleRequest.description_text))  # only the detail view shows it
-            .order_by(LifecycleRequest.created_at.desc())
+            .where(*where)
+            .order_by(LifecycleRequest.created_at.desc(), LifecycleRequest.id)
+            .offset(offset)
+            .limit(limit)
         )
     ).all()
-    needle = fold(q) if q else ""
-    items = [
-        r
-        for r in reqs
-        if (not needle or needle in fold(f"{r.display_id} {r.employee_id} {r.full_name} {r.subject}"))
-        and (not kind or (r.kind or "unknown") == kind)
-        and (not errors_only or r.parse_errors)
-    ]
-    counts = Counter(r.kind or "unknown" for r in reqs)
+    counts = dict((await session.execute(select(kind_col, func.count()).group_by(kind_col))).all())
     return {
-        "total": len(items),
-        "items": [_request_out(r) for r in items[offset : offset + limit]],
-        "kinds": dict(counts),
-        "with_errors": sum(1 for r in reqs if r.parse_errors),
+        "total": total,
+        "items": [_request_out(r) for r in reqs],
+        "kinds": counts,
+        "with_errors": await session.scalar(select(func.count()).where(has_errors)) or 0,
     }
 
 
@@ -367,11 +378,14 @@ async def change_types(
 # ---------------------------------------------------------------- sync
 @router.get("/sync")
 async def sync_status(
-    _: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
+    user: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
     task = await get_task(session, SYNC_TASK_KEY)
     runs = (await session.scalars(select(SyncRun).order_by(SyncRun.started_at.desc()).limit(20))).all()
-    return {"task": task_out(task) if task else None, "runs": [run_out(r) for r in runs]}
+    return {
+        "task": task_out(task, show_error=user.has("lifecycle.reconciliation.sync")) if task else None,
+        "runs": [run_out(r) for r in runs],
+    }
 
 
 @router.get("/sync/runs/{run_id}")
@@ -391,7 +405,7 @@ async def sync_now(
     row = await request_run(session, SYNC_TASK_KEY, user.upn)
     await record(session, actor=user.actor, module_id=MODULE_ID, action="lifecycle.sync_requested")
     await session.commit()
-    return task_out(row)
+    return task_out(row, show_error=True)
 
 
 # ---------------------------------------------------------------- settings
@@ -437,7 +451,11 @@ async def get_module_settings(
     profiles = (
         await session.scalars(
             select(ConnectionProfile)
-            .where(ConnectionProfile.system_type.in_(["sdp", "biostar"]))
+            .where(
+                ConnectionProfile.system_type.in_(
+                    ["sdp", "biostar", "exchange", "active_directory", "msgraph"]
+                )
+            )
             .order_by(ConnectionProfile.name)
         )
     ).all()

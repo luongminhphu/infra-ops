@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, ChevronRight, Hourglass, PartyPopper, TriangleAlert } from "lucide-react";
@@ -23,7 +23,7 @@ interface SummaryItem {
 const GROUPS: { key: SummaryItem["group"]; label: string; status: Status }[] = [
   { key: "late", label: "Trễ hạn", status: "failed" },
   { key: "soon", label: "Đến hạn trong 3 ngày", status: "waiting" },
-  { key: "open", label: "Đang mở", status: "in_progress" },
+  { key: "open", label: "Đang mở", status: "pending" },
   { key: "done", label: "Đã xong 7 ngày qua", status: "done" },
 ];
 
@@ -38,8 +38,8 @@ function Summary() {
   return (
     <section aria-labelledby="summary-title" className="mb-6">
       <h2 id="summary-title" className="mb-2 flex items-center gap-1 text-sm font-semibold text-muted">
-        Tổng quan
-        <HelpTip title="Tổng quan">
+        Hôm nay
+        <HelpTip title="Hôm nay">
           <span className="block">Đếm task SDP và Job onboard/offboard đang giao cho bạn.</span>
           <span className="block">Trễ hạn: task quá hạn xử lý, Job đã qua ngày hiệu lực và đang chờ bạn (Job đang chờ hệ thống không tính). Đến hạn: trong 3 ngày tới.</span>
         </HelpTip>
@@ -53,14 +53,17 @@ function Summary() {
           const Icon = def.icon;
           return (
             <li key={g.key}>
-              <Link
-                to={rows[0]?.href ?? "#"}
-                aria-disabled={!total}
-                className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm ${total ? `${def.fg} border-current` : "pointer-events-none border-line text-muted"}`}
-              >
-                <Icon className="size-3.5 shrink-0" aria-hidden="true" />
-                {g.label} <span className="font-semibold tabular">{total}</span>
-              </Link>
+              {total ? (
+                <Link to={rows[0]!.href} className={`inline-flex h-8 items-center gap-1.5 rounded-full border border-current px-3 text-sm ${def.fg}`}>
+                  <Icon className="size-3.5 shrink-0" aria-hidden="true" />
+                  {g.label} <span className="font-semibold tabular">{total}</span>
+                </Link>
+              ) : (
+                <span className="inline-flex h-8 items-center gap-1.5 rounded-full border border-line px-3 text-sm text-muted">
+                  <Icon className="size-3.5 shrink-0" aria-hidden="true" />
+                  {g.label} <span className="font-semibold tabular">{total}</span>
+                </span>
+              )}
             </li>
           );
         })}
@@ -122,10 +125,11 @@ export function MyWorkPage() {
   const items = all.filter((i) => !i.passive && i.kind !== "notice");
   const [first, ...rest] = items;
   const groups = [0, 1, 2, 3, 4].map((p) => ({ p, items: rest.filter((i) => i.priority === p) })).filter((g) => g.items.length);
-  // "n" opens the next thing to do (not while typing).
+  const [groupsOpen, setGroupsOpen] = useState(false);
+  // Alt+N opens the next thing to do (a bare letter key would break WCAG 2.1.4).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "n" || e.altKey || e.ctrlKey || e.metaKey || !first) return;
+      if (e.code !== "KeyN" || !e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || !first) return;
       if ((e.target as HTMLElement).closest("input, textarea, select, [contenteditable]")) return;
       e.preventDefault();
       navigate(first.href, { state: FROM_QUEUE });
@@ -136,7 +140,7 @@ export function MyWorkPage() {
 
   return (
     <>
-      <PageHeader title="Việc của tôi" description="Việc tiếp theo nằm trên cùng (phím N để mở); làm xong, quay lại đây để sang việc kế tiếp." />
+      <PageHeader title="Việc của tôi" description="Việc tiếp theo nằm trên cùng (phím Alt+N để mở); làm xong, quay lại đây để sang việc kế tiếp." />
       {notices.map((n) => (
         <div key={n.key} role="alert" className="mb-4 flex flex-wrap items-start gap-3 rounded-md border border-waiting bg-waiting-soft px-4 py-3">
           <TriangleAlert className="mt-0.5 size-4 shrink-0 text-waiting" aria-hidden="true" />
@@ -224,10 +228,10 @@ export function MyWorkPage() {
       )}
       {q.data?.failed.length ? <p role="status" className="mb-4 text-sm text-waiting">Chưa tải được việc của: {q.data.failed.join(", ")}.</p> : null}
       {sections.length > 0 && (
-        <details>
+        <details onToggle={(e) => setGroupsOpen(e.currentTarget.open)}>
           <summary className="cursor-pointer py-2 font-medium">Xem theo nhóm: Job, task và gợi ý</summary>
           <div className="mt-4 space-y-6">
-            {sections.map(({ key, component: Section }) => <Section key={key} />)}
+            {groupsOpen && sections.map(({ key, component: Section }) => <Section key={key} />)}
           </div>
         </details>
       )}

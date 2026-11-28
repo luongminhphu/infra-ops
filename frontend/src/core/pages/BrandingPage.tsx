@@ -1,9 +1,10 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ImageOff, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { api, errorMessage } from "@/core/api/client";
 import { Button } from "@/core/ui/button";
+import { ConfirmDialog } from "@/core/ui/confirm-dialog";
 import { ErrorState, LoadingRows, PageHeader, Panel } from "@/core/ui/feedback";
 import { HelpTip } from "@/core/ui/help-tip";
 
@@ -32,6 +33,7 @@ export function BrandingPage() {
     onSuccess: done("Đã lưu logo."),
     onError: (e) => toast.error(errorMessage(e)),
   });
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const remove = useMutation({
     mutationFn: () => api<Branding>("/api/core/branding/logo", { method: "DELETE" }),
     onSuccess: done("Đã gỡ logo – báo cáo in không kèm logo."),
@@ -83,11 +85,23 @@ export function BrandingPage() {
                 {!upload.isPending && <Upload className="size-4" aria-hidden="true" />}
                 {q.data.has_logo ? "Đổi logo" : "Tải logo lên"}
               </Button>
-              {q.data.has_logo && <Button variant="ghost" loading={remove.isPending} onClick={() => remove.mutate()}>Gỡ logo</Button>}
+              {q.data.has_logo && <Button variant="ghost" loading={remove.isPending} onClick={() => setConfirmRemove(true)}>Gỡ logo</Button>}
             </div>
           </div>
         </Panel>
       )}
+      <ConfirmDialog
+        open={confirmRemove}
+        onClose={() => setConfirmRemove(false)}
+        onConfirm={() => {
+          setConfirmRemove(false);
+          remove.mutate();
+        }}
+        title="Gỡ logo báo cáo"
+        confirmLabel="Gỡ logo"
+      >
+        Báo cáo và biên bản in sau đó sẽ không kèm logo.
+      </ConfirmDialog>
     </>
   );
 }

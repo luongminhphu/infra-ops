@@ -13,6 +13,7 @@ import { ReconciliationPage } from "./pages/ReconciliationPage";
 import { TemplatesPage } from "./pages/TemplatesPage";
 import { RequestsPage } from "./pages/RequestsPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { SdpMissingIdsPage } from "./pages/SdpMissingIdsPage";
 import { SyncPage } from "./pages/SyncPage";
 import { StocktakePage, StocktakesPage } from "./pages/StocktakePage";
 import { JobsWidget, ReconciliationWidget } from "./Widget";
@@ -30,6 +31,7 @@ export const lifecycleModule: FrontendModule = {
     { path: "lifecycle/stock", element: <RequirePermission permission="lifecycle.job.view"><StockPage /></RequirePermission> },
     { path: "lifecycle/jobs/:id", element: <RequirePermission permission="lifecycle.job.view"><JobPage /></RequirePermission> },
     { path: "lifecycle/reconciliation", element: <RequirePermission permission="lifecycle.reconciliation.view"><ReconciliationPage /></RequirePermission> },
+    { path: "lifecycle/sdp-missing-ids", element: <RequirePermission permission="lifecycle.reconciliation.view"><SdpMissingIdsPage /></RequirePermission> },
     { path: "lifecycle/requests", element: <RequirePermission permission="lifecycle.reconciliation.view"><RequestsPage /></RequirePermission> },
     { path: "lifecycle/sync", element: <RequirePermission permission="lifecycle.reconciliation.view"><SyncPage /></RequirePermission> },
     { path: "lifecycle/documents", element: <RequirePermission permission="lifecycle.documents.view"><DocumentsPage /></RequirePermission> },

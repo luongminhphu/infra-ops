@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -11,8 +11,9 @@ import { EmptyState, ErrorState, LoadingRows, Mono, PageHeader } from "@/core/ui
 import { Field, Input, Select } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
 import { formatDate, formatRelative, isoDateVn } from "@/core/lib/format";
+import { TruncationNotice } from "../TruncationNotice";
 import { useDebounced } from "@/core/lib/useDebounced";
-import { JOB_STATUS, JOB_WORKFLOWS, WORKFLOW_LABEL, jobStatusLabel, type Job, type JobStatus } from "../jobs";
+import { JOB_STATUS, JOB_WORKFLOWS, WORKFLOW_LABEL, jobStatusLabel, type JobListItem, type JobStatus } from "../jobs";
 
 const CHIPS: { value: string; label: string }[] = [
   { value: "open", label: "Đang mở" },
@@ -28,7 +29,7 @@ const CHIPS: { value: string; label: string }[] = [
 ];
 
 /** Views over the open jobs, filtered here (links from "Việc của tôi" land on exactly the counted jobs). */
-const VIEWS: Record<string, ((j: Job) => boolean) | undefined> = {
+const VIEWS: Record<string, ((j: JobListItem) => boolean) | undefined> = {
   // Waiting for a person or stalled (worker not advancing it): the dashboard's "Cần xử lý tiếp".
   needs: (j) => j.status === "waiting" || !!j.stalled_minutes,
   // Past the effective date and waiting on a person (a job stuck on an automatic step is not late work).
@@ -43,18 +44,20 @@ export function JobsPage() {
   const status = params.get("status") ?? "open";
   const workflow = params.get("workflow") ?? "";
   const assignee = params.get("assignee") === "me" ? "me" : ""; // from "Việc của tôi": only my Jobs
-  const [q, setQ] = useState("");
+  const q = params.get("q") ?? ""; // in the URL so back / refresh keep the search
   const debounced = useDebounced(q);
   const set = (key: string, value: string) => {
     const next = new URLSearchParams(params);
-    next.set(key, value);
+    if (value) next.set(key, value);
+    else next.delete(key);
     setParams(next, { replace: true });
   };
   const list = useQuery({
     queryKey: ["jobs", status, workflow, assignee, debounced],
-    queryFn: () => api<{ total: number; counts: Record<string, number>; items: Job[] }>(
-      `/api/core/jobs?${new URLSearchParams({ status: VIEWS[status] ? "open" : status, workflow, assignee, workflows: JOB_WORKFLOWS, q: debounced, limit: "500" })}`),
-    refetchInterval: 10000,
+    queryFn: () => api<{ total: number; counts: Record<string, number>; items: JobListItem[] }>(
+      `/api/core/jobs?${new URLSearchParams({ status: VIEWS[status] ? "open" : status, workflow, assignee, workflows: JOB_WORKFLOWS, lean: "1", q: debounced, limit: "500" })}`),
+    // Poll only while a job can still move on its own.
+    refetchInterval: (query) => (query.state.data?.items.some((j) => ["running", "scheduled"].includes(j.status)) ? 10000 : false),
   });
   const items = (list.data?.items ?? []).filter((j) => !VIEWS[status] || VIEWS[status]!(j));
   const counts = list.data?.counts ?? {};
@@ -63,7 +66,7 @@ export function JobsPage() {
       : v === "" ? Object.values(counts).reduce((n, c) => n + c, 0)
       : VIEWS[v] ? (status === v ? items.length : null) : counts[v] ?? 0;
 
-  const columns = useMemo<ColumnDef<Job, unknown>[]>(
+  const columns = useMemo<ColumnDef<JobListItem, unknown>[]>(
     () => [
       {
         accessorKey: "subject_label",
@@ -151,7 +154,7 @@ export function JobsPage() {
       </div>
       <form role="search" aria-label="Lọc Job" className="mb-3 grid gap-3 sm:grid-cols-[2fr_1fr]" onSubmit={(e) => e.preventDefault()}>
         <Field label="Tìm kiếm">
-          <Input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Mã NV, họ tên, số request" />
+          <Input type="search" value={q} onChange={(e) => set("q", e.target.value)} placeholder="Mã NV, họ tên, số request" />
         </Field>
         <Field label="Quy trình">
           <Select value={workflow} onChange={(e) => set("workflow", e.target.value)}>
@@ -159,11 +162,13 @@ export function JobsPage() {
             <option value="lifecycle.onboard">Onboard</option>
             <option value="lifecycle.offboard">Offboard</option>
             <option value="lifecycle.transfer">Thuyên chuyển</option>
+            <option value="lifecycle.mailbox_release">Hết hạn giữ mailbox</option>
           </Select>
         </Field>
       </form>
-      {list.isError && <ErrorState error={list.error} onRetry={() => list.refetch()} />}
-      {list.isLoading ? (
+      {list.isError ? (
+        <ErrorState error={list.error} onRetry={() => list.refetch()} />
+      ) : list.isLoading ? (
         <div className="rounded-md border border-line bg-surface"><LoadingRows rows={6} /></div>
       ) : (
         <DataTable
@@ -191,6 +196,7 @@ export function JobsPage() {
           }
         />
       )}
+      <TruncationNotice shown={list.data?.items.length ?? 0} total={list.data?.total} />
     </>
   );
 }

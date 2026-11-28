@@ -67,7 +67,8 @@ export function Field({ label, hint, error, showError = false, required, classNa
   const hintId = `${id}-hint`;
   const errorId = `${id}-error`;
   const invalid = Boolean(error && showError);
-  const describedBy = [hint ? hintId : null, invalid ? errorId : null].filter(Boolean).join(" ") || undefined;
+  const ownDescribed = isValidElement<{ "aria-describedby"?: string }>(children) ? children.props["aria-describedby"] : undefined;
+  const describedBy = [ownDescribed, hint ? hintId : null, invalid ? errorId : null].filter(Boolean).join(" ") || undefined;
   const child = isValidElement(children)
     ? cloneElement(children, { id, "aria-describedby": describedBy, "aria-invalid": invalid ? "true" : "false" })
     : children;

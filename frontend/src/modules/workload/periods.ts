@@ -15,6 +15,7 @@ export function todayVn(now: Date = new Date()): string {
   return isoDateVn(0, now);
 }
 
+// Dates here are UTC-midnight stand-ins for Vietnam calendar days, so the UTC slice is the right day.
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
 /** Inclusive [from, to] ISO dates for a preset, ending today (Vietnam time). */

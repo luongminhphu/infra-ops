@@ -19,8 +19,8 @@ export interface NextItem {
 export const FROM_QUEUE = { from: "me" } as const;
 
 export const LEVEL: Record<number, { label: string; status: Status }> = {
-  0: { label: "Cần bạn làm ngay", status: "waiting" },
-  1: { label: "Quá hạn / gấp", status: "failed" },
+  0: { label: "Cần bạn làm ngay", status: "failed" },
+  1: { label: "Trễ hạn", status: "waiting" },
   2: { label: "Sắp đến hạn", status: "warning" },
   3: { label: "Cần biết", status: "pending" },
   4: { label: "Gợi ý", status: "pending" },

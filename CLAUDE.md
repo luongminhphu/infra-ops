@@ -8,7 +8,7 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 - `backend/app/core/*` – platform core. `backend/app/modules/<id>/` – modules (manifest.py required).
 - `frontend/src/core/*` – shell, design system (`ui/`), core pages. `frontend/src/modules/<id>/` – module UI.
 - `backend/migrations/<branch>/versions` – one Alembic branch per module (`core`, `lifecycle`, `workload`, `playbook`).
-- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §64).
+- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §73).
 
 ## Conventions
 
@@ -39,6 +39,12 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 - Operator flows are step-by-step (core `Wizard`): pre-fill everything the system knows (with its source) and ask for
   confirmation; supervisors keep the full screen. New operator flows follow this pattern.
 - Things a person must act on go into the "Việc tiếp theo" queue: declare a `NextActionSource` in the manifest.
+  Records a person may find from the Ctrl+K palette: declare a `SearchSource` (match only fields the list shows, same
+  permission + row scope as the list endpoint, accent-free via `core.text.fold`/`fold_sql`). The opt-in e-mail/Teams
+  digest (`core.notifications`) re-uses the queue with the recipient's own permissions – never put names on Teams.
+- Spreadsheet exports use `core.xlsx` (`safe` against formula injection, `header`), a row limit and an audit record.
+  Printable records with personal data set `DocumentKind.view_all_permission` (row scope by Job / creator); drafts made
+  by a Job pass `create_draft(job_id=…)`. Never show raw exception text to users (generic message + log reference).
 - Playbook is the entry point (`/`): module pages are tools a step opens (key = page path without slashes, keep
   paths stable). Data a check step tests is a `FactSource` in the module manifest (read from synced data, None when
   unknown). Only Administrator / Manager / Supervisor design playbooks.
@@ -65,8 +71,14 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
   `impeccable` (pbakaus/impeccable – design critique/polish). Use them for UI work.
   `graphify` (PyPI `graphifyy` 0.9.120, Graphify-Labs/graphify – `/graphify .` builds a code knowledge graph in
   `graphify-out/`, git-ignored; installs the `graphifyy` package on first run).
-- Microsoft integrations (Entra/AD/Exchange) are deferred by the product owner – do not add them
-  without being asked.
+- Microsoft (Phase 69): AD (`active_directory`, LDAPS), Exchange hybrid (`exchange`, WinRM) and Entra/M365 (`msgraph`,
+  Graph) are connectors used only via `open_connection` with service credentials (no personal keys). Onboard/offboard
+  Microsoft steps run only when `params.microsoft` (setting `microsoft_enabled`) is on, pin the target account (employeeID
+  must match exactly one account; identity guard) and never store or show passwords (IT sets the temporary one in ADUC).
+  Offboard `options.mailbox_handover` (keep the mailbox) is changeable by whoever may run the Job (assignee scope) until
+  `ad_move_ban` is confirmed; it needs `params.microsoft`. A kept mailbox adds the scheduled `lifecycle.mailbox_release` Job.
+  Transfer (Phase 70) also runs these steps on the effective date (plan pinned by IT; removals / OU change need
+  `lifecycle.job.assign`); with Microsoft off it keeps the manual group steps. No Kerberos yet. Only tested with fakes (never run against a real tenant) – say so in reviews.
 
 ## Commands
 

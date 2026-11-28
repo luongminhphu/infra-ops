@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { api } from "@/core/api/client";
 import { formatNumber, formatVnd } from "@/core/lib/format";
 import { Button } from "@/core/ui/button";
+import { ConfirmDialog } from "@/core/ui/confirm-dialog";
 import { Field, Input } from "@/core/ui/field";
 import { HelpTip } from "@/core/ui/help-tip";
 import { useSuppliers, type Purchase } from "../api";
@@ -80,9 +81,10 @@ export function QuotesBlock({ p, onChange }: { p: Purchase; onChange: (p: Purcha
       toast.success(mode === "stock" ? "Đã ghi nhận nhà cung cấp không có hàng." : "Đã thêm báo giá.");
     },
   });
+  const [confirmDel, setConfirmDel] = useState<{ id: string; vendor: string } | null>(null);
   const remove = useMutation({
     mutationFn: (id: string) => api<Purchase>(`/api/workload/purchases/${p.id}/quotes/${id}`, { method: "DELETE" }),
-    onSuccess: onChange,
+    onSuccess: (np) => { setConfirmDel(null); onChange(np); },
   });
   const bad = { vendor: vendor.trim().length < 2, price: mode === "quote" && !price, file: !file && !read };
   const rule = p.quote_rule;
@@ -120,7 +122,7 @@ export function QuotesBlock({ p, onChange }: { p: Purchase; onChange: (p: Purcha
                 <span className="max-w-48 truncate">{q.filename}</span>
               </a>
               {editable && (
-                <Button size="icon" variant="ghost" aria-label={`Xoá ${q.out_of_stock ? "xác nhận không có hàng" : "báo giá"} ${q.vendor}`} loading={remove.isPending && remove.variables === q.id} onClick={() => remove.mutate(q.id)}>
+                <Button size="icon" variant="ghost" aria-label={`Xoá ${q.out_of_stock ? "xác nhận không có hàng" : "báo giá"} ${q.vendor}`} loading={remove.isPending && remove.variables === q.id} onClick={() => setConfirmDel({ id: q.id, vendor: q.vendor })}>
                   <Trash2 className="size-4" aria-hidden="true" />
                 </Button>
               )}
@@ -129,6 +131,9 @@ export function QuotesBlock({ p, onChange }: { p: Purchase; onChange: (p: Purcha
         </ul>
       )}
       {rule?.problem && <p className="text-sm text-waiting">{rule.problem}</p>}
+      <ConfirmDialog open={!!confirmDel} onClose={() => setConfirmDel(null)} onConfirm={() => confirmDel && remove.mutate(confirmDel.id)} title="Xoá báo giá?" confirmLabel="Xoá">
+        Xoá báo giá của {confirmDel?.vendor}? Không hoàn tác được.
+      </ConfirmDialog>
 
       {editable && (
         <fieldset
