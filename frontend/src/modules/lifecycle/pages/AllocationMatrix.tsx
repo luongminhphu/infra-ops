@@ -3,6 +3,7 @@ import { LayoutGrid, Pencil, Plus, Recycle, Trash2 } from "lucide-react";
 import { Button } from "@/core/ui/button";
 import { Dialog } from "@/core/ui/dialog";
 import { Field, Input, Select } from "@/core/ui/field";
+import { HelpTip } from "@/core/ui/help-tip";
 import { cn } from "@/core/lib/cn";
 
 export interface DeviceTier {
@@ -26,6 +27,9 @@ export interface MatrixLevel {
   bands: string[];
   departments: string[];
   group: string;
+  license_skus?: string[]; // Microsoft 365 SKU GUIDs; license_names[i] labels license_skus[i]
+  license_names?: string[];
+  software?: string[]; // Office tools, never allocated as devices
 }
 export interface MatrixCell {
   on: boolean;
@@ -41,6 +45,7 @@ export interface Matrix {
 
 const list = (text: string) => text.split(",").map((s) => s.trim()).filter(Boolean);
 const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/\s+/g, "");
+export const isGuid = (s: string) => /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(s.trim());
 const emptyCell = (): MatrixCell => ({ on: false, quantity: 1, tier: "", reuse_only: false });
 
 /** Tiers offered in a column: those named after the device (e.g. "PC - Standard" under PC); none for a monitor. */
@@ -180,6 +185,13 @@ export function AllocationMatrixEditor({ value, tiers, onChange }: { value: Matr
                     <Pencil className="size-3.5 text-muted opacity-60 group-hover:opacity-100" aria-hidden="true" />
                   </button>
                   {lv.group && <span className="block text-xs text-muted">{lv.group}</span>}
+                  {((lv.license_skus?.length ?? 0) > 0 || (lv.software?.length ?? 0) > 0) && (
+                    <span className="block text-xs text-muted">
+                      {(lv.license_skus?.length ?? 0) > 0 && <>License: {lv.license_skus!.map((s, i) => lv.license_names?.[i] || s.slice(0, 8)).join(", ")}</>}
+                      {(lv.license_skus?.length ?? 0) > 0 && (lv.software?.length ?? 0) > 0 && " · "}
+                      {(lv.software?.length ?? 0) > 0 && <>Office: {lv.software!.join(", ")}</>}
+                    </span>
+                  )}
                   <span className="block text-xs text-muted">
                     {lv.titles.length > 0 && <span className="line-clamp-2" title={lv.titles.join(", ")}>Chức danh có: {lv.titles.join(", ")}</span>}
                     {lv.bands.length > 0 && <span className="block">Band: {lv.bands.join(", ")}</span>}
@@ -306,8 +318,20 @@ function LevelDialog({ level, others, position, onClose, onSave, onRemove }: { l
   const [titles, setTitles] = useState((level?.titles ?? []).join(", "));
   const [bands, setBands] = useState((level?.bands ?? []).join(", "));
   const [depts, setDepts] = useState((level?.departments ?? []).join(", "));
+  const [licenses, setLicenses] = useState((level?.license_skus ?? []).map((sku, i) => ({ sku, name: level?.license_names?.[i] ?? "" })));
+  const [software, setSoftware] = useState((level?.software ?? []).join(", "));
   const [touched, setTouched] = useState(false);
-  const save = () => { setTouched(true); if (name.trim()) onSave({ name: name.trim(), group: group.trim(), titles: list(titles), bands: list(bands), departments: list(depts) }, pos); };
+  const kept = licenses.filter((l) => l.sku.trim());
+  const skusOk = kept.every((l) => isGuid(l.sku)) && new Set(kept.map((l) => l.sku.trim().toLowerCase())).size === kept.length;
+  const save = () => {
+    setTouched(true);
+    if (!name.trim() || !skusOk) return;
+    onSave(
+      { name: name.trim(), group: group.trim(), titles: list(titles), bands: list(bands), departments: list(depts),
+        license_skus: kept.map((l) => l.sku.trim()), license_names: kept.map((l) => l.name.trim()), software: list(software) },
+      pos,
+    );
+  };
   return (
     <Dialog
       open
@@ -336,6 +360,40 @@ function LevelDialog({ level, others, position, onClose, onSave, onRemove }: { l
         </Field>
         <Field label="Band trong RTR (tuỳ chọn)" hint="Chỉ khi HR có ghi band: đúng như dòng Band của RTR, cách nhau dấu phẩy.">
           <Input value={bands} onChange={(e) => setBands(e.target.value)} />
+        </Field>
+        <fieldset>
+          <legend className="mb-1 flex items-center gap-1 text-sm font-medium">
+            License M365
+            <HelpTip title="License M365">
+              <span className="block">Lấy SKU ID ở Microsoft 365 admin center → Billing → Licenses, hoặc nút Kiểm tra kết nối Microsoft Graph.</span>
+              <span className="block">SKU là GUID, vd. 6fd2c87f-b296-42f0-b197-1e91e994b900. Tên hiển thị chỉ để dễ đọc.</span>
+            </HelpTip>
+          </legend>
+          <ul className="space-y-2">
+            {licenses.map((l, i) => {
+              const upd = (patch: Partial<typeof l>) => setLicenses(licenses.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+              const dup = l.sku.trim() !== "" && licenses.findIndex((x) => x.sku.trim().toLowerCase() === l.sku.trim().toLowerCase()) !== i;
+              return (
+                <li key={i} className="grid items-start gap-2 sm:grid-cols-[3fr_2fr_auto]">
+                  <Field label="SKU ID" error={dup ? "SKU bị trùng." : "SKU phải là GUID."} showError={touched && l.sku.trim() !== "" && (!isGuid(l.sku) || dup)}>
+                    <Input value={l.sku} className="font-mono" onChange={(e) => upd({ sku: e.target.value })} placeholder="00000000-0000-0000-0000-000000000000" />
+                  </Field>
+                  <Field label="Tên hiển thị">
+                    <Input value={l.name} maxLength={100} onChange={(e) => upd({ name: e.target.value })} placeholder="Microsoft 365 E3" />
+                  </Field>
+                  <Button size="icon" variant="ghost" className="mt-6" aria-label={`Bỏ license ${i + 1}`} onClick={() => setLicenses(licenses.filter((_, j) => j !== i))}>
+                    <Trash2 className="size-4" aria-hidden="true" />
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+          <Button className="mt-2" disabled={licenses.length >= 10} onClick={() => setLicenses([...licenses, { sku: "", name: "" }])}>
+            <Plus className="size-4" aria-hidden="true" />Thêm license
+          </Button>
+        </fieldset>
+        <Field label="Bộ Office tools" hint="Phần mềm cài cho cấp bậc này, cách nhau dấu phẩy, vd. Teams, Outlook, Excel. Không phải thiết bị.">
+          <Input value={software} onChange={(e) => setSoftware(e.target.value)} placeholder="Teams, Outlook, Excel" />
         </Field>
         <PositionField label="Vị trí hàng" others={others} value={pos} onChange={setPos} />
       </div>

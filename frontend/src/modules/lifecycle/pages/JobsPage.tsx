@@ -159,6 +159,7 @@ export function JobsPage() {
             <option value="lifecycle.onboard">Onboard</option>
             <option value="lifecycle.offboard">Offboard</option>
             <option value="lifecycle.transfer">Thuyên chuyển</option>
+            <option value="lifecycle.mailbox_release">Hết hạn giữ mailbox</option>
           </Select>
         </Field>
       </form>

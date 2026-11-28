@@ -492,7 +492,7 @@ async def test_offboard_schedule_confirm_and_override(admin, client, systems) ->
     j = resp.json()
     assert [s["key"] for s in j["steps"]] == [
         "check_request",
-        "biostar_offboard",  # access revoked first, not after the devices are back
+        "biostar_offboard",  # access revoked first, before anything else
         "find_sdp_user",
         "collect_assets",
         "return_assets",
@@ -900,6 +900,7 @@ async def test_checklist_versions_and_snapshot(admin, client) -> None:  # type: 
     assert {k for k, w in flows.items() if w["verify_steps"]} == {
         "lifecycle.onboard",
         "lifecycle.offboard",
+        "lifecycle.mailbox_release",
         "lifecycle.transfer",
     }
     onboard = flows["lifecycle.onboard"]

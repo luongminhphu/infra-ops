@@ -18,6 +18,7 @@ from app.core.auth.deps import CurrentUser, require
 from app.core.db import get_session
 from app.core.errors import NotFound
 from app.core.timeutil import today_vn
+from app.core.workflow.api import check_job_scope
 from app.core.workflow.models import Job
 from app.modules.lifecycle.allocation import Line, Need, allocate, matches, returned_first
 from app.modules.lifecycle.models import AssetReturn, LifecycleRequest, Snapshot
@@ -268,13 +269,14 @@ async def set_band(
 
 @router.get("/jobs/{job_id}/prepare")
 async def prepare(
-    job_id: uuid.UUID, _: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
+    job_id: uuid.UUID, user: CurrentUser = Depends(view), session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
     """Everything already known for a job's preparation wizard, so the operator confirms instead of typing:
     the RTR details, the SDP user matched by employee ID and the device allocation (reuse / buy)."""
     job = await session.get(Job, job_id)
     if job is None or job.module_id != MODULE_ID:
         raise NotFound("Không tìm thấy Job.")
+    check_job_scope(user, job)
     req = await session.get(LifecycleRequest, job.external_ref) if job.external_ref else None
     if req is None:
         raise NotFound("Không tìm thấy request RTR của Job.")
@@ -314,4 +316,5 @@ async def prepare(
         "sdp_user": sdp_user,
         "allocation": entry,
         "as_of": run.finished_at if run else None,
+        "retained_ou_configured": bool((await load_module_settings(session)).ad_retained_ou),
     }

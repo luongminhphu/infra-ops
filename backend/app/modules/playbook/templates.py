@@ -1,8 +1,8 @@
 """Built-in playbook templates: a new guide can start from one and is then edited like any draft.
 
 Company-specific rules (naming, OU, licences, software list) are written as examples marked "Điều chỉnh" – the
-Manager adapts them before publishing. AD / Exchange / M365 steps are manual guidance: that integration is deferred,
-so the app never writes to Microsoft systems."""
+Manager adapts them before publishing. AD / Exchange / M365 steps are Job steps (JOB_STEPS below): the worker runs
+them only when the Microsoft integration is enabled in the lifecycle settings, otherwise they are skipped."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ ONBOARD: dict[str, Any] = {
     "title": "Onboard nhân viên mới",
     "category": "Vòng đời nhân sự",
     "description": "Từ request RTR trên SDP đến bàn giao: đối soát, tài khoản AD, mailbox, license M365, phần mềm, "
-    "thiết bị, ra vào và biên bản.",
+    "thiết bị, ra vào, biên bản và cập nhật checklist RTR.",
     "tree": {
         "root": "receive",
         "nodes": {
@@ -69,67 +69,12 @@ ONBOARD: dict[str, Any] = {
                 "không dùng lại tài khoản, mailbox hay thiết bị cũ.\n\n"
                 "Tìm Mã NV trên trang Đối soát để chắc Mã NV mới chưa có ở hệ thống nào (chưa có user SDP / BioStar là "
                 "bình thường). Họ tên, phòng ban khác với request: xác nhận với HR.",
-                [("", "ad_account")],
+                [("", "account_plan")],
                 [("lifecycle.reconciliation", "Đối soát theo Mã NV")],
             ),
-            "ad_account": _step(
-                "Tạo tài khoản AD",
-                f"{ADJUST}\n\n"
-                "Làm thủ công trên AD (tích hợp Microsoft đang tạm hoãn):\n\n"
-                "1. Tên đăng nhập: `ten.hodem` không dấu (trùng thì thêm số), UPN `@congty.com.vn`\n"
-                "2. Display name: `Tên. Họ Đệm` – giống quy ước trên SDP\n"
-                "3. OU theo phòng ban, điền **Employee ID = Mã NV**, chức danh, phòng ban, quản lý\n"
-                "4. Mật khẩu tạm, bắt đổi khi đăng nhập lần đầu\n"
-                "5. Thêm vào nhóm bảo mật / thư mục share của phòng ban\n\n"
-                "Ghi tên đăng nhập vào ghi chú Job.",
-                [("", "mailbox")],
-            ),
-            "mailbox": _step(
-                "Tạo mailbox và mapping với tài khoản",
-                f"{ADJUST}\n\n"
-                "- Exchange hybrid: tạo remote mailbox cho tài khoản vừa tạo (`Enable-RemoteMailbox`), địa chỉ "
-                "`ten.hodem@congty.com.vn`\n"
-                "- Chờ Entra Connect đồng bộ (hoặc chạy delta sync), kiểm tra user xuất hiện trên M365\n"
-                "- Thêm vào nhóm email phòng ban / distribution list",
-                [("", "license_level")],
-            ),
-            "license_level": _step(
-                "Cấp bậc theo chức danh?",
-                f"{ADJUST}\n\n"
-                "Cấp bậc lấy từ **chức danh** trong request RTR theo Ma trận cấp phát (Cấu hình module); trang Kho thiết "
-                "bị ghi cấp bậc của từng nhân viên mới. Quy tắc mẫu: cấp quản lý trở lên dùng gói license đầy đủ.",
-                [("Quản lý / lãnh đạo", "license_full"), ("Nhân viên / Intern / Vendor", "license_role")],
-                [("lifecycle.stock", "Xem cấp bậc ở Kho thiết bị")],
-            ),
-            "license_full": _step(
-                "Gán license M365 gói đầy đủ",
-                f"{ADJUST}\n\nVí dụ: **Microsoft 365 E3** (+ add-on theo chức danh). Gán trên M365 admin center, "
-                "bật MFA.",
-                [("", "software")],
-            ),
-            "license_role": _step(
-                "Chọn license M365 theo vị trí",
-                f"{ADJUST}\n\n"
-                "- Làm việc văn phòng (Outlook, Office desktop): **Business Standard / E3**\n"
-                "- Chỉ cần email web và Teams: **F3 / Business Basic**",
-                [("Văn phòng", "license_office"), ("Frontline", "license_frontline")],
-            ),
-            "license_office": _step(
-                "Gán Business Standard / E3", "Gán license, bật MFA.", [("", "software")]
-            ),
-            "license_frontline": _step(
-                "Gán F3 / Business Basic", "Gán license, bật MFA.", [("", "software")]
-            ),
-            "software": _step(
-                "Đề xuất Office Tools theo chuẩn",
-                f"{ADJUST}\n\n"
-                "**Bộ chuẩn cho mọi nhân viên:** Microsoft 365 Apps (theo license), Teams, OneDrive, trình duyệt, "
-                "PDF reader, 7-Zip, VPN client, phần mềm diệt virus.\n\n"
-                "**Theo phòng ban:** ví dụ Kế toán – phần mềm kế toán; Giao dịch – Bloomberg / phần mềm giao dịch; "
-                "IT – công cụ quản trị.\n\n"
-                "Phần mềm ngoài danh mục: cần quản lý trực tiếp duyệt qua request SDP riêng.",
-                [("", "stock")],
-            ),
+            "account_plan": _step("Xác nhận kế hoạch tài khoản", "", [("", "ad_account")]),
+            "ad_account": _step("Tạo tài khoản AD và mailbox", "", [("", "m365_license")]),
+            "m365_license": _step("Gán license M365", "", [("", "stock")]),
             "stock": _step(
                 "Lấy thiết bị trong kho",
                 "Mã NV mới chưa có thiết bị: cấp đủ theo Ma trận cấp phát (cấp bậc theo chức danh). Kho thiết bị gợi ý tài sản "
@@ -148,23 +93,18 @@ ONBOARD: dict[str, Any] = {
                 "Tạo user BioStar, đăng ký thẻ / vân tay / khuôn mặt",
                 "Job onboard tạo user BioStar với nhóm quyền ra vào theo cấu hình; Operator đăng ký thẻ / vân tay / "
                 "khuôn mặt tại máy và xác nhận bước trong Job.",
-                [("", "handover_doc")],
+                [("", "it_handover")],
                 [("lifecycle.jobs", "Làm từng bước trong Job")],
             ),
             "handover_doc": _step(
                 "In biên bản bàn giao",
                 "Job lập **Biên bản Bàn giao** từ tài sản đã gán. Chốt số biên bản → in → nhân viên và IT ký → tải "
                 "bản đã ký lên (Job đính kèm vào request SDP).",
-                [("", "handover")],
+                [("", "rtr_checklist")],
                 [("lifecycle.documents", "Biên bản"), ("lifecycle.jobs", "Mở Job onboard")],
             ),
-            "handover": _step(
-                "Bàn giao và hướng dẫn nhân viên",
-                "- Đăng nhập lần đầu, đổi mật khẩu, đăng ký **MFA**\n"
-                "- Kiểm tra Outlook, Teams, OneDrive, máy in, VPN\n"
-                "- Gửi hướng dẫn sử dụng và kênh hỗ trợ IT",
-                [("", "close")],
-            ),
+            "it_handover": _step("Bàn giao IT", "", [("", "handover_doc")]),
+            "rtr_checklist": _step("Cập nhật checklist RTR", "", [("", "close")]),
             "close": _step(
                 "Đóng request SDP",
                 "Bước cuối của Job: ghi chú kết quả, đính kèm biên bản và đóng request trên SDP.",
@@ -173,7 +113,7 @@ ONBOARD: dict[str, Any] = {
             ),
             "done": _step(
                 "Onboard hoàn tất theo tiêu chuẩn",
-                "Tài khoản, mailbox, license, phần mềm, thiết bị, ra vào và biên bản đã xong.",
+                "Tài khoản, mailbox, license, phần mềm, thiết bị, ra vào, biên bản và checklist RTR đã xong.",
                 kind="outcome",
                 outcome={"result": "standard", "approval": "Không cần duyệt thêm"},
             ),
@@ -185,7 +125,7 @@ OFFBOARD: dict[str, Any] = {
     "title": "Offboard nhân viên nghỉ việc",
     "category": "Vòng đời nhân sự",
     "description": "Từ request nghỉ việc trên SDP đến biên bản thu hồi: khoá ra vào, tài khoản AD, mailbox, license, "
-    "thu hồi thiết bị về kho và rà soát ISO cuối tháng.",
+    "thu hồi thiết bị về kho, cập nhật checklist RTR và rà soát ISO cuối tháng.",
     "tree": {
         "root": "receive",
         "nodes": {
@@ -219,32 +159,12 @@ OFFBOARD: dict[str, Any] = {
                 "Khoá ra vào BioStar",
                 "Bước đầu của Job offboard: vô hiệu hoá / xoá user BioStar theo cấu hình module, nhập lại Mã NV để "
                 "xác nhận. Khoá ra vào **không chờ** thu hồi thiết bị.",
-                [("", "ad_disable")],
+                [("", "account_disable")],
                 [("lifecycle.jobs", "Làm bước trong Job")],
             ),
-            "ad_disable": _step(
-                "Vô hiệu hoá tài khoản AD",
-                f"{ADJUST}\n\n"
-                "Làm thủ công trên AD (tích hợp Microsoft đang tạm hoãn), cuối ngày nghỉ:\n\n"
-                "1. Disable tài khoản, đặt lại mật khẩu ngẫu nhiên\n"
-                "2. Ghi ngày nghỉ và số request vào Description\n"
-                "3. Chuyển sang OU *Disabled Users*, gỡ khỏi nhóm bảo mật / thư mục share / nhóm email\n"
-                "4. Thu hồi phiên đăng nhập M365 (*Revoke sessions*), gỡ thiết bị MFA",
-                [("", "mailbox")],
-            ),
-            "mailbox": _step(
-                "Xử lý mailbox và dữ liệu",
-                f"{ADJUST}\n\n"
-                "- Chuyển mailbox thành **shared mailbox** cho quản lý trực tiếp (hoặc forward theo yêu cầu), giữ N ngày\n"
-                "- OneDrive: cấp quyền cho quản lý trực tiếp lấy dữ liệu trước khi xoá\n"
-                "- Ẩn khỏi danh bạ (GAL)",
-                [("", "license")],
-            ),
-            "license": _step(
-                "Thu hồi license M365",
-                f"{ADJUST}\n\nSau khi mailbox đã chuyển thành shared mailbox: gỡ license để dùng lại cho nhân viên mới.",
-                [("", "has_laptop")],
-            ),
+            "account_disable": _step("Vô hiệu hoá tài khoản AD", "", [("", "mailbox_handover")]),
+            "mailbox_handover": _step("Bàn giao mailbox", "", [("", "ad_move_ban")]),
+            "ad_move_ban": _step("Chuyển tài khoản sang OU khoá", "", [("", "has_laptop")]),
             "has_laptop": _step(
                 "Nhân viên đang giữ laptop?",
                 "App tự kiểm tra từ lần đối soát gần nhất.",
@@ -284,9 +204,10 @@ OFFBOARD: dict[str, Any] = {
                 "Biên bản thu hồi",
                 "Job lập **Biên bản Thu hồi** từ kết quả thu hồi. Chốt số → in → nhân viên và IT ký → tải bản đã ký "
                 "lên (Job đính kèm vào request SDP).",
-                [("", "close")],
+                [("", "rtr_checklist")],
                 [("lifecycle.documents", "Biên bản"), ("lifecycle.jobs", "Mở Job offboard")],
             ),
+            "rtr_checklist": _step("Cập nhật checklist RTR", "", [("", "close")]),
             "close": _step(
                 "Đóng request SDP",
                 "Bước cuối của Job: ghi chú kết quả, đính kèm biên bản và đóng request trên SDP.",
@@ -652,24 +573,112 @@ REPLACE_DEVICE: dict[str, Any] = {
     },
 }
 
+TRANSFER: dict[str, Any] = {
+    "title": "Thuyên chuyển nhân viên",
+    "category": "Vòng đời nhân sự",
+    "description": "Từ request thuyên chuyển trên SDP đến ngày hiệu lực: kế hoạch thay đổi AD, license M365, nhóm quyền ra "
+    "vào BioStar, thiết bị theo cấp bậc mới, cập nhật checklist RTR. Mã NV và tài khoản giữ nguyên.",
+    "tree": {
+        "root": "receive",
+        "nodes": {
+            "receive": _step(
+                "Tiếp nhận request thuyên chuyển trên SDP",
+                "Request *Thuyên chuyển* từ RTR được đồng bộ về infra-ops và tạo **Job thuyên chuyển nháp**.\n\n"
+                "- Đọc **ngày hiệu lực**: quyền truy cập đổi đúng ngày này, không sớm hơn\n"
+                "- Request ghi giá trị mới và (nếu có) giá trị cũ; nhãn của hai nhóm giá trị chỉnh trong Cấu hình module",
+                [("", "complete")],
+                [("lifecycle.requests", "Xem request RTR"), ("lifecycle.jobs", "Mở Job thuyên chuyển")],
+            ),
+            "complete": _step(
+                "Request có đủ thông tin?",
+                "Bắt buộc: **Mã NV**, ngày hiệu lực, giá trị mới của phòng ban / bộ phận, chức danh, quản lý trực tiếp. "
+                "Chỉ đổi bộ phận thì phòng ban lấy từ request cũ hoặc AD.",
+                [("Đủ", "reconcile"), ("Thiếu / sai", "ask_hr")],
+                [("lifecycle.requests", "Kiểm tra lỗi đọc request")],
+            ),
+            "ask_hr": _step(
+                "Yêu cầu HR bổ sung",
+                "Ghi chú trên request SDP các trường còn thiếu, gán lại cho HR. Không tự đoán Mã NV hay phòng ban mới.",
+                [("Đã bổ sung", "complete")],
+            ),
+            "reconcile": _step(
+                "Đối soát nhân viên theo Mã NV",
+                "Thuyên chuyển **giữ nguyên Mã NV, tài khoản và mailbox**. Kiểm tra nhân viên có đúng một tài khoản "
+                "AD, user SDP và user BioStar trước khi lập kế hoạch.",
+                [("", "transfer_plan")],
+                [("lifecycle.reconciliation", "Đối soát theo Mã NV")],
+            ),
+            "transfer_plan": _step(
+                "Xác nhận kế hoạch thuyên chuyển",
+                "",
+                [("", "ad_transfer"), ("Tắt Microsoft", "groups_remove")],
+            ),
+            "ad_transfer": _step("Đổi OU, nhóm và thuộc tính AD", "", [("", "m365_relicense")]),
+            "m365_relicense": _step("Đổi license M365", "", [("", "biostar")]),
+            "biostar": _step("Đổi nhóm quyền ra vào BioStar", "", [("", "assets")]),
+            "groups_remove": _step("Gỡ khỏi nhóm cũ", "", [("", "groups_add")]),
+            "groups_add": _step("Thêm vào nhóm mới", "", [("", "assets")]),
+            "assets": _step(
+                "Thiết bị theo cấp bậc mới",
+                "",
+                [("", "rtr_checklist")],
+                [("lifecycle.stock", "Kho thiết bị"), ("workload.purchases", "Đề xuất mua thiết bị")],
+            ),
+            "rtr_checklist": _step("Cập nhật checklist RTR", "", [("", "close")]),
+            "close": _step("Đóng request SDP", "", [("", "done")]),
+            "done": _step(
+                "Thuyên chuyển hoàn tất theo tiêu chuẩn",
+                "Quyền truy cập, license, ra vào và thiết bị đã khớp với phòng ban / chức danh mới.",
+                kind="outcome",
+                outcome={"result": "standard", "approval": "Không cần duyệt thêm"},
+            ),
+        },
+    },
+}
+
 # Steps the app's Job runs are "Bước của Job": the reader sees the Job step and its current checklist (Lưu đồ quy
 # trình), so the template never repeats – and never drifts from – what the Job checks.
+MS_NOTE = "(Khi bật tích hợp Microsoft; khi tắt, bước này tự bỏ qua và làm tay theo quy định công ty.)"
 # node: (workflow step, note kept – only what the Job itself does not say)
 JOB_STEPS = {
     "onboard": ("lifecycle.onboard", {
+        "account_plan": ("account_plan", MS_NOTE + " Làm tay: đặt tên đăng nhập theo quy tắc §11.5 (vd. `binh.nt`)."),
+        "ad_account": ("ad_account", MS_NOTE),
+        "m365_license": ("m365_license", MS_NOTE),
         "biostar": ("biostar_enroll", "Hẹn nhân viên đăng ký trực tiếp tại máy BioStar trong ngày đầu làm việc."),
+        "it_handover": ("it_handover", MS_NOTE),
         "handover_doc": ("handover_doc", ""),
+        "rtr_checklist": ("rtr_checklist", MS_NOTE),
         "close": ("close_request", ""),
     }),
     "offboard": ("lifecycle.offboard", {
         "biostar": ("biostar_offboard", "Khoá đúng ngày nghỉ – **không chờ** thu hồi thiết bị."),
+        "account_disable": ("account_disable", MS_NOTE),
+        "mailbox_handover": ("mailbox_handover", MS_NOTE),
+        "ad_move_ban": ("ad_move_ban", MS_NOTE + " Làm tay: chuyển tài khoản đã vô hiệu vào OU `Ban_Users`."),
         "collect": ("collect_assets", "Thiếu, hỏng hoặc chưa trả: đi nhánh bên dưới để báo quản lý trực tiếp và HR."),
         "to_store": ("return_assets", "Sao lưu dữ liệu cần giữ rồi mới xoá trắng máy trước khi cấp lại."),
         "return_doc": ("return_doc", ""),
+        "rtr_checklist": ("rtr_checklist", MS_NOTE),
+        "close": ("close_request", ""),
+    }),
+    "transfer": ("lifecycle.transfer", {
+        "transfer_plan": ("transfer_plan", MS_NOTE + " Làm tay: so phòng ban / chức danh mới với AD."),
+        "ad_transfer": ("ad_transfer", MS_NOTE + " Chỉ chạy từ ngày hiệu lực."),
+        "m365_relicense": ("m365_relicense", MS_NOTE + " Chỉ chạy từ ngày hiệu lực."),
+        "biostar": ("biostar_transfer", "Chỉ chạy từ ngày hiệu lực; bỏ qua khi chưa khai nhóm quyền theo phòng ban."),
+        "groups_remove": ("groups_remove", "Chỉ dùng khi tắt tích hợp Microsoft (làm tay); bật Microsoft thì Job gỡ nhóm trong bước AD."),
+        "groups_add": ("groups_add", "Chỉ dùng khi tắt tích hợp Microsoft (làm tay); bật Microsoft thì Job thêm nhóm trong bước AD."),
+        "assets": ("transfer_assets", "Phần thiếu: đề xuất mua hoặc lấy từ kho; phần vượt chuẩn: cân nhắc thu hồi theo Playbook Thu hồi thiết bị."),
+        "rtr_checklist": ("rtr_checklist", MS_NOTE),
         "close": ("close_request", ""),
     }),
 }  # fmt: skip
-for _tpl, (_wf, _steps) in ((ONBOARD, JOB_STEPS["onboard"]), (OFFBOARD, JOB_STEPS["offboard"])):
+for _tpl, (_wf, _steps) in (
+    (ONBOARD, JOB_STEPS["onboard"]),
+    (OFFBOARD, JOB_STEPS["offboard"]),
+    (TRANSFER, JOB_STEPS["transfer"]),
+):
     for _node, (_step_key, _note) in _steps.items():
         n = _tpl["tree"]["nodes"][_node]
         n |= {
@@ -683,6 +692,7 @@ for _tpl, (_wf, _steps) in ((ONBOARD, JOB_STEPS["onboard"]), (OFFBOARD, JOB_STEP
 TEMPLATES: dict[str, dict[str, Any]] = {
     "onboard": ONBOARD,
     "offboard": OFFBOARD,
+    "transfer": TRANSFER,
     "extra_device": EXTRA_DEVICE,
     "recall_device": RECALL_DEVICE,
     "replace_device": REPLACE_DEVICE,

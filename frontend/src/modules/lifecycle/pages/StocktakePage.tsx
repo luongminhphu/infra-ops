@@ -16,10 +16,11 @@ import { HelpTip } from "@/core/ui/help-tip";
 import { StatusBadge, type Status } from "@/core/ui/status";
 import { Tabs } from "@/core/ui/tabs";
 import { AreasPanel } from "./StocktakeAreas";
+import { StocktakeFinance } from "./StocktakeFinance";
+import { CONDITION, type Condition } from "./stocktakeShared";
 import { StocktakeWalk } from "./StocktakeWalk";
 
 export type Count = "pending" | "found" | "missing" | "extra";
-type Condition = "good" | "damaged" | "broken";
 
 export interface Item {
   id: number;
@@ -42,6 +43,8 @@ export interface Item {
   counted_by: string | null;
   resolution: string | null;
   resolution_note: string;
+  /** Set by "Áp hướng xử lý gợi ý": still waits for a person to confirm. */
+  resolution_suggested?: boolean;
   difference: string | null;
 }
 
@@ -53,6 +56,8 @@ interface Summary {
   extra: number;
   differences: number;
   unresolved: number;
+  /** Only with view_all: assets in no zone yet. */
+  unzoned?: number;
 }
 
 export interface ZoneRow extends Summary {
@@ -80,6 +85,7 @@ interface Head {
   cutoff: string;
   status: "counting" | "reviewing" | "closed";
   status_label: string;
+  rules_version?: number;
   source_synced_at: string | null;
   created_by: string;
   closed_at: string | null;
@@ -87,18 +93,33 @@ interface Head {
 
 const COUNT: Record<Count, { label: string; status: Status }> = {
   pending: { label: "Chưa kiểm", status: "pending" },
-  found: { label: "Có", status: "done" },
+  found: { label: "Đã thấy", status: "done" },
   missing: { label: "Không tìm thấy", status: "failed" },
   extra: { label: "Ngoài sổ SDP", status: "mismatch" },
 };
-const CONDITION: Record<Condition, string> = { good: "Tốt", damaged: "Hư hỏng nhẹ", broken: "Hỏng, không dùng được" };
 const STATUS: Record<Head["status"], Status> = { counting: "in_progress", reviewing: "waiting", closed: "done" };
 const SHOWN = 200;
-/** The two ways into an open stocktake: walking a floor, or the whole picture to follow up and finish. */
-const MODES = [
-  ["walk", "Đi kiểm", "Quét tem hoặc bấm Có từng máy ở khu bạn được giao, theo từng bàn."],
-  ["manage", "Tổng hợp & xử lý", "Tiến độ các khu, giao khu, danh sách đầy đủ, chênh lệch và hướng xử lý, kết thúc kiểm, xuất file."],
-] as const;
+type Mode = "walk" | "manage" | "finance";
+/** The ways into a stocktake: walking a floor, the whole picture to follow up and finish, and the accounting reconciliation. */
+const MODES: Record<Mode, [string, string]> = {
+  walk: ["Đi kiểm", "Quét tem hoặc bấm Đã thấy từng máy ở khu bạn được giao, theo từng bàn."],
+  manage: ["Tổng hợp & xử lý", "Tiến độ các khu, giao khu, danh sách đầy đủ, chênh lệch và hướng xử lý, kết thúc kiểm, xuất file."],
+  finance: ["Đối chiếu Kế toán", "Nhập sổ TSCĐ / CCDC của Kế toán và đối chiếu với sổ SDP và kết quả kiểm."],
+};
+
+/** What kind of difference an item is (the key of the allowed resolutions); null when books and site agree. */
+export function diffKind(i: Item, rulesVersion = 2): string | null {
+  if (i.count === "missing" || i.count === "extra") return i.count;
+  if (i.count === "found" && i.condition === "broken") return "broken";
+  if (i.count === "found" && i.condition === "damaged" && rulesVersion < 2) return "damaged";
+  return null;
+}
+
+/** Resolutions a row's kind of difference accepts: [key, label]. A kind the server lists nothing for accepts all. */
+export function allowedResolutions(kind: string | null, meta: { resolutions: Record<string, string>; allowed?: Record<string, string[]> }): [string, string][] {
+  const keys = (kind && meta.allowed?.[kind]) || Object.keys(meta.resolutions);
+  return keys.filter((k) => meta.resolutions[k]).map((k) => [k, meta.resolutions[k]!]);
+}
 
 export type View = "all" | "pending" | "missing" | "found" | "differences" | "extra";
 
@@ -218,10 +239,12 @@ export function StocktakePage() {
   const [view, setView] = useState<View>("differences");
   const [touchedView, setTouchedView] = useState(false);
   const [query, setQuery] = useState("");
-  const [extra, setExtra] = useState<{ code: string; seenAt?: string } | null>(null);
+  const [extra, setExtra] = useState<{ code: string; zoneId?: string } | null>(null);
   const [zone, setZone] = useState<ZoneFilter | null>(null);
   const [params, setParams] = useSearchParams();
   const [confirmFinish, setConfirmFinish] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const [confirmDefaults, setConfirmDefaults] = useState(false);
   const refresh = () => qc.invalidateQueries({ queryKey: key });
 
   const step = useMutation({
@@ -230,6 +253,16 @@ export function StocktakePage() {
       toast.success(path === "close" ? "Đã đóng kỳ kiểm kê." : "Đã kết thúc kiểm – xử lý các chênh lệch.");
       setView("differences");
       setConfirmFinish(false);
+      setConfirmClose(false);
+      await refresh();
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  const defaults = useMutation({
+    mutationFn: () => api<{ suggested: number }>(`/api/lifecycle/stocktakes/${id}/default-resolutions`, { method: "POST" }),
+    onSuccess: async (r) => {
+      toast.success(`Đã gợi ý hướng xử lý cho ${r.suggested} chênh lệch – xác nhận từng dòng để hoàn tất.`);
+      setConfirmDefaults(false);
       await refresh();
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -241,6 +274,7 @@ export function StocktakePage() {
   const open = s.status !== "closed";
   const counting = can("lifecycle.stocktake.count") && open;
   const manage = can("lifecycle.stocktake.manage");
+  const finance = can("lifecycle.stocktake.finance");
   // Administrator / Manager hand zones to Operators (lifecycle.stocktake.assign).
   const assign = can("lifecycle.stocktake.assign");
   // Counting starts on what is left to count; afterwards on the differences.
@@ -254,50 +288,28 @@ export function StocktakePage() {
   const n = (v: View) => viewItems(s.items, v, query, zoneNow, mine).length;
   const tabs: { key: View; label: string; n: number }[] = [
     s.status === "counting" ? { key: "pending", label: "Chưa kiểm", n: n("pending") } : { key: "missing", label: "Không tìm thấy", n: n("missing") },
-    { key: "found", label: "Đã kiểm", n: n("found") },
+    { key: "found", label: "Đã thấy", n: n("found") },
     { key: "differences", label: "Chênh lệch", n: n("differences") },
     { key: "extra", label: "Ngoài sổ SDP", n: n("extra") },
     { key: "all", label: "Tất cả", n: n("all") },
   ];
   // Đi kiểm (walking a floor) for whoever counts while the count is on; Tổng hợp & xử lý for the rest of the job.
-  const canWalk = counting && s.status === "counting" && s.zones.length > 0;
+  const canWalk = counting && s.status === "counting" && s.zones.some((z) => z.id);
   // The whole picture (every zone, differences, Excel files) is for lifecycle.stocktake.view_all; an Operator only walks.
   const overview = can("lifecycle.stocktake.view_all");
-  const mode = canWalk && (!overview || (params.get("mode") ?? (mine.length || !manage ? "walk" : "manage")) === "walk") ? "walk" : "manage";
-  const setMode = (m: "walk" | "manage") => setParams((p) => { p.set("mode", m); return p; }, { replace: true });
+  const avail: Mode[] = [...(canWalk ? ["walk" as const] : []), ...(overview || !canWalk ? ["manage" as const] : []), ...(finance ? ["finance" as const] : [])];
+  const want = params.get("mode") ?? (canWalk && (mine.length || !manage) ? "walk" : "manage");
+  const mode: Mode = avail.find((m) => m === want) ?? avail[0]!;
+  const setMode = (m: string) => setParams((p) => { p.set("mode", m); return p; }, { replace: true });
+  const withoutResolution = s.items.filter((i) => i.difference && !i.resolution).length;
   const unfinished = s.zones.filter((z) => z.pending > 0);
 
-  return (
+  const content = (
     <>
-      <PageHeader
-        title={s.name}
-        description={<>Chốt sổ {formatDate(s.cutoff)} · dữ liệu SDP lúc {formatDateTime(s.source_synced_at)} · mở bởi {s.created_by}</>}
-        actions={
-          <>
-            {mode === "manage" && overview && <a href={`/api/lifecycle/stocktakes/${id}/export`} className={buttonVariants({ variant: "secondary" })}><Download className="size-4" aria-hidden="true" />File tổng (Excel)</a>}
-            {manage && s.status === "counting" && mode === "manage" && <Button variant="primary" loading={step.isPending} onClick={() => setConfirmFinish(true)}>Kết thúc kiểm</Button>}
-            {manage && s.status === "reviewing" && (
-              <Button variant="primary" loading={step.isPending} disabled={s.summary.unresolved > 0} onClick={() => step.mutate("close")}>
-                Đóng kỳ{s.summary.unresolved > 0 ? ` (còn ${s.summary.unresolved} chênh lệch)` : ""}
-              </Button>
-            )}
-          </>
-        }
-      />
-      {canWalk && overview && (
-        <div className="mb-4 grid gap-1.5">
-          <div role="tablist" aria-label="Chế độ" className="inline-flex w-fit rounded-md border border-line-strong bg-surface p-0.5">
-            {MODES.map(([m, label]) => (
-              <button key={m} type="button" role="tab" aria-selected={mode === m} onClick={() => setMode(m)} className={`min-h-10 rounded-sm px-4 text-base transition-colors duration-150 ${mode === m ? "bg-primary text-on-primary" : "text-ink hover:bg-surface-2"}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <p className="text-sm text-muted text-pretty">{mode === "manage" && !manage ? "Xem tiến độ các khu và danh sách đầy đủ tài sản của kỳ kiểm kê." : MODES.find(([m]) => m === mode)![2]}</p>
-        </div>
-      )}
       {mode === "walk" ? (
-        <StocktakeWalk stocktakeId={id} items={s.items} zones={s.zones} mine={mine} canSeeAll={overview} onSaved={refresh} onExtra={(code, seenAt) => setExtra({ code, seenAt })} />
+        <StocktakeWalk stocktakeId={id} items={s.items} zones={s.zones} mine={mine} canSeeAll={overview} onSaved={refresh} onExtra={(code, zoneId) => setExtra({ code, zoneId })} />
+      ) : mode === "finance" ? (
+        <StocktakeFinance stocktakeId={id} open={open} canFix={manage} items={s.items} onItemSaved={refresh} />
       ) : !overview ? (
         <div role="status" className="flex flex-wrap items-center gap-3 rounded-md border border-line bg-surface-2 px-4 py-3">
           <StatusBadge status={STATUS[s.status]} label={s.status_label} />
@@ -311,13 +323,24 @@ export function StocktakePage() {
         {s.summary.extra > 0 && <span className="tabular">{s.summary.extra} ngoài sổ SDP</span>}
         {s.status !== "counting" && <span className="tabular">{s.summary.differences} chênh lệch · {s.summary.unresolved} chưa có hướng xử lý</span>}
         <HelpTip title="Các bước kiểm kê">
-          <span className="block">1. Đang kiểm: Manager giao khu; Helpdesk mở “Đi kiểm”, quét tem hoặc bấm Có từng máy theo bàn.</span>
+          <span className="block">1. Đang kiểm: Manager giao khu; Helpdesk mở “Đi kiểm”, quét tem hoặc bấm Đã thấy từng máy theo bàn.</span>
           <span className="block">2. Kết thúc kiểm (Supervisor/Manager): máy chưa thấy thành “Không tìm thấy”. Vẫn sửa được nếu tìm ra sau.</span>
           <span className="block">3. Chọn hướng xử lý cho mọi chênh lệch (đã thống nhất với Hành chánh / Kế toán), rồi Đóng kỳ. File Excel có sheet Sổ SDP để HC/KT đối chiếu với sổ của mình.</span>
         </HelpTip>
+        {manage && s.status === "reviewing" && withoutResolution > 0 && (
+          <Button size="sm" loading={defaults.isPending} onClick={() => setConfirmDefaults(true)}>Áp hướng xử lý gợi ý</Button>
+        )}
       </div>
+      {(s.summary.unzoned ?? 0) > 0 && open && (
+        <div role="status" className="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-waiting bg-waiting-soft px-4 py-3">
+          <StatusBadge status="warning" label="Chưa phân khu" />
+          <p className="min-w-0 flex-1 text-sm text-pretty">{s.summary.unzoned} tài sản chưa thuộc khu nào nên chưa ai kiểm được. Chuyển chúng vào khu ở bảng “Chia việc theo khu”.</p>
+          <Button size="sm" onClick={() => { setTouchedView(true); setView("all"); setZone("none"); }}>Xem các tài sản này</Button>
+          <a href="#zones-panel" className="text-sm text-primary hover:underline">Đến bảng chia khu</a>
+        </div>
+      )}
       {s.status === "closed" && <RecordPanel stocktakeId={id} record={s.record ?? null} canMake={manage} onSaved={refresh} />}
-      {s.zones.length > 0 && <ZonesPanel stocktakeId={id} zones={s.zones} canAssign={assign && open} onSaved={refresh} />}
+      {s.zones.length > 0 && <div id="zones-panel"><ZonesPanel stocktakeId={id} zones={s.zones} canAssign={assign && open} onSaved={refresh} /></div>}
       <Panel
         title="Tài sản"
         actions={counting && <Button size="sm" onClick={() => setExtra({ code: "" })}><PackagePlus className="size-4" aria-hidden="true" />Thêm tài sản ngoài sổ</Button>}
@@ -352,6 +375,7 @@ export function StocktakePage() {
                 status={s.status}
                 canCount={counting}
                 canResolve={manage && open}
+                rulesVersion={s.rules_version ?? 2}
                 onSaved={refresh}
               />
             ))}
@@ -361,7 +385,59 @@ export function StocktakePage() {
       </Panel>
       </>
       )}
-      {extra && <ExtraDialog stocktakeId={id} code={extra.code} seenAt={extra.seenAt ?? ""} onClose={() => setExtra(null)} onSaved={refresh} />}
+    </>
+  );
+
+  return (
+    <>
+      <PageHeader
+        title={s.name}
+        description={<>Chốt sổ {formatDate(s.cutoff)} · dữ liệu SDP lúc {formatDateTime(s.source_synced_at)} · mở bởi {s.created_by}</>}
+        actions={
+          <>
+            {mode === "manage" && overview && <a href={`/api/lifecycle/stocktakes/${id}/export`} className={buttonVariants({ variant: "secondary" })}><Download className="size-4" aria-hidden="true" />File tổng (Excel)</a>}
+            {manage && s.status === "counting" && mode === "manage" && <Button variant="primary" loading={step.isPending} onClick={() => setConfirmFinish(true)}>Kết thúc kiểm</Button>}
+            {manage && s.status === "reviewing" && (
+              <Button variant="primary" loading={step.isPending} disabled={s.summary.unresolved > 0} onClick={() => setConfirmClose(true)}>
+                Đóng kỳ{s.summary.unresolved > 0 ? ` (còn ${s.summary.unresolved} chênh lệch)` : ""}
+              </Button>
+            )}
+          </>
+        }
+      />
+      {avail.length > 1 ? (
+        <Tabs label="Chế độ" value={mode} onChange={setMode} tabs={avail.map((m) => ({ key: m, label: MODES[m][0] }))}>
+          <p className="mb-4 text-sm text-muted text-pretty">{mode === "manage" && !manage ? "Xem tiến độ các khu và danh sách đầy đủ tài sản của kỳ kiểm kê." : MODES[mode][1]}</p>
+          {content}
+        </Tabs>
+      ) : content}
+      {extra && <ExtraDialog stocktakeId={id} code={extra.code} zoneId={extra.zoneId} onClose={() => setExtra(null)} onSaved={refresh} />}
+      <Dialog
+        open={confirmClose}
+        onClose={() => setConfirmClose(false)}
+        title="Đóng kỳ kiểm kê?"
+        description="Không hoàn tác được: sau khi đóng kỳ, không sửa kết quả kiểm, hướng xử lý hay sổ Kế toán của kỳ này nữa. Biên bản kiểm kê được lập từ kỳ đã đóng."
+        footer={
+          <>
+            <Button onClick={() => setConfirmClose(false)}>Chưa đóng</Button>
+            <Button variant="danger" loading={step.isPending} onClick={() => step.mutate("close")}>Đóng kỳ kiểm kê</Button>
+          </>
+        }
+      >
+        <p className="text-sm">{s.summary.differences} chênh lệch đã có hướng xử lý. Hãy chắc là Hành chánh / Kế toán đã thống nhất.</p>
+      </Dialog>
+      <Dialog
+        open={confirmDefaults}
+        onClose={() => setConfirmDefaults(false)}
+        title="Áp hướng xử lý gợi ý?"
+        description="Chỉ điền cho các chênh lệch chưa có hướng xử lý: Không tìm thấy → Tìm thêm, Ngoài sổ SDP → Đề nghị KT ghi tăng, Hỏng → Đề nghị thanh lý / ghi giảm. Đây chỉ là gợi ý: mỗi dòng vẫn cần được xác nhận mới tính là đã xử lý."
+        footer={
+          <>
+            <Button onClick={() => setConfirmDefaults(false)}>Huỷ</Button>
+            <Button variant="primary" loading={defaults.isPending} onClick={() => defaults.mutate()}>Áp gợi ý cho {withoutResolution} chênh lệch</Button>
+          </>
+        }
+      />
       <Dialog
         open={confirmFinish}
         onClose={() => setConfirmFinish(false)}
@@ -409,13 +485,14 @@ function ZonesPanel({ stocktakeId, zones, canAssign, onSaved }: { stocktakeId: s
               <th scope="col" className="px-2 py-2 font-medium">Người kiểm</th>
               <th scope="col" className="px-2 py-2 text-right font-medium">Đã thấy</th>
               <th scope="col" className="px-2 py-2 text-right font-medium">Còn lại</th>
+              <th scope="col" className="px-2 py-2 text-right font-medium">Không thấy</th>
               <th scope="col" className="px-2 py-2 text-right font-medium">Chênh lệch</th>
               <th scope="col" className="px-4 py-2 text-right font-medium"><span className="sr-only">File khu</span></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
             {zones.map((z) => {
-              const left = z.pending + z.missing;
+              const left = z.pending;
               return (
                 <tr key={z.id ?? "none"}>
                   <th scope="row" className="px-4 py-2 text-left font-medium">{z.name}</th>
@@ -431,6 +508,7 @@ function ZonesPanel({ stocktakeId, zones, canAssign, onSaved }: { stocktakeId: s
                   </td>
                   <td className="px-2 py-2 text-right tabular">{z.found} / {z.book}</td>
                   <td className="px-2 py-2 text-right tabular">{left > 0 ? left : <StatusBadge status="done" label="Xong" />}</td>
+                  <td className="px-2 py-2 text-right tabular">{z.missing || "—"}</td>
                   <td className="px-2 py-2 text-right tabular">{z.differences || "—"}</td>
                   <td className="px-4 py-1.5 text-right">
                     <a href={`/api/lifecycle/stocktakes/${stocktakeId}/export?zone_id=${z.id ?? "none"}`} className="inline-flex items-center gap-1 text-primary hover:underline" aria-label={`Tải file kiểm kê ${z.name}`}>
@@ -454,6 +532,23 @@ const RECORD_STATUS: Record<RecordInfo["status"], { label: string; status: Statu
   void: { label: "Đã huỷ", status: "skipped" },
 };
 
+/** The signers of the latest other closed stocktake: only a suggestion for the new record. */
+function usePreviousSigners(stocktakeId: string, enabled: boolean): RecordInfo["data"] | null {
+  const list = useQuery({
+    queryKey: ["lifecycle", "stocktakes"],
+    queryFn: () => api<{ items: { id: string; status: string }[] }>("/api/lifecycle/stocktakes"),
+    enabled,
+  });
+  const prevId = list.data?.items.find((x) => x.id !== stocktakeId && x.status === "closed")?.id;
+  const prev = useQuery({
+    queryKey: ["lifecycle", "stocktake", prevId],
+    queryFn: () => api<{ record?: RecordInfo | null }>(`/api/lifecycle/stocktakes/${prevId}`),
+    enabled: enabled && Boolean(prevId),
+  });
+  const d = prev.data?.record?.data;
+  return d && (d.it_rep || d.finance_rep) ? d : null;
+}
+
 /** Biên bản kiểm kê signed by IT and Kế toán: drafted from the closed stocktake, numbered, printed, signed scan uploaded. */
 function RecordPanel({ stocktakeId, record, canMake, onSaved }: { stocktakeId: string; record: RecordInfo | null; canMake: boolean; onSaved: () => void }) {
   const live = record && record.status !== "void" ? record : null;
@@ -471,6 +566,7 @@ function RecordPanel({ stocktakeId, record, canMake, onSaved }: { stocktakeId: s
     onError: fail,
   });
   const draft = !live || live.status === "draft";
+  const previous = usePreviousSigners(stocktakeId, canMake && draft);
   const missing = !f.it_rep.trim() || !f.finance_rep.trim();
   const file = (which: string) => `/api/core/documents/${live!.id}/file/${which}`;
   return (
@@ -484,6 +580,12 @@ function RecordPanel({ stocktakeId, record, canMake, onSaved }: { stocktakeId: s
           className="grid gap-4 sm:grid-cols-2"
           onSubmit={(e) => { e.preventDefault(); setTouched(true); if (!missing) make.mutate(); }}
         >
+          {previous && !f.it_rep.trim() && !f.finance_rep.trim() && (
+            <div className="flex flex-wrap items-center gap-3 rounded-md bg-surface-2 px-3 py-2 text-sm sm:col-span-2">
+              <span className="min-w-0 flex-1">Kỳ trước ký: IT {previous.it_rep || "—"} · Kế toán {previous.finance_rep || "—"}. Kiểm tra lại người ký kỳ này.</span>
+              <Button size="sm" onClick={() => setF({ ...f, it_rep: previous.it_rep ?? "", it_title: previous.it_title ?? "", finance_rep: previous.finance_rep ?? "", finance_title: previous.finance_title ?? "" })}>Dùng lại người ký kỳ trước</Button>
+            </div>
+          )}
           <Field label="Đại diện IT" required error="Nhập họ tên đại diện IT." showError={touched && !f.it_rep.trim()}><Input value={f.it_rep} onChange={set("it_rep")} maxLength={200} /></Field>
           <Field label="Chức danh (IT)"><Input value={f.it_title} onChange={set("it_title")} maxLength={200} placeholder="vd. Trưởng nhóm IT" /></Field>
           <Field label="Đại diện Kế toán" required error="Nhập họ tên đại diện Kế toán." showError={touched && !f.finance_rep.trim()}><Input value={f.finance_rep} onChange={set("finance_rep")} maxLength={200} /></Field>
@@ -514,13 +616,13 @@ function RecordPanel({ stocktakeId, record, canMake, onSaved }: { stocktakeId: s
   );
 }
 
-function ItemRow({ item: i, heading, zoneName, zones, stocktakeId, status, canCount, canResolve, onSaved }: { item: Item; heading: string | null; zoneName: string; zones: ZoneRow[] | null; stocktakeId: string; status: Head["status"]; canCount: boolean; canResolve: boolean; onSaved: () => void }) {
+function ItemRow({ item: i, heading, zoneName, zones, stocktakeId, status, canCount, canResolve, rulesVersion, onSaved }: { item: Item; heading: string | null; zoneName: string; zones: ZoneRow[] | null; stocktakeId: string; status: Head["status"]; canCount: boolean; canResolve: boolean; rulesVersion: number; onSaved: () => void }) {
   const move = useMutation({
     mutationFn: (zoneId: string) => api(`/api/lifecycle/stocktakes/${stocktakeId}/items/${i.id}/zone`, { method: "PUT", json: { zone_id: zoneId || null } }),
     onSuccess: onSaved,
     onError: (e) => toast.error(errorMessage(e)),
   });
-  const meta = useQuery({ queryKey: ["lifecycle", "stocktake-meta"], queryFn: () => api<{ resolutions: Record<string, string> }>("/api/lifecycle/stocktake-meta"), staleTime: Infinity });
+  const meta = useQuery({ queryKey: ["lifecycle", "stocktake-meta"], queryFn: () => api<{ resolutions: Record<string, string>; allowed?: Record<string, string[]> }>("/api/lifecycle/stocktake-meta"), staleTime: Infinity });
   const [note, setNote] = useState(i.resolution_note);
   const save = useMutation({
     mutationFn: (body: { count: Count; condition?: Condition | null }) =>
@@ -538,6 +640,7 @@ function ItemRow({ item: i, heading, zoneName, zones, stocktakeId, status, canCo
     onSuccess: onSaved,
     onError: (e) => toast.error(errorMessage(e)),
   });
+  const options = meta.data ? allowedResolutions(diffKind(i, rulesVersion), meta.data) : [];
   const book = i.count !== "extra";
   const [armed, setArmed] = useState(false);
   return (
@@ -560,12 +663,12 @@ function ItemRow({ item: i, heading, zoneName, zones, stocktakeId, status, canCo
           <span>Khu {zoneName}</span>
           {i.seen_at && <span>Thấy ở {i.seen_at}</span>}
         </p>
-        {i.difference && <p className="mt-1 text-sm">Chênh lệch: {i.difference}{i.resolution && meta.data && <> · <b className="font-semibold">{meta.data.resolutions[i.resolution]}</b>{i.resolution_note && ` – ${i.resolution_note}`}</>}</p>}
+        {i.difference && <p className="mt-1 text-sm">Chênh lệch: {i.difference}{i.resolution && meta.data && <> · <b className="font-semibold">{meta.data.resolutions[i.resolution]}</b>{i.resolution_suggested && <> <StatusBadge status="warning" label="Gợi ý" /></>}{i.resolution_note && ` – ${i.resolution_note}`}</>}</p>}
       </div>
       <div className="flex flex-wrap items-center gap-2 empty:hidden">
         {canCount && book && (
           <>
-            {i.count !== "found" && <Button size="sm" className="max-sm:h-11" loading={save.isPending} onClick={() => save.mutate({ count: "found", condition: "good" })}>Có</Button>}
+            {i.count !== "found" && <Button size="sm" className="max-sm:h-11" loading={save.isPending} onClick={() => save.mutate({ count: "found", condition: "good" })}>Đã thấy</Button>}
             {i.count === "found" && (
               <Select aria-label={`Tình trạng ${i.name}`} value={i.condition ?? "good"} onChange={(e) => save.mutate({ count: "found", condition: e.target.value as Condition })} className="h-7 w-auto max-sm:h-11">
                 {Object.entries(CONDITION).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -588,11 +691,18 @@ function ItemRow({ item: i, heading, zoneName, zones, stocktakeId, status, canCo
         )}
         {canResolve && i.difference && status !== "counting" && meta.data && (
           <>
-            <Input value={note} onChange={(e) => setNote(e.target.value)} onBlur={() => i.resolution && note !== i.resolution_note && resolve.mutate(i.resolution)} placeholder="Ghi chú xử lý" aria-label={`Ghi chú xử lý ${i.name}`} className="h-7 w-48 max-sm:h-11" maxLength={1000} />
-            <Select aria-label={`Hướng xử lý ${i.name}`} value={i.resolution ?? ""} onChange={(e) => resolve.mutate(e.target.value || null)} className="h-7 w-auto max-sm:h-11">
-              <option value="">Chọn hướng xử lý…</option>
-              {Object.entries(meta.data.resolutions).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </Select>
+            <Field label="Ghi chú xử lý" className="w-48">
+              <Input value={note} onChange={(e) => setNote(e.target.value)} onBlur={() => i.resolution && note !== i.resolution_note && resolve.mutate(i.resolution)} aria-label={`Ghi chú xử lý ${i.name}`} className="h-7 max-sm:h-11" maxLength={1000} />
+            </Field>
+            <Field label="Hướng xử lý">
+              <Select aria-label={`Hướng xử lý ${i.name}`} value={options.some(([k]) => k === i.resolution) ? i.resolution! : ""} onChange={(e) => resolve.mutate(e.target.value || null)} className="h-7 w-auto max-sm:h-11">
+                <option value="">Chọn hướng xử lý…</option>
+                {options.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </Select>
+            </Field>
+            {i.resolution_suggested && i.resolution && (
+              <Button size="sm" variant="primary" className="max-sm:h-11" loading={resolve.isPending} onClick={() => resolve.mutate(i.resolution)}>Xác nhận</Button>
+            )}
           </>
         )}
       </div>
@@ -600,14 +710,14 @@ function ItemRow({ item: i, heading, zoneName, zones, stocktakeId, status, canCo
   );
 }
 
-function ExtraDialog({ stocktakeId, code, seenAt, onClose, onSaved }: { stocktakeId: string; code: string; seenAt: string; onClose: () => void; onSaved: () => void }) {
-  const [f, setF] = useState({ name: "", product_type: "", serial: code, asset_tag: "", fa_code: "", condition: "good" as Condition, seen_at: seenAt, note: "" });
+function ExtraDialog({ stocktakeId, code, zoneId, onClose, onSaved }: { stocktakeId: string; code: string; zoneId?: string; onClose: () => void; onSaved: () => void }) {
+  const [f, setF] = useState({ name: "", product_type: "", serial: code, asset_tag: "", fa_code: "", condition: "good" as Condition, seen_at: "", note: "" });
   const [touched, setTouched] = useState(false);
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const nameError = f.name.trim() ? "" : "Nhập tên tài sản.";
   const codeError = f.serial.trim() || f.asset_tag.trim() || f.fa_code.trim() ? "" : "Nhập ít nhất serial, asset tag hoặc Mã TSCĐ.";
   const add = useMutation({
-    mutationFn: () => api(`/api/lifecycle/stocktakes/${stocktakeId}/extras`, { method: "POST", json: f }),
+    mutationFn: () => api(`/api/lifecycle/stocktakes/${stocktakeId}/extras`, { method: "POST", json: { ...f, zone_id: zoneId ?? null } }),
     onSuccess: () => {
       toast.success("Đã thêm tài sản ngoài sổ.");
       onSaved();
@@ -620,7 +730,7 @@ function ExtraDialog({ stocktakeId, code, seenAt, onClose, onSaved }: { stocktak
       open
       onClose={onClose}
       title="Thêm tài sản ngoài sổ SDP"
-      description="Thiết bị có trên thực tế nhưng không có trong sổ SDP của kỳ này. Sau khi kết thúc kiểm, chọn hướng xử lý (thường là Ghi tăng tài sản)."
+      description="Thiết bị có trên thực tế nhưng không có trong sổ SDP của kỳ này. Máy được ghi vào khu đang kiểm. Sau khi kết thúc kiểm, chọn hướng xử lý (thường là Đề nghị KT ghi tăng)."
       footer={
         <>
           <Button onClick={onClose}>Huỷ</Button>
@@ -639,7 +749,7 @@ function ExtraDialog({ stocktakeId, code, seenAt, onClose, onSaved }: { stocktak
             {Object.entries(CONDITION).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </Select>
         </Field>
-        <Field label="Nơi thấy"><Input value={f.seen_at} onChange={set("seen_at")} maxLength={256} /></Field>
+        {!zoneId && <Field label="Nơi thấy"><Input value={f.seen_at} onChange={set("seen_at")} maxLength={256} /></Field>}
         <Field label="Ghi chú" className="sm:col-span-2"><Input value={f.note} onChange={set("note")} maxLength={1000} /></Field>
       </div>
     </Dialog>

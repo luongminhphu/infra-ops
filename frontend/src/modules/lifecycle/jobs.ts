@@ -58,7 +58,7 @@ export type JobListStep = Omit<JobStep, "before_state" | "output" | "checklist" 
 export type JobListItem = Omit<Job, "assignments" | "steps"> & { steps: JobListStep[] };
 
 /** Onboard / offboard / transfer (the reassignment workflow is an internal helper). */
-export const JOB_WORKFLOWS = "lifecycle.onboard,lifecycle.offboard,lifecycle.transfer";
+export const JOB_WORKFLOWS = "lifecycle.onboard,lifecycle.offboard,lifecycle.transfer,lifecycle.mailbox_release";
 
 export interface Evidence {
   id: string;
@@ -86,6 +86,8 @@ export interface Job {
     effective_date: string | null;
     employee: { id: string; full_name: string; department: string; job_title: string; work_location: string };
     assets?: JobAsset[];
+    options?: { mailbox_handover?: boolean };
+    microsoft?: boolean;
     sdp_user_id: string | null;
     sdp_user_name: string | null;
   };
@@ -164,7 +166,7 @@ export function operatorTask(job: Pick<JobListItem, "status" | "current_step" | 
   return { act: false, text: `Không cần làm gì: hệ thống đang chạy ${at}, trang tự cập nhật.` };
 }
 
-export const WORKFLOW_LABEL: Record<string, string> = { "lifecycle.onboard": "Onboard", "lifecycle.offboard": "Offboard", "lifecycle.transfer": "Thuyên chuyển" };
+export const WORKFLOW_LABEL: Record<string, string> = { "lifecycle.onboard": "Onboard", "lifecycle.offboard": "Offboard", "lifecycle.transfer": "Thuyên chuyển", "lifecycle.mailbox_release": "Hết hạn giữ mailbox" };
 /** Request kinds that get a Job, with the label used on buttons and headings. */
 export const JOB_KIND_LABEL: Record<string, string> = { onboard: "onboard", offboard: "offboard", transfer: "thuyên chuyển" };
 export const SYSTEM_WRITE_LABEL: Record<string, string> = { sdp: "ServiceDesk Plus", biostar: "BioStar" };

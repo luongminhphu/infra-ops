@@ -142,7 +142,7 @@ async def list_profiles(
 class ProfileIn(BaseModel):
     system_type: str
     name: str = Field(min_length=1, max_length=128)
-    base_url: str = Field(min_length=3, max_length=512, pattern=r"^https?://\S+$")
+    base_url: str = Field(min_length=3, max_length=512, pattern=r"^(https?|ldaps)://\S+$")
     environment: Literal["prod", "test"] = "prod"
     enabled: bool = True
     config: dict[str, Any] = Field(default_factory=dict)
@@ -152,7 +152,9 @@ class ProfileIn(BaseModel):
 class ProfilePatch(BaseModel):
     version: int
     name: str | None = Field(default=None, min_length=1, max_length=128)
-    base_url: str | None = Field(default=None, min_length=3, max_length=512, pattern=r"^https?://\S+$")
+    base_url: str | None = Field(
+        default=None, min_length=3, max_length=512, pattern=r"^(https?|ldaps)://\S+$"
+    )
     environment: Literal["prod", "test"] | None = None
     enabled: bool | None = None
     config: dict[str, Any] | None = None

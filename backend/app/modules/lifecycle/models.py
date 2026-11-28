@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
@@ -12,9 +13,11 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
+    false,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -144,6 +147,39 @@ class Stocktake(UUIDPk, Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Biên bản kiểm kê (core document) signed by IT and Kế toán.
     record_document_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    # 1 = light damage counted as a difference (closed before Phase 70b); 2 = only broken/missing/extra.
+    rules_version: Mapped[int] = mapped_column(Integer, nullable=False, default=2, server_default="2")
+    # Accounting registers imported per kind: {"tscd": {file_id, sha256, rows, total_cost, as_of, imported_by, imported_at}}.
+    fa_registers: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+
+
+class FaRegisterRow(Base):
+    """One row of the accounting register (sổ TSCĐ / CCDC) of a stocktake. Money: only via finance endpoints."""
+
+    __tablename__ = "lifecycle_fa_register_row"
+    __table_args__ = (Index("ix_lifecycle_fa_row_code", "stocktake_id", "kind", "code_norm"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    stocktake_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("lifecycle_stocktake.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(8), nullable=False)  # tscd | ccdc
+    row_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    code: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    code_norm: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    name: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    group: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(18, 4))
+    cost: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    accumulated: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    net: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
+    in_use_date: Mapped[date | None] = mapped_column(Date)
+    department: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    life_months: Mapped[int | None] = mapped_column(Integer)
+    account: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    serial: Mapped[str] = mapped_column(String(128), nullable=False, default="")
 
 
 class StocktakeArea(UUIDPk, Base):
@@ -220,6 +256,10 @@ class StocktakeItem(Base):
     resolution_note: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     resolved_by: Mapped[str | None] = mapped_column(String(320))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set by "Áp hướng xử lý mặc định": the resolution is only a suggestion until a person confirms it.
+    resolution_suggested: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
 
     __table_args__ = (
         UniqueConstraint("stocktake_id", "asset_id", name="uq_lifecycle_stocktake_item_asset"),

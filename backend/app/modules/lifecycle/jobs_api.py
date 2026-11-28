@@ -18,13 +18,13 @@ from app.core.connectors.biostar import BioStarClient
 from app.core.db import get_session
 from app.core.errors import AppError, Conflict, NotFound
 from app.core.workflow import engine
-from app.core.workflow.api import job_out
+from app.core.workflow.api import check_job_scope, job_out
 from app.core.workflow.models import Job
 from app.modules.lifecycle.assignment import ASSIGN, JOB_WORKFLOWS, assign_from_request, assignment_params
 from app.modules.lifecycle.models import LifecycleRequest, ReconRow, Snapshot
-from app.modules.lifecycle.parsing import fold
+from app.modules.lifecycle.parsing import fold, split_person
 from app.modules.lifecycle.queries import latest_run
-from app.modules.lifecycle.settings import MODULE_ID, main_biostar
+from app.modules.lifecycle.settings import FIELD_TITLES, MODULE_ID, main_biostar
 from app.modules.lifecycle.settings import load as load_module_settings
 from app.modules.lifecycle.workflows import WORKFLOW_BY_KIND
 
@@ -54,7 +54,7 @@ async def _sdp_user_guess(session: AsyncSession, employee_id: str) -> tuple[str 
 def job_params(req: LifecycleRequest) -> dict[str, Any]:
     f = req.fields or {}
     dept, unit = f.get("department") or "", f.get("unit")
-    return {
+    params = {
         "kind": req.kind,
         "request_id": req.id,
         "request_display_id": req.display_id,
@@ -65,15 +65,35 @@ def job_params(req: LifecycleRequest) -> dict[str, Any]:
             "department": f"{dept} – {unit}" if dept and unit else dept,
             "job_title": f.get("job_title") or "",
             "work_location": f.get("work_location") or "",
+            "manager_employee_id": split_person(f.get("manager"))[1],
+            "phone": f.get("phone") or "",
+            "division": f.get("division") or "",
+            "department_only": dept,
+            "unit": unit or "",
         },
+        "options": {"mailbox_handover": False},
         "assets": [],
         "sdp_user_id": None,
         "sdp_user_name": None,
     }
+    if req.kind == "transfer":
+        # An absent key means "unchanged": nothing empty is ever written.
+        emp = params["employee"]
+        params["employee"] = {k: v for k, v in emp.items() if v or k in ("id", "full_name")}
+        old = {k: v for k, v in (f.get("old") or {}).items() if v}
+        employee_old = dict(old)
+        if mid := split_person(old.get("manager"))[1]:
+            employee_old["manager_employee_id"] = mid
+        params["employee_old"] = employee_old
+        params["sources"] = {
+            **{k: "request" for k in FIELD_TITLES if f.get(k) and k not in ("change_type", "effective_date")},
+            **{f"old.{k}": "request_old" for k in old},
+        }
+    return params
 
 
 async def create_job_for_request(
-    session: AsyncSession, actor: Actor, req: LifecycleRequest
+    session: AsyncSession, actor: Actor, req: LifecycleRequest, key_suffix: str = ""
 ) -> tuple[Job, bool]:
     if req.kind not in WORKFLOW_BY_KIND:
         raise AppError(
@@ -85,13 +105,15 @@ async def create_job_for_request(
         raise AppError(
             "Request chưa có Mã NV hợp lệ. Sửa nội dung request trên SDP rồi đồng bộ lại.", code="no_employee"
         )
-    if (await load_module_settings(session)).is_closed(req.status):
+    settings = await load_module_settings(session)
+    if settings.is_closed(req.status):
         raise AppError(
             f"Request #{req.display_id or req.id} đã đóng trên SDP (“{req.status}”) – không tạo Job.",
             code="request_closed",
         )
     wf = WORKFLOW_BY_KIND[req.kind]
     params = job_params(req)
+    params["microsoft"] = settings.microsoft_enabled  # decides which steps the job gets
     params["sdp_user_id"], params["sdp_user_name"] = await _sdp_user_guess(session, req.employee_id)
     if params["sdp_user_id"] is None:
         params["sdp_user_name"] = None
@@ -103,7 +125,7 @@ async def create_job_for_request(
         subject_key=req.employee_id,
         subject_label=f"{req.full_name or req.employee_id} ({req.employee_id})",
         external_ref=req.id,
-        idempotency_key=f"lifecycle:{req.kind}:{req.id}",
+        idempotency_key=f"lifecycle:{req.kind}:{req.id}{key_suffix}",
     )
     if new:
         await session.flush()
@@ -221,7 +243,23 @@ async def create_job(
     req = await session.get(LifecycleRequest, body.request_id)
     if req is None:
         raise NotFound("Không tìm thấy request. Đồng bộ dữ liệu trước.")
-    job, _ = await create_job_for_request(session, user.actor, req)
+    suffix = ""
+    if req.kind in WORKFLOW_BY_KIND:
+        # A cancelled job that did work cannot be reopened and holds the request's key: "huỷ và tạo lại" starts a
+        # fresh one, unless another job for the request is still alive. Sync never does this (it keeps the key).
+        old = await session.scalar(select(Job).where(Job.idempotency_key == f"lifecycle:{req.kind}:{req.id}"))
+        if old is not None and old.status == "cancelled" and engine.steps_with_work(old):
+            alive = await session.scalar(
+                select(Job).where(
+                    Job.workflow_key == old.workflow_key,
+                    Job.external_ref == req.id,
+                    Job.status != "cancelled",
+                )
+            )
+            if alive is not None:
+                return job_out(alive)
+            suffix = f":{uuid.uuid4().hex[:8]}"
+    job, _ = await create_job_for_request(session, user.actor, req, suffix)
     await session.commit()
     await session.refresh(job)
     return job_out(job)
@@ -240,6 +278,15 @@ class ParamsIn(BaseModel):
     sdp_user_id: str | None = Field(None, max_length=32)
     sdp_user_name: str | None = Field(None, max_length=200)
     clear_sdp_user: bool = False
+    mailbox_handover: bool | None = None  # offboard drafts only
+
+
+def _option_open(job: Job) -> bool:
+    """The mailbox option can change until `ad_move_ban` is confirmed or has run (it reads the option when it runs)."""
+    if job.status in ("completed", "cancelled"):
+        return False
+    st = next((x for x in job.steps if x.key == "ad_move_ban"), None)
+    return st is not None and st.status in ("pending", "waiting") and st.confirmed_at is None
 
 
 @router.put("/jobs/{job_id}/params")
@@ -252,14 +299,29 @@ async def update_params(
     job = await engine.get_job(session, job_id, for_update=True)
     if job.module_id != MODULE_ID:
         raise NotFound("Không tìm thấy Job.")
+    check_job_scope(user, job)
     engine.check_version(job, body.version)
-    if job.status != "draft":
+    if (body.assets is not None or body.sdp_user_id or body.clear_sdp_user) and job.status != "draft":
         raise Conflict("Chỉ sửa được Job ở trạng thái nháp.", code="job_not_draft")
+    if body.mailbox_handover is not None:
+        if job.params.get("kind") != "offboard" or not job.params.get("microsoft"):
+            raise AppError(
+                "Chỉ Job offboard có bước Microsoft mới có tuỳ chọn giữ mailbox.",
+                code="option_not_applicable",
+            )
+        if job.status != "draft" and not _option_open(job):
+            raise Conflict(
+                "Không đổi được tuỳ chọn giữ mailbox: bước chuyển vào Ban_Users đã được xác nhận hoặc đã chạy.",
+                code="option_locked",
+            )
     before = {
         "assets": [a["id"] for a in job.params.get("assets", [])],
         "sdp_user_id": job.params.get("sdp_user_id"),
+        "mailbox_handover": (job.params.get("options") or {}).get("mailbox_handover"),
     }
     params = dict(job.params)
+    if body.mailbox_handover is not None:
+        params["options"] = {**(params.get("options") or {}), "mailbox_handover": body.mailbox_handover}
     if body.assets is not None:
         params["assets"] = [a.model_dump() for a in body.assets]
     if body.clear_sdp_user:
@@ -280,6 +342,7 @@ async def update_params(
         after={
             "assets": [a["id"] for a in params.get("assets", [])],
             "sdp_user_id": params.get("sdp_user_id"),
+            "mailbox_handover": (params.get("options") or {}).get("mailbox_handover"),
         },
     )
     await session.commit()

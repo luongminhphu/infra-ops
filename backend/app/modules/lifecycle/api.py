@@ -437,7 +437,11 @@ async def get_module_settings(
     profiles = (
         await session.scalars(
             select(ConnectionProfile)
-            .where(ConnectionProfile.system_type.in_(["sdp", "biostar"]))
+            .where(
+                ConnectionProfile.system_type.in_(
+                    ["sdp", "biostar", "exchange", "active_directory", "msgraph"]
+                )
+            )
             .order_by(ConnectionProfile.name)
         )
     ).all()

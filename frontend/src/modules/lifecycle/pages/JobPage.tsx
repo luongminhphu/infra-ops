@@ -19,15 +19,22 @@ import { Flowchart } from "@/core/ui/flowchart";
 import { Stepper } from "@/core/ui/stepper";
 import { formatDate, formatDateTime } from "@/core/lib/format";
 import { cn } from "@/core/lib/cn";
-import { JOB_STATUS, STEP_STATUS, idleText, jobStatusLabel, SYSTEM_WRITE_LABEL, WORKFLOW_LABEL, useJob, type Job, type JobAsset, type JobStep } from "../jobs";
-import { CollectAssetsForm, DocumentLink, DraftConfig, EnrollForm } from "./JobStepPanels";
+import { JOB_STATUS, STEP_STATUS, idleText, jobStatusLabel, SYSTEM_WRITE_LABEL, WORKFLOW_LABEL, useJob, type Job, type JobStep } from "../jobs";
+import { AccountPlanForm, CollectAssetsForm, DocumentLink, DraftConfig, EnrollForm, ItHandoverForm, MailboxHandoverPanel, MailboxOption, RtrChecklistPanel, TransferAssetsPanel, TransferPlanForm, type ParamsPatch } from "./JobStepPanels";
 import { EmpLink } from "./EmployeePanel";
 import { StepVerification } from "./StepVerification";
 import { AssignJobButton, PendingAssignment } from "./AssignJob";
 import { Swimlane } from "@/core/ui/swimlane";
 
 // Workflows whose subject_key is an employee ID (asset jobs use a count, e.g. "3 tài sản").
-const EMPLOYEE_WORKFLOWS = new Set(["lifecycle.onboard", "lifecycle.offboard", "lifecycle.transfer"]);
+/** Running offboard with Microsoft steps whose `ad_move_ban` has not been confirmed yet: the mailbox option can still change. */
+export function mailboxOptionOpen(job: Job): boolean {
+  const ban = job.steps.find((s) => s.key === "ad_move_ban");
+  return job.params.kind === "offboard" && !!job.params.microsoft && !["draft", "completed", "cancelled"].includes(job.status)
+    && !!ban && ["pending", "waiting"].includes(ban.status) && !ban.confirmed_at;
+}
+
+const EMPLOYEE_WORKFLOWS = new Set(["lifecycle.onboard", "lifecycle.offboard", "lifecycle.transfer", "lifecycle.mailbox_release"]);
 
 interface PreviewStep {
   key: string;
@@ -115,7 +122,21 @@ export function StepDetail({ job, step, act, focus = false }: { job: Job; step: 
             {step.key === "biostar_enroll" && step.status === "waiting" && (
               <EnrollForm busy={act.complete.isPending} onSubmit={(data) => act.complete.mutate({ key: step.key, data })} />
             )}
-            {step.kind === "manual" && step.status === "waiting" && !["collect_assets", "biostar_enroll"].includes(step.key) && (
+            {step.key === "account_plan" && step.status === "waiting" && (
+              <AccountPlanForm step={step} busy={act.complete.isPending} onSubmit={(data) => act.complete.mutate({ key: step.key, data })} onReprepare={() => act.reprepare.mutate(step.key)} reprepareBusy={act.reprepare.isPending} />
+            )}
+            {step.key === "transfer_plan" && step.status === "waiting" && (
+              <TransferPlanForm step={step} busy={act.complete.isPending} onSubmit={(data) => act.complete.mutate({ key: step.key, data })} onReprepare={() => act.reprepare.mutate(step.key)} reprepareBusy={act.reprepare.isPending} />
+            )}
+            {step.key === "transfer_assets" && step.status === "waiting" && (
+              <TransferAssetsPanel job={job} step={step} busy={act.complete.isPending} onSubmit={(data) => act.complete.mutate({ key: step.key, data })} />
+            )}
+            {step.key === "it_handover" && step.status === "waiting" && (
+              <ItHandoverForm step={step} busy={act.complete.isPending} onSubmit={(data) => act.complete.mutate({ key: step.key, data })} />
+            )}
+            {step.key === "rtr_checklist" && step.status === "waiting" && <RtrChecklistPanel step={step} />}
+            {step.key === "mailbox_handover" && step.status === "waiting" && <MailboxHandoverPanel job={job} step={step} busy={act.complete.isPending} onComplete={() => act.complete.mutate({ key: step.key, data: {} })} />}
+            {step.kind === "manual" && step.status === "waiting" && !["collect_assets", "biostar_enroll", "account_plan", "it_handover", "mailbox_handover", "transfer_plan", "transfer_assets"].includes(step.key) && (
               <Button variant="primary" loading={act.complete.isPending} onClick={() => act.complete.mutate({ key: step.key, data: {} })}>Đánh dấu hoàn tất</Button>
             )}
           </>
@@ -203,7 +224,7 @@ export function useJobActions(job: Job | undefined) {
       onError: fail,
     }),
     params: useMutation({
-      mutationFn: (patch: { assets?: JobAsset[]; sdp_user_id?: string; sdp_user_name?: string; clear_sdp_user?: boolean }) =>
+      mutationFn: (patch: ParamsPatch) =>
         api<Job>(`/api/lifecycle/jobs/${id}/params`, { method: "PUT", json: { version: job!.version, ...patch } }),
       onSuccess: (j) => done(j),
       onError: fail,
@@ -216,6 +237,11 @@ export function useJobActions(job: Job | undefined) {
     complete: useMutation({
       mutationFn: ({ key, data }: { key: string; data: Record<string, unknown> }) => api<Job>(`/api/core/jobs/${id}/steps/${key}/complete`, { method: "POST", json: { data } }),
       onSuccess: (j) => done(j, "Đã hoàn tất bước thủ công."),
+      onError: fail,
+    }),
+    reprepare: useMutation({
+      mutationFn: (key: string) => api<Job>(`/api/core/jobs/${id}/steps/${key}/prepare`, { method: "POST" }),
+      onSuccess: (j) => done(j, "Đang chuẩn bị lại kế hoạch – trang tự cập nhật."),
       onError: fail,
     }),
     retry: useMutation({
@@ -392,9 +418,15 @@ export function JobPage() {
         </div>
       )}
 
-      {job.status === "draft" && job.params.kind === "onboard" && canRun && (
+      {job.status === "draft" && ["onboard", "offboard"].includes(job.params.kind) && canRun && (
         <Panel title="Chuẩn bị trước khi bắt đầu" className="mb-4" description="Chỉ sửa được khi Job còn là bản nháp. Bản nháp không thay đổi gì trên SDP hay BioStar.">
           <DraftConfig job={job} saving={act.params.isPending} onSave={(p) => act.params.mutate(p)} />
+        </Panel>
+      )}
+
+      {mailboxOptionOpen(job) && canRun && (
+        <Panel title="Tuỳ chọn giữ mailbox" className="mb-4" description="Đổi được tới khi bước chuyển vào Ban_Users được xác nhận.">
+          <MailboxOption job={job} saving={act.params.isPending} onSave={(p) => act.params.mutate(p)} />
         </Panel>
       )}
 

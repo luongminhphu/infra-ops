@@ -151,6 +151,12 @@ def _sees_all(user: CurrentUser, wf: WorkflowDefinition) -> bool:
     return wf.view_all_permission is None or user.has(wf.view_all_permission)
 
 
+def check_job_scope(user: CurrentUser, job: Job) -> None:
+    """Row-level scope: without the workflow's view_all permission only the assignee (or anyone, if unassigned)."""
+    if not _sees_all(user, _wf(job)) and job.assignee_user_id not in (None, user.id):
+        raise PermissionDenied("Job này do người khác phụ trách.")
+
+
 async def _load(
     session: AsyncSession,
     user: CurrentUser,
@@ -160,8 +166,7 @@ async def _load(
 ) -> tuple[Job, WorkflowDefinition]:
     job = await engine.get_job(session, job_id, for_update=for_update)
     wf = _wf(job)
-    if not _sees_all(user, wf) and job.assignee_user_id not in (None, user.id):
-        raise PermissionDenied("Job này do người khác phụ trách.")
+    check_job_scope(user, job)
     engine.need(
         user.permissions,
         {"view": wf.view_permission, "execute": wf.execute_permission, "override": wf.override_permission}[
@@ -336,6 +341,18 @@ async def retry(
 ) -> dict[str, Any]:
     job, wf = await _load(session, user, job_id, "execute", for_update=True)
     await engine.retry_step(session, user.actor, job, key)
+    return await _done(session, user, job, wf)
+
+
+@router.post("/jobs/{job_id}/steps/{key}/prepare")
+async def reprepare(
+    job_id: uuid.UUID,
+    key: str,
+    user: CurrentUser = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    job, wf = await _load(session, user, job_id, "execute", for_update=True)
+    await engine.reprepare_step(session, user.actor, job, key)
     return await _done(session, user, job, wf)
 
 

@@ -79,7 +79,7 @@ Tài liệu: [cài đặt Ubuntu + Docker](docs/install-ubuntu-docker.md) · [ki
   giao** PDF/Excel của nhà cung cấp) → **mã tài sản gợi ý** `HCM-<năm>-<loại>-<4 ký tự cuối serial>` → worker tạo
   tài sản *In Store* trên SDP (không tạo trùng serial) → Kho thiết bị gợi ý ngay cho nhân viên sắp onboard.
 
-Kết nối Microsoft (Entra ID provisioning, AD, Exchange hybrid) đang **tạm hoãn** theo quyết định của chủ sản phẩm.
+Kết nối Microsoft (AD qua LDAPS, Exchange hybrid qua WinRM, Entra/M365 qua Graph) dùng tài khoản dịch vụ, **tắt mặc định**: bật ở *Cấu hình module → Microsoft* thì Job onboard/offboard tự tạo/khoá tài khoản, mailbox, license (Phase 69).
 
 ## Triển khai bằng Docker (khuyến nghị)
 
@@ -267,7 +267,9 @@ Test không bao giờ gọi hệ thống thật: SDP/BioStar được mock bằn
 | 16 | **Nhận hàng từng bước**: chọn PO → quét serial từng máy → xác nhận ghi SDP → kết quả + Job onboard còn thiếu máy | Xong |
 | 17 | **Tổng quan** đầu Việc của tôi (trễ hạn / đến hạn 3 ngày / đang mở / đã xong 7 ngày); Operator nhận hàng, **đọc serial từ file biên bản** (PDF/Excel), **gợi ý mã tài sản** HCM-năm-loại-4 số cuối serial; sửa theo critique luồng Operator | Xong |
 | 18 | Triển khai: trang đăng nhập báo rõ khi mở bằng `http://` (cookie phiên `Secure` bị trình duyệt bỏ) thay vì đăng nhập thất bại không lý do; container `web` phục vụ thẳng **HTTP 80 / HTTPS 443** với chứng chỉ trong `certs/` | Xong |
-| sau | Kết nối Microsoft (Entra ID, AD, Exchange hybrid) | Tạm hoãn |
+| 69 | Kết nối Microsoft (AD, Exchange hybrid, Entra/M365) trong Job onboard/offboard | Xong, chưa thử trên tenant thật |
+| 70 | Job thuyên chuyển tự động (AD, license M365, nhóm quyền BioStar theo phòng ban, thiết bị theo cấp mới) | Xong, chưa thử trên tenant thật |
+| 71 | Kiểm kê gọn luồng + đối chiếu sổ TSCĐ/CCDC Kế toán (TT200/TT133), sheet Mẫu 05-TSCĐ | Xong, chưa thử với file sổ thật |
 
 ## Đăng nhập
 
@@ -398,7 +400,7 @@ Lưu ý:
    → Nhân viên mới, *Chính thức* → Thử việc sang chính thức, *Thôi việc* → Nghỉ việc, *Thay đổi cấp trên trực tiếp*
    → Thuyên chuyển; gán tay ở Cấu hình module để đổi. Request Thuyên chuyển / đổi cấp trên có **Job thuyên chuyển**:
    các bước làm tay có checklist và bằng chứng – *Gỡ khỏi nhóm cũ* và *Thêm vào nhóm mới* (quyền thư mục share, nhóm
-   email theo phòng/bộ phận mới trong RTR); app không tự sửa AD (tích hợp Microsoft đang hoãn).
+   email theo phòng/bộ phận mới trong RTR); khi bật Microsoft (Phase 70) Job còn tự đổi OU / nhóm / license / nhóm quyền ra vào đúng ngày hiệu lực sau khi IT xác nhận kế hoạch.
 4. Xem **Đối soát theo Mã NV**. Worker tự đồng bộ mỗi 4 giờ (bấm “Đồng bộ ngay” khi cần sớm hơn).
 5. **Nhiều hệ thống BioStar** (vd. *BioStar 2 - Office* là hệ thống chính, *BioStar 2 - Server* là nguồn phụ): ở **Cấu hình
    module → Kết nối sử dụng**, chọn hệ thống chính ở ô *BioStar* (Job tạo/khoá user ở đây), rồi **Thêm hệ thống

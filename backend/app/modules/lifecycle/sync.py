@@ -59,6 +59,7 @@ def apply_parse(req: LifecycleRequest, description_html: str, settings: Lifecycl
         **parsed.fields,
         "manager_name": parsed.manager_name,
         "manager_employee_id": parsed.manager_employee_id,
+        **({"old": parsed.old_fields} if parsed.old_fields else {}),
     }
     req.parse_errors = parsed.errors
 

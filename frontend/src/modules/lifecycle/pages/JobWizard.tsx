@@ -12,9 +12,9 @@ import { Field, Input } from "@/core/ui/field";
 import { StatusBadge } from "@/core/ui/status";
 import { From, Wizard, WizardProgress } from "@/core/ui/wizard";
 import { JOB_STATUS, WORKFLOW_LABEL, jobStatusLabel, operatorTask, type Job, type JobAsset } from "../jobs";
-import { StepDetail, useJobActions } from "./JobPage";
+import { StepDetail, mailboxOptionOpen, useJobActions } from "./JobPage";
 import { buyLink, proposedFor } from "../buy";
-import { AssetPicker } from "./JobStepPanels";
+import { AssetPicker, MailboxOption } from "./JobStepPanels";
 
 interface Asset {
   id: string;
@@ -129,6 +129,7 @@ export function JobWizard({ job, onFull }: { job: Job; onFull: () => void }) {
           {task.act ? <Hand className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" /> : <Coffee className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}
           {task.text}
         </p>
+        {mailboxOptionOpen(job) && canRun && <div className="mb-3 rounded-sm border border-line bg-surface p-3"><MailboxOption job={job} saving={act.params.isPending} onSave={(p) => act.params.mutate(p)} /></div>}
         <StepDetail job={job} step={step} act={act} focus />
       </section>
     </>
@@ -141,6 +142,7 @@ function PrepareWizard({ job, act, canRun }: { job: Job; act: ReturnType<typeof 
     { key: "info", title: "Thông tin nhân viên" },
     { key: "sdp", title: "User SDP" },
     ...(onboard ? [{ key: "devices", title: "Thiết bị cấp phát" }] : []),
+    ...(!onboard && job.params.microsoft ? [{ key: "mailbox", title: "Giữ mailbox" }] : []),
     { key: "start", title: "Bắt đầu" },
   ];
   const [i, setI] = useState(0);
@@ -254,6 +256,14 @@ function PrepareWizard({ job, act, canRun }: { job: Job; act: ReturnType<typeof 
             )}
           </details>
         )}
+      </Wizard>
+    );
+  }
+
+  if (key === "mailbox") {
+    return (
+      <Wizard label="Chuẩn bị Job" steps={steps} current={i} title="Quản lý có yêu cầu giữ mailbox không?" description="Mặc định là không. Bật khi request hoặc quản lý yêu cầu giữ mailbox; vẫn đổi được sau khi bắt đầu, tới khi bước chuyển vào Ban_Users được xác nhận." onBack={back} next={{ label: "Tiếp tục", onClick: next }}>
+        {canRun ? <MailboxOption job={job} saving={act.params.isPending} onSave={(patch) => act.params.mutate(patch)} /> : <p className="text-sm">{job.params.options?.mailbox_handover ? "Có giữ mailbox." : "Không giữ mailbox."}</p>}
       </Wizard>
     );
   }

@@ -7,9 +7,10 @@ import unicodedata
 import uuid
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.connectors.active_directory import inside
 from app.core.settings.service import load_settings
 
 EventKind = Literal["onboard", "probation_to_official", "transfer", "offboard", "ignore"]
@@ -52,6 +53,44 @@ FIELD_TITLES: dict[str, str] = {
 }
 
 REQUIRED_FIELDS = ("employee_id", "full_name", "change_type")
+
+_GUID = re.compile(r"^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$")
+_DOMAIN = re.compile(r"^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,}$")
+NAMING_TOKENS = ("short", "short2", "short3", "given_family", "given_full")
+
+
+def _check_dn(value: str) -> str:
+    # shortcut: loose check (RDN "=" and a separator), not a full RFC 4514 parse; tighten if bad DNs slip through.
+    if value and not ("=" in value and "," in value):
+        raise ValueError("DN không hợp lệ (ví dụ OU=Users,DC=corp,DC=local).")
+    return value
+
+
+def _check_domain(value: str) -> str:
+    if value and not _DOMAIN.match(value):
+        raise ValueError("Tên miền không hợp lệ.")
+    return value
+
+
+class OuRule(BaseModel):
+    """Maps an org unit to an AD OU; the most specific non-empty match wins."""
+
+    division: str = Field("", max_length=200)
+    department: str = Field("", max_length=200)
+    unit: str = Field("", max_length=200)
+    ou: str = Field("", max_length=500)  # empty = the rule only declares groups / BioStar access groups
+    groups: list[str] = Field(default_factory=list, max_length=50)  # AD group DNs
+    biostar_access_group_ids: list[str] = Field(default_factory=list, max_length=50)
+
+    @model_validator(mode="after")
+    def _dn(self) -> OuRule:
+        _check_dn(self.ou)
+        for g in self.groups:
+            if not g or not _check_dn(g):
+                raise ValueError("DN nhóm không hợp lệ (ví dụ CN=Sales,OU=Groups,DC=corp,DC=local).")
+        if not (self.ou or self.groups or self.biostar_access_group_ids):
+            raise ValueError("Quy tắc cần OU, nhóm AD hoặc nhóm truy cập BioStar.")
+        return self
 
 
 class StandardItem(BaseModel):
@@ -102,6 +141,23 @@ class MatrixLevel(BaseModel):
     )  # optional: band exactly as the RTR writes it
     departments: list[str] = Field(default_factory=list, max_length=40)  # empty = every department
     group: str = Field("", max_length=200)  # who this is, e.g. "Manager / Senior Manager"
+    # Not devices: Microsoft 365 license SKU GUIDs, their display names and Office tools for this row (never allocated).
+    license_skus: list[str] = Field(default_factory=list, max_length=10)
+    license_names: list[str] = Field(default_factory=list, max_length=10)
+    software: list[str] = Field(default_factory=list, max_length=30)
+
+    @field_validator("license_skus")
+    @classmethod
+    def _guids(cls, v: list[str]) -> list[str]:
+        if bad := [x for x in v if not _GUID.match(x)]:
+            raise ValueError(f"SKU phải là GUID: {', '.join(bad)}.")
+        return v
+
+    @model_validator(mode="after")
+    def _names_match_skus(self) -> MatrixLevel:
+        if self.license_names and len(self.license_names) != len(self.license_skus):
+            raise ValueError("Số tên giấy phép phải bằng số SKU (hoặc để trống).")
+        return self
 
     @property
     def plain(self) -> bool:
@@ -359,6 +415,79 @@ class LifecycleSettings(BaseModel):
     biostar_access_group_ids: list[str] = Field(default_factory=list)
     biostar_expiry_date: str = Field("2037-12-31", pattern=r"^\d{4}-\d{2}-\d{2}$")
     biostar_offboard_action: Literal["disable", "delete"] = "disable"
+
+    # Microsoft (Entra / AD / Exchange): off until an admin enables it. None profile = first enabled of that type.
+    microsoft_enabled: bool = False
+    exchange_profile_id: uuid.UUID | None = None
+    ad_profile_id: uuid.UUID | None = None
+    graph_profile_id: uuid.UUID | None = None
+    upn_domain: str = Field("", max_length=253)
+    naming_order: list[str] = Field(
+        default_factory=lambda: ["short", "short2", "given_family", "given_full", "short3"]
+    )
+    sam_max_length: int = Field(20, ge=1, le=20)
+    ad_base_ou: str = Field("", max_length=500)  # users outside it are never touched
+    ad_default_ou: str = Field("", max_length=500)
+    ad_ou_map: list[OuRule] = Field(default_factory=list, max_length=200)
+    ad_group_base: str = Field("", max_length=500)  # mapped groups must live inside it (empty = unchecked)
+    # Transfer requests: labels per field (keys of DEFAULT_LABELS). Empty = the normal labels.
+    transfer_new_labels: dict[str, list[str]] = Field(default_factory=dict)
+    transfer_old_labels: dict[str, list[str]] = Field(default_factory=dict)
+    ad_ban_ou: str = Field("", max_length=500)  # Ban_Users
+    ad_retained_ou: str = Field(
+        "", max_length=500
+    )  # disabled users whose mailbox is kept; inside Entra sync scope
+    mailbox_retention_days: int = Field(90, ge=1, le=3650)
+    usage_location: str = Field("VN", pattern=r"^[A-Za-z]{2}$")
+    remote_routing_domain: str = Field("", max_length=253)  # empty = Exchange policy decides
+    entra_wait_hours: int = Field(3, ge=1, le=72)
+    mailbox_wait_hours: int = Field(2, ge=1, le=72)
+
+    @field_validator("transfer_new_labels", "transfer_old_labels")
+    @classmethod
+    def _label_keys(cls, v: dict[str, list[str]]) -> dict[str, list[str]]:
+        if bad := [k for k in v if k not in DEFAULT_LABELS]:
+            raise ValueError(f"Trường không hợp lệ: {', '.join(bad)}.")
+        if any(len(x) > 10 or any(not y.strip() or len(y) > 200 for y in x) for x in v.values()):
+            raise ValueError("Mỗi trường có tối đa 10 nhãn, không để trống.")
+        return v
+
+    @field_validator("ad_base_ou", "ad_default_ou", "ad_ban_ou", "ad_retained_ou", "ad_group_base")
+    @classmethod
+    def _dns(cls, v: str) -> str:
+        return _check_dn(v)
+
+    @field_validator("upn_domain", "remote_routing_domain")
+    @classmethod
+    def _domains(cls, v: str) -> str:
+        return _check_domain(v)
+
+    @field_validator("naming_order")
+    @classmethod
+    def _tokens(cls, v: list[str]) -> list[str]:
+        if bad := [t for t in v if t not in NAMING_TOKENS]:
+            raise ValueError(f"Quy tắc đặt tên không hợp lệ: {', '.join(bad)}.")
+        return v
+
+    @model_validator(mode="after")
+    def _microsoft_consistent(self) -> LifecycleSettings:
+        if self.microsoft_enabled and not (self.ad_base_ou and self.upn_domain):
+            raise ValueError("Bật Microsoft cần khai báo OU gốc (ad_base_ou) và tên miền UPN.")
+        if self.ad_base_ou:
+            ous = {
+                "ad_default_ou": self.ad_default_ou,
+                "ad_ban_ou": self.ad_ban_ou,
+                "ad_retained_ou": self.ad_retained_ou,
+            }
+            ous |= {
+                f"ad_ou_map[{i}]": r.ou for i, r in enumerate(self.ad_ou_map)
+            }  # empty ou is skipped below
+            if bad := [k for k, v in ous.items() if v and not inside(v, self.ad_base_ou)]:
+                raise ValueError(f"OU phải nằm trong OU gốc ({self.ad_base_ou}): {', '.join(bad)}.")
+        r, b = self.ad_retained_ou, self.ad_ban_ou
+        if r and b and (inside(r, b) or inside(b, r)):
+            raise ValueError("OU giữ mailbox không được trùng hoặc lồng với OU Ban_Users.")
+        return self
 
     # SDP attachment upload (verify against your SDP build; editable without code change)
     sdp_attach_path: str = Field("/api/v3/requests/{request_id}/_uploads", max_length=200)

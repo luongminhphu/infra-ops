@@ -1547,3 +1547,94 @@ Kho thiết bị chỉ liệt kê tài sản chưa gán người. Mọi trạng 
 - **Báo cáo chấm công:** sau khi dán/nhận diện Mã NV, ô kiểm tra hiện tên SDP + BioStar theo từng mã (5 số cuối, giống lúc xuất),
   tên HR nếu có, và trạng thái (đúng, lệch tên, chỉ SDP, chỉ BioStar, chưa thấy, BioStar đã khoá, chưa rõ khi nguồn lỗi) theo dữ
   liệu đồng bộ gần nhất. Chỉ để kiểm tra – không chặn xuất file.
+
+## 69. Onboard/Offboard tự động với Microsoft hybrid (28/11/2026)
+
+Gỡ quy tắc "tích hợp Microsoft tạm hoãn" theo yêu cầu của chủ sản phẩm (U1–U3 ngày 27/11/2026). Thiết kế gốc §11–12.
+
+- **Kết nối (D1, U1):** 3 connector mới trong core, credentials qua `open_connection` (Read/Write tách bạch): `active_directory`
+  (ldap3, LDAPS bắt buộc kiểm chứng chứng chỉ), `exchange` (pypsrp WinRM HTTPS, lệnh dựng bằng cmdlet + tham số, không ghép
+  chuỗi), `msgraph` (client credentials / certificate, httpx). `test_connection` chỉ đọc. Dùng tài khoản dịch vụ – không có khoá
+  cá nhân; chỉ các bước SDP vẫn dùng `as_user`.
+- **Cấu hình (D2, D9):** công tắc `microsoft_enabled` (**mặc định tắt**): khi tắt, bước Microsoft tự bỏ qua (`params.microsoft`,
+  C-24) nên hành vi hiện tại không đổi. Cài đặt: UPN domain, thứ tự quy tắc đặt tên §11.5 (vd. `binh.nt`, sAM ≤ 20), ánh xạ
+  phòng ban → OU, OU `Ban_Users`, OU giữ mailbox, usageLocation, thời gian chờ. Ma trận cấp phát thêm `license_skus` và
+  `software` theo hàng (cấp/chức danh).
+- **Onboard (D4):** check_request → `account_plan` (IT xác nhận, ghim sAM/UPN/OU/manager đã kiểm trùng – C-01) → `ad_account`
+  (confirm; LDAP add có `employeeID` = Mã NV nguyên chuỗi – C-12; đọc trước nên retry không tạo trùng; Enable-RemoteMailbox) →
+  `m365_license` (chờ Entra → còn license? → usageLocation + gán → chờ Exchange Enabled qua provisionedPlans – C-28) → SDP,
+  tài sản, BioStar → `it_handover` → biên bản → `rtr_checklist` → đóng request.
+- **Offboard (D5):** check_request → BioStar → `account_disable` (confirm; hàng rào nhận diện, disable AD độc lập với Graph, chờ
+  Entra rồi revoke – C-38) → `mailbox_handover` (thủ công khi Job chọn giữ) → `ad_move_ban` (confirm; giữ mailbox → OU giữ +
+  Job `lifecycle.mailbox_release`; không giữ → Ban_Users – C-39, C-42) → thu hồi tài sản → biên bản → `rtr_checklist` → đóng.
+- **An toàn:** bước ghi đọc trạng thái trước, trả `before_state`, không tự rollback; chỉ làm việc khi đúng **một** tài khoản
+  theo employeeID, từ chối adminCount=1 và DN ngoài base OU (C-05, C-25, C-40); UPN Entra phải khớp UPN AD (C-27, C-41);
+  tái tuyển luôn cấp Mã NV mới (C-44). **Không lưu/hiển thị mật khẩu** (C-02, D6): IT đặt mật khẩu tạm trên ADUC. Audit không
+  chứa mật khẩu (C-45, có test quét).
+- **HR (U2):** không tích hợp RTR; bước thủ công `rtr_checklist` có checklist và thông tin sẵn để chép sang hệ thống RTR.
+- **Playbook:** mẫu onboard/offboard dùng `job` step cho các bước Microsoft mới (không chép checklist); sửa lệch: tên đăng nhập
+  `binh.nt` (không `ten.hodem`), OU `Ban_Users` (không "Disabled Users"), thu hồi phiên sau khi disable.
+- **Tuỳ chọn giữ mailbox (C-46..C-49):** `options.mailbox_handover` chỉ có khi Job có bước Microsoft (`params.microsoft`); PUT
+  params và GET prepare kiểm phạm vi assignee/`view_all` như API core (`check_job_scope`). Người được làm Job đổi được tuỳ chọn
+  tới khi `ad_move_ban` được xác nhận (409 `option_locked` sau đó); wizard offboard có bước "Giữ mailbox", cảnh báo khi bật mà
+  chưa cấu hình `ad_retained_ou`. Khi tắt tuỳ chọn, bước `mailbox_handover` chỉ còn "Bỏ qua bước" (không có nút Hoàn tất).
+- **Bổ sung review:** C-03 (hàng rào nhận diện trước mọi ghi), C-33 (kiểm Ban_Users/OU giữ trước khi chạm AD), C-36 (disable AD
+  độc lập với Graph). Guide Playbook đã xuất bản từ mẫu cũ **không tự đổi**: muốn có các bước Job mới, tạo lại guide từ mẫu.
+- **Giới hạn:** Kerberos/GSSAPI chưa làm (LDAPS + tài khoản dịch vụ); chỉ **test bằng fake** (Graph mock `respx`, WinRM/LDAP
+  fake ở lớp client) – chưa chạy trên tenant thật. Cần kiểm trên tenant thật: `employeeId` có đồng bộ lên Entra không;
+  `usageLocation` của user đồng bộ; `RemoteRoutingAddress`; LDAPS phải trỏ **một** DC cố định (tránh trễ nhân bản); thời gian
+  `provisionedPlans` lên Enabled. Thuyên chuyển (TRANSFER) và shared/forward mailbox tự động để sau.
+- Phase 70 (sau review): kiểm kê và sổ TSCĐ theo TT200/TT133.
+
+## 70. Thuyên chuyển tự động với Microsoft hybrid (28/11/2026)
+
+Phase 70a: bỏ "Transfer stays manual" khi bật `microsoft_enabled`; khi tắt, Job thuyên chuyển giữ nguyên luồng làm tay cũ
+(`groups_remove`, `groups_add`). Phase kiểm kê và sổ TSCĐ (TT200/TT133) đổi số sang 71.
+
+- **Quyết định của chủ sản phẩm:** (1) nhãn trong request thuyên chuyển **cấu hình được** (`transfer_new_labels`,
+  `transfer_old_labels` theo từng trường; mặc định = nhãn thường), vì chưa có mẫu request chuẩn; (2) mọi thay đổi quyền chạy
+  **đúng ngày hiệu lực** – thêm và gỡ cùng lúc, không gỡ sớm; (3) nhóm quyền ra vào BioStar **theo phòng ban**, áp dụng cả
+  onboard.
+- **Luồng:** check_request → find_sdp_user → `transfer_plan` (IT xác nhận, ghim) → `ad_transfer` (confirm; thêm nhóm → thuộc
+  tính → chuyển OU → gỡ nhóm cũ sau cùng) → `m365_relicense` (một lần gọi thêm + gỡ SKU) → `biostar_transfer` →
+  `transfer_assets` (thiết bị theo cấp mới) → `rtr_checklist` → đóng request.
+- **Kế hoạch (C-01, C-03, C-09):** trường trống / không có trong request = **không đổi** (không bao giờ ghi rỗng); nhóm đích
+  = hợp mọi rule khớp (Khối, Phòng, Bộ phận); nhóm gỡ = nhóm hiện tại ∩ nhóm trong ánh xạ − nhóm đích; manager không tìm thấy
+  → cảnh báo, giữ nguyên. Plan hiển thị nguồn từng giá trị: *Request mới / Request cũ / AD hiện tại*.
+- **Phân quyền (C-07):** chỉ người có `lifecycle.job.assign` được bỏ chọn nhóm gỡ hoặc đổi OU (API kiểm lại, 403 `forbidden`);
+  UI khoá ô và ẩn chọn OU với người khác. Nhóm kiểm lúc chạy: là group, `adminCount`≠1, nằm trong `ad_group_base` nếu đặt; OU
+  đích không gồm Ban_Users và OU giữ mailbox.
+- **Giao diện:** form `transfer_plan` (bảng Trước → Sau, nhóm thêm / gỡ, OU đích, ngày áp dụng), panel `transfer_assets`
+  (Cần bổ sung kèm liên kết đề xuất mua, Vượt chuẩn, xác nhận). Cấu hình module: mỗi dòng ánh xạ OU thêm *Nhóm AD* và
+  *Nhóm quyền ra vào BioStar*; thêm `ad_group_base`; nhãn mới / cũ cho từng trường.
+- **Playbook:** mẫu mới "Thuyên chuyển nhân viên" dùng `job` step cho từng bước của Job (không chép checklist); khi tắt
+  Microsoft đi nhánh `groups_remove` / `groups_add`. Guide đã xuất bản không tự đổi – muốn có mẫu mới, tạo lại từ mẫu.
+- **Giới hạn:** chỉ **test bằng fake** (không chạy trên tenant thật); chưa có mẫu request thuyên chuyển thật nên nhãn cần
+  cấu hình và kiểm bằng request đầu tiên; liên kết đề xuất mua dùng form onboard (chỉ đổi lý do).
+- Trước khi bật cho thuyên chuyển: lấy 3–5 request thuyên chuyển thật để cấu hình nhãn mới/cũ. Thay đổi quyền (AD, license,
+  BioStar) chạy **đúng ngày hiệu lực**; request thiếu ngày thì IT phải nhập ngày ở bước Kế hoạch. Kế hoạch đọc lỗi → nút
+  "Chuẩn bị lại".
+
+## 71. Kiểm kê: gọn luồng + đối chiếu sổ TSCĐ / CCDC Kế toán (TT200/TT133) (28/11/2026)
+
+- **Phạm vi khu (một luật):** người không có quyền xem toàn bộ chỉ thấy và thao tác tài sản thuộc khu được giao; quét/thêm máy
+  ngoài sổ luôn kèm khu đang đi; quét được máy của khu khác (đang chờ kiểm) thì máy chuyển về khu đó (có nhật ký kiểm tra);
+  biên bản kiểm kê chỉ người xem toàn bộ mới mở được.
+- **Gọn luồng:** "Hư hỏng nhẹ" không còn là chênh lệch (áp cho kỳ đang mở; kỳ đã đóng giữ quy tắc cũ – `rules_version`);
+  hướng xử lý chỉ cho phép theo loại chênh lệch, nhãn nói đúng việc ("Sửa SDP (làm tay)", "Đề nghị KT ghi tăng"…); nút
+  "Áp hướng xử lý gợi ý" (vẫn phải xác nhận từng dòng trước khi đóng kỳ); ghi nhận cả bàn một lần; xác nhận trước khi đóng
+  kỳ; gợi ý người ký kỳ trước; Supervisor được giao khu (migration cấp cho bản cài cũ); màn đi kiểm dùng tốt trên điện thoại.
+- **Sổ Kế toán:** nhập sổ **TSCĐ** và sổ **CCDC** (xlsx, theo từng kỳ) – nhận cột theo tên cột TT200/TT133 (có chọn cột tay),
+  header 1–2 tầng, số kiểu Việt Nam (1.234.567 · (1.234.567) · 1.234- · "-" = 0); bỏ dòng đánh số cột, dòng nhóm/Cộng/Tổng,
+  dòng chữ ký; ô tiền không đọc được → **chặn nhập** và chỉ rõ ô; xem trước rồi mới nhập (phải đúng file đã xem); app không
+  lưu file sổ (chỉ giữ mã băm).
+- **Đối chiếu 3 chiều** (Sổ KT ↔ SDP ↔ Thực tế) theo Mã TSCĐ (serial dự phòng khi sổ có cột serial): đủ / mất hết / **thiếu
+  một phần → ghi chú, Kế toán xác định giá trị (app không tự chia tiền)** / chưa kiểm / có trong sổ KT nhưng không có trên SDP /
+  có trên thực tế nhưng không có trong sổ KT. Nhiều dòng cùng mã mà không ghi số lượng = một tài sản (có ghi chú).
+- **Xuất:** file tổng thêm sheet **Mẫu 05-TSCĐ** (giấy làm việc gửi Kế toán, "Số liệu tạm" khi kỳ chưa kết thúc kiểm), "Đối
+  chiếu CCDC" và hai sheet ngoại lệ. **Số tiền** (nguyên giá, giá trị còn lại) chỉ người có quyền *Số liệu tài chính kiểm kê*
+  (Manager, Supervisor) và xem toàn bộ thấy; biên bản ký chỉ có **số lượng** đối chiếu sổ.
+- **Bản cài đang chạy:** mẫu biên bản kiểm kê (DOCX) đổi (thêm "Hư hỏng nhẹ" và bảng đối chiếu sổ) – app chỉ nạp mẫu mặc định
+  khi chưa có mẫu, nên vào "Mẫu biên bản" tải bản mới.
+- **Giới hạn:** chưa thử với file sổ thật từ phần mềm kế toán (MISA/Fast…) – nhập thử file thật và kiểm tổng nguyên giá ở bước
+  xem trước; xử lý chênh lệch không ghi ngược SDP.

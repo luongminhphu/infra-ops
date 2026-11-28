@@ -24,7 +24,7 @@ from app.modules.lifecycle.models import LifecycleRequest
 from app.modules.lifecycle.settings import load as load_module_settings
 
 ASSIGN = "lifecycle.job.assign"
-JOB_WORKFLOWS = ("lifecycle.onboard", "lifecycle.offboard", "lifecycle.transfer")
+JOB_WORKFLOWS = ("lifecycle.onboard", "lifecycle.offboard", "lifecycle.transfer", "lifecycle.mailbox_release")
 
 
 async def user_for_email(session: AsyncSession, email: str | None) -> User | None:

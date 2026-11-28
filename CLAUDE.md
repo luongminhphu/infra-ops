@@ -8,7 +8,7 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 - `backend/app/core/*` – platform core. `backend/app/modules/<id>/` – modules (manifest.py required).
 - `frontend/src/core/*` – shell, design system (`ui/`), core pages. `frontend/src/modules/<id>/` – module UI.
 - `backend/migrations/<branch>/versions` – one Alembic branch per module (`core`, `lifecycle`, `workload`, `playbook`).
-- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §68).
+- `docs/phase-0-proposal.md` – decisions and open questions; add a section per phase (latest: §71).
 
 ## Conventions
 
@@ -65,8 +65,14 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
   `impeccable` (pbakaus/impeccable – design critique/polish). Use them for UI work.
   `graphify` (PyPI `graphifyy` 0.9.120, Graphify-Labs/graphify – `/graphify .` builds a code knowledge graph in
   `graphify-out/`, git-ignored; installs the `graphifyy` package on first run).
-- Microsoft integrations (Entra/AD/Exchange) are deferred by the product owner – do not add them
-  without being asked.
+- Microsoft (Phase 69): AD (`active_directory`, LDAPS), Exchange hybrid (`exchange`, WinRM) and Entra/M365 (`msgraph`,
+  Graph) are connectors used only via `open_connection` with service credentials (no personal keys). Onboard/offboard
+  Microsoft steps run only when `params.microsoft` (setting `microsoft_enabled`) is on, pin the target account (employeeID
+  must match exactly one account; identity guard) and never store or show passwords (IT sets the temporary one in ADUC).
+  Offboard `options.mailbox_handover` (keep the mailbox) is changeable by whoever may run the Job (assignee scope) until
+  `ad_move_ban` is confirmed; it needs `params.microsoft`. A kept mailbox adds the scheduled `lifecycle.mailbox_release` Job.
+  Transfer (Phase 70) also runs these steps on the effective date (plan pinned by IT; removals / OU change need
+  `lifecycle.job.assign`); with Microsoft off it keeps the manual group steps. No Kerberos yet. Only tested with fakes (never run against a real tenant) – say so in reviews.
 
 ## Commands
 

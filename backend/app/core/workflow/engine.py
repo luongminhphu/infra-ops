@@ -409,6 +409,31 @@ async def retry_step(session: AsyncSession, actor: Actor, job: Job, key: str) ->
     return step
 
 
+async def reprepare_step(session: AsyncSession, actor: Actor, job: Job, key: str) -> JobStep:
+    """Re-run `prepare` of a manual step that is waiting (e.g. a blocked plan): the worker does it, not the request."""
+    step = _find_step(job, key)
+    _, wf = workflow_or_404(job.workflow_key)
+    if step.kind != "manual" or step.status != "waiting" or step_def(wf, key).prepare is None:
+        raise Conflict("Chỉ chuẩn bị lại bước thủ công đang chờ có dữ liệu chuẩn bị.", code="not_preparable")
+    if job.status not in ACTIVE:
+        raise Conflict("Job chưa chạy hoặc đã kết thúc.", code="job_not_active")
+    step.status = "pending"  # advance() prepares a manual step that is not "waiting"
+    step.waiting_since = None
+    _resume(job)
+    touch(job)
+    event(session, job, f"Chuẩn bị lại bước “{step.title}”.", step=key, actor=actor.upn)
+    await record(
+        session,
+        actor=actor,
+        module_id=job.module_id,
+        action="workflow.step_reprepared",
+        target_type="job",
+        target_id=str(job.id),
+        target_label=f"{job.subject_label} – {step.title}",
+    )
+    return step
+
+
 async def skip_step(session: AsyncSession, actor: Actor, job: Job, key: str, reason: str) -> JobStep:
     _, wf = workflow_or_404(job.workflow_key)
     step = _find_step(job, key)
@@ -713,7 +738,7 @@ async def advance(session: AsyncSession, job: Job, worker_actor: Actor) -> None:
                 target_type="job",
                 target_id=str(job.id),
                 target_label=f"{job.subject_label} – {step.title}",
-                before=outcome.before_state,
+                before=step.before_state,  # merged first-seen state, not just the last run
                 after=outcome.output or None,
                 message=outcome.message[:1000],
             )

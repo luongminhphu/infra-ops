@@ -24,6 +24,7 @@ KIND = {
     "lifecycle.onboard": "Onboard",
     "lifecycle.offboard": "Offboard",
     "lifecycle.transfer": "Thuyên chuyển",
+    "lifecycle.mailbox_release": "Hết hạn giữ mailbox",
 }
 
 

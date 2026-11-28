@@ -1,7 +1,7 @@
 """Module 1 – IT Lifecycle (onboard/offboard).
 
 Phase 2: read SDP (RTR requests, users, assets) and BioStar, reconcile by employee ID.
-Microsoft systems are deferred by the product owner.
+Phase 69: AD / Exchange / Entra steps run in onboard/offboard when `microsoft_enabled` is on.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from app.modules.lifecycle.stock import router as stock_router
 from app.modules.lifecycle.stocktake_api import next_action as stocktake_action
 from app.modules.lifecycle.stocktake_api import router as stocktake_router
 from app.modules.lifecycle.stocktake_record import STOCKTAKE_RECORD
-from app.modules.lifecycle.workflows import OFFBOARD, ONBOARD, TRANSFER
+from app.modules.lifecycle.workflows import MAILBOX_RELEASE, OFFBOARD, ONBOARD, TRANSFER
 
 
 async def _sync(session: AsyncSession) -> dict[str, Any]:
@@ -153,11 +153,16 @@ manifest = ModuleManifest(
         Permission(
             "lifecycle.stocktake.assign",
             "Giao khu kiểm kê cho Operator và chuyển tài sản giữa các khu",
-            ("manager",),
+            ("manager", "supervisor"),
         ),
         Permission(
             "lifecycle.stocktake.manage",
             "Mở / kết thúc / đóng kỳ kiểm kê và chọn hướng xử lý chênh lệch",
+            ("manager", "supervisor"),
+        ),
+        Permission(
+            "lifecycle.stocktake.finance",
+            "Xem/nhập số liệu tài chính kiểm kê (nguyên giá, giá trị còn lại)",
             ("manager", "supervisor"),
         ),
         # Administrator has every permission; only Managers among the other roles may dispose.
@@ -176,7 +181,7 @@ manifest = ModuleManifest(
         stocktake_router,
         sdp_ids_router,
     ],
-    workflows=[ONBOARD, OFFBOARD, TRANSFER, REASSIGN_JOB, ASSET_STATE, ASSET_DISPOSE],
+    workflows=[ONBOARD, OFFBOARD, MAILBOX_RELEASE, TRANSFER, REASSIGN_JOB, ASSET_STATE, ASSET_DISPOSE],
     document_kinds=[HANDOVER, RETURN, STOCKTAKE_RECORD],
     # Filed under the shared menu headings by what each page is for (core orders the headings).
     nav=[
@@ -212,8 +217,8 @@ manifest = ModuleManifest(
         NavItem("Mẫu biên bản", "/lifecycle/templates", "file-cog", "lifecycle.templates.manage", NAV_SETUP),
         NavItem("Cấu hình module", "/lifecycle/settings", "settings", "lifecycle.settings.manage", NAV_SETUP),
     ],
-    # Microsoft connectors (entra, ad, exchange) are added once that integration is cleared.
-    connectors_used=["sdp", "biostar"],
+    # Microsoft connectors are used only by steps that run when `microsoft_enabled` is on (Phase 69).
+    connectors_used=["sdp", "biostar", "exchange", "active_directory", "msgraph"],
     facts=FACTS,
     scheduled_tasks=[
         ScheduledTask(

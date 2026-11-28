@@ -125,4 +125,4 @@ automatically except reads, and each step re-reads state so a manual retry never
 |---|---|
 | ServiceDesk Plus (on-prem authtoken / cloud Zoho OAuth) | Connector + test (Phase 1); read requests/users/assets (Phase 2). |
 | Suprema BioStar 2 | Connector + test with session handling (Phase 1); read users (Phase 2). |
-| Microsoft Entra ID, Active Directory, Exchange hybrid | Deferred by decision (see phase-0-proposal §11–12). Registry ready. |
+| Microsoft Entra ID, Active Directory, Exchange hybrid | Phase 69: connectors `active_directory` (LDAPS), `exchange` (WinRM), `msgraph` (Graph); used by onboard/offboard steps when `microsoft_enabled` is on (phase-0-proposal §69). Tested with fakes only. |
