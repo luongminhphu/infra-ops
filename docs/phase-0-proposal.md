@@ -1765,3 +1765,10 @@ Bốn tính năng người dùng chọn. Mỗi tính năng: **chỉ thử với 
   từ chối, bước `failed` và người dùng thử lại / đóng tay. `close_status` đổi được trong cấu hình workload.
 - **Bỏ:** nút "Mở Playbook" (Playbook chưa nhận `?q=`); liên kết đề xuất mua dùng URL có sẵn.
 - Ghi chú trước khi xác nhận đóng: đã chấp nhận (ghi chú là bước 1, trạng thái là bước 2 có xác nhận).
+
+- **Sau Phase 73 – gỡ vòng import trong core (28/11/2026):** graphify phát hiện vòng `core/search/sources.py →
+  core/documents/service.py → core/modules/registry.py → core/permissions.py`. Gốc: `core/permissions.py` vừa chứa hằng
+  số quyền (nhiều module core import) vừa chứa `CORE_MANIFEST` (kéo theo search, thông báo, pump, widget). Sửa:
+  `core/permissions.py` chỉ còn hằng số (module lá), `CORE_MANIFEST` sang `core/core_manifest.py`,
+  `build_registry(core, enabled)` nhận manifest từ `main` / `worker` / `cli`. `tests/test_import_cycles.py` phân tích
+  AST mọi import trong `app/core` (kể cả trong hàm) và chặn mọi vòng, trừ cụm connector tự đăng ký có chủ ý.

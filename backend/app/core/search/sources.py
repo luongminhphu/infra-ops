@@ -4,22 +4,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import func, or_, true
+from sqlalchemy import func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.documents import service
+from app.core.documents.models import Document
 from app.core.modules.manifest import SearchSource
-
-# Imports stay inside the functions to avoid an import cycle within core (core.permissions imports this file).
+from app.core.modules.registry import get_registry
+from app.core.text import fold, fold_sql
+from app.core.timeutil import fmt_date
+from app.core.workflow.models import Job
 
 
 async def search_jobs(session: AsyncSession, user: Any, q: str, limit: int) -> list[dict[str, Any]]:
-    from sqlalchemy import select
-
-    from app.core.modules.registry import get_registry
-    from app.core.text import fold, fold_sql
-    from app.core.timeutil import fmt_date
-    from app.core.workflow.models import Job
-
     allowed = {w.key: w for _, w in get_registry().workflows() if user.has(w.view_permission)}
     if not allowed:
         return []
@@ -49,14 +46,6 @@ async def search_jobs(session: AsyncSession, user: Any, q: str, limit: int) -> l
 
 
 async def search_documents(session: AsyncSession, user: Any, q: str, limit: int) -> list[dict[str, Any]]:
-    from sqlalchemy import select
-
-    from app.core.documents import service
-    from app.core.documents.models import Document
-    from app.core.modules.registry import get_registry
-    from app.core.text import fold, fold_sql
-    from app.core.timeutil import fmt_date
-
     kinds = {k.key: k for _, k in get_registry().document_kinds() if user.has(k.view_permission)}
     if not kinds:
         return []

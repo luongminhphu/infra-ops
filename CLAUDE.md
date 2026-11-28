@@ -13,7 +13,9 @@ and `docs/adding-a-module.md` before structural changes; `docs/design-system.md`
 ## Conventions
 
 - Code, comments, commit messages: English. UI text: Vietnamese. Dates `dd/MM/yyyy`, tz Asia/Ho_Chi_Minh.
-- Modules import only `app.core.*` (enforced by `uv run lint-imports`). Core never imports modules. Frontend: same
+- Modules import only `app.core.*` (enforced by `uv run lint-imports`). Core never imports modules. Core has no import
+  cycles, even through function-level imports (`tests/test_import_cycles.py`): `app.core.permissions` holds only codes
+  (leaf); `CORE_MANIFEST` lives in `app.core.core_manifest`, imported only by `main`/`worker`/`cli`. Frontend: same
   rules, and modules never import `@/core/pages`; core reads modules via `useModules()` (`src/core/boundaries.test.ts`).
 - Tables prefixed `core_` / `<module>_`. Never edit another module's migrations.
 - Permissions: `<module>.<resource>.<action>`, declared in the manifest; protect endpoints with `require()`.
